@@ -4,6 +4,71 @@ import scipy.signal as signal
 import matplotlib.pyplot as plt
 
 
+class LinePlot:
+    def __init__(self, bismark: pl.DataFrame):
+        density = (
+            bismark.lazy()
+            .groupby(
+                ['fragment', 'context', 'strand']
+            )
+            .agg(
+                (pl.sum('sum') / pl.sum('count')).alias('density')
+            )
+        ).collect()
+
+        fragments = density.max()['fragment'].to_list()[0] + 1
+
+        density = (
+            density.lazy()
+            .groupby(['context', 'strand'])
+            .agg(
+                pl.arange(0, fragments, dtype=density.schema['fragment'])
+                .alias('fragment')
+            )
+            .explode('fragment')
+            .join(
+                density.lazy(),
+                on=['context', 'strand', 'fragment'],
+                how='left'
+            )
+            .sort('fragment')
+            .interpolate()
+        ).collect()
+        self.bismark = density
+
+    def filter(self, context: str = 'CG', strand: str = '+'):
+        density = self.bismark.filter(
+            (pl.col('context') == context) & (pl.col('strand') == strand)
+        )
+
+        density = density['density'].to_list()
+
+        if strand == '-':
+            density = np.flip(density)
+
+        return density
+
+    def draw(
+            self,
+            axes: plt.Axes = None,
+            context: str = 'CG',
+            strand: str = '+',
+            smooth: float = .05,
+            label: str = None,
+            color: str = None,
+            linewidth: float = 1.0,
+            linestyle: str = '-',
+    ):
+        if axes is None:
+            _, axes = plt.subplots()
+        data = self.filter(context, strand)
+        if smooth:
+            data = signal.savgol_filter(data, int(len(data) * smooth), 3, mode='nearest')
+        x = np.arange(len(data))
+
+        axes.plot(x, data, label=label, color=color, linestyle=linestyle, linewidth=linewidth)
+
+
 def line_plot_data(bismark: pl.DataFrame):
     """
     This method extracts data for line plot from bismark DataFrame

@@ -4,6 +4,19 @@ import numpy as np
 import polars as pl
 
 
+class BoxPlot:
+    def __init__(self, bismark: pl.DataFrame):
+        self.bismark = (
+            bismark.lazy()
+            .groupby(['chr', 'start', 'context'])
+            .agg(
+                (pl.sum('sum') / pl.sum('count')).alias('density')
+            )
+            .groupby(['context'])
+            .agg(pl.col('density'))
+        ).collect()
+
+
 def boxplot_data(bismark: pl.DataFrame):
     bismark = (
         bismark.lazy()
