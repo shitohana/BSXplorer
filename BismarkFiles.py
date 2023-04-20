@@ -1,5 +1,8 @@
 import datetime
+import os
+
 import matplotlib.pyplot as plt
+import logging
 import numpy as np
 import pandas as pd
 from matplotlib import colormaps, colors as mpl_colors
@@ -14,7 +17,7 @@ class BismarkFiles:
     Class to process and plot multiple files
     """
 
-    __uninitialized_str = '{1} is None. Ensure that you specified them in constructor'
+    __uninitialized_str = '{} is None. Ensure that you specified them in constructor'
 
     def __init__(
             self,
@@ -31,7 +34,6 @@ class BismarkFiles:
             store_res: bool = False
     ):
         """
-
         :param files: List with paths to bismark genomeWide reports
         :param genome: polars.Dataframe with gene ranges
         :param flank_windows: Number of windows flank regions to split
@@ -43,11 +45,17 @@ class BismarkFiles:
         :param bar_plot: Whether to plot Bar plot or not
         :param box_plot: Whether to plot Box plot or not
         """
+        self.__logger = logging.Logger('BismarkFiles')
+        self.__logger.addHandler(logging.StreamHandler())
+        self.__logger.setLevel(logging.INFO)
+
         self.line_plots: list[LinePlot] = []
         self.heat_maps:  list[HeatMap]  = []
         self.bar_plots:  list[BarPlot]  = []
         self.box_plots:  list[BoxPlot]  = []
         self.bismarks:   list[Bismark]  = []
+
+        self.__files_num = len(files)
 
         self.single_fig_dim: tuple = (7, 5)
 
@@ -78,7 +86,7 @@ class BismarkFiles:
             title: str = None,
             out_dir: str = '',
             dpi: int = 300
-    ) -> plt.Axes:
+    ):
         """
         Method to plot selected context and strand
 
@@ -91,11 +99,11 @@ class BismarkFiles:
         :param title: Title of the plot
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
-        :return: Axes with plot
 
         .. _Linestyles: https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html/
         """
 
+        out_dir = self.__format_dir(out_dir)
         if not self.__check_data(self.line_plots, 'LinePlots'):
             return
 
@@ -107,14 +115,14 @@ class BismarkFiles:
         for plot, label in zip(self.line_plots, labels):
             plot.draw(axes, context, strand, smooth, label, linewidth, linestyle)
 
-        axes.legend(loc='best')
-        axes.set_title(title, fontstyle='italic')
+        if len(set(labels)) and list(set(labels))[0] is not None:
+            axes.legend(loc='best')
+
+        axes.set_title(title.replace('_', ' '), fontstyle='italic')
         self.__add_flank_lines(axes)
 
         self.__set_single_fig_dim()
         plt.savefig(f'{out_dir}/{title}_{self.__current_time()}.png', dpi=dpi)
-
-        return axes
 
     def draw_heat_maps_filtered(
             self,
@@ -126,6 +134,18 @@ class BismarkFiles:
             out_dir: str = '',
             dpi: int = 300
     ):
+        """
+        Method to plot heatmap for selected context and strand
+
+        :param context: Methylation context to filter
+        :param strand: Strand to filter
+        :param resolution:
+        :param labels: Labels for files data
+        :param title: Title of the plot
+        :param out_dir: directory to save plots to
+        :param dpi: DPI of output pic
+        """
+        out_dir = self.__format_dir(out_dir)
         if not self.__check_data(self.heat_maps, 'HeatMaps'):
             return
 
@@ -165,7 +185,7 @@ class BismarkFiles:
                 self.__add_flank_lines(ax)
                 plt.colorbar(image, ax=ax)
 
-        plt.title(title, fontstyle='italic')
+        plt.suptitle(title.replace('_', ' '), fontstyle='italic')
         fig.set_size_inches(6 * subplots_x, 5 * subplots_y)
         plt.savefig(f'{out_dir}/{title}_{self.__current_time()}.png', dpi=dpi)
 
@@ -189,6 +209,7 @@ class BismarkFiles:
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
         """
+        out_dir = self.__format_dir(out_dir)
         if not self.__check_data(self.line_plots, 'LinePlots'):
             return
 
@@ -214,6 +235,7 @@ class BismarkFiles:
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
         """
+        out_dir = self.__format_dir(out_dir)
         if not self.__check_data(self.heat_maps, 'HeatMaps'):
             return
 
@@ -235,6 +257,7 @@ class BismarkFiles:
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
         """
+        out_dir = self.__format_dir(out_dir)
         if not self.__check_data(self.bar_plots, 'BarPlots'):
             return
 
@@ -249,6 +272,7 @@ class BismarkFiles:
         self.__set_single_fig_dim()
 
         df.plot(x='context', kind='bar', stacked=False, edgecolor='k', linewidth=1)
+        plt.xlabel('Context')
         plt.ylabel('Methylation density')
         plt.savefig(f'{out_dir}/bar_{self.__current_time()}.png', dpi=dpi, bbox_inches='tight')
 
@@ -268,6 +292,7 @@ class BismarkFiles:
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
         """
+        out_dir = self.__format_dir(out_dir)
         if not self.__check_data(self.box_plots, 'BoxPlots'):
             return
 
@@ -282,7 +307,7 @@ class BismarkFiles:
 
         x_ticks, x_labels = [], []
         bplots = []
-        start = 1
+        start = 0
         for fil in filters:
             if isinstance(fil, tuple):
                 context, strand = fil
@@ -301,21 +326,25 @@ class BismarkFiles:
                 median.set_color('black')  # make medians black instead of orange
 
             x_ticks.append(np.mean(x_pos))
-            x_labels.append(f'{context}{strand}')
-            start += 1
+            if strand is None:
+                x_labels.append(f'{context}')
+            else:
+                x_labels.append(f'{context}{strand}')
+            start += len(data)
 
         plt.xticks(x_ticks, x_labels)
 
         # This block is needed to make a legend with colors and labels
         lines = []
         for (_, color) in zip(self.box_plots, mpl_colors.TABLEAU_COLORS):
-            line, = plt.plot([1, 1], color)
+            line, = plt.plot([0, 0], color)
             lines.append(line)
         plt.legend(lines, labels)
         [line.set_visible(False) for line in lines]
 
         self.__set_single_fig_dim()
 
+        plt.xlabel('Context')
         plt.ylabel('Methylation density')
         plt.savefig(f'{out_dir}/box_{self.__current_time()}.png', dpi=dpi)
 
@@ -329,20 +358,30 @@ class BismarkFiles:
                 axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
 
     def __check_labels(self, labels):
-        if len(labels) != len(self.line_plots):
-            return [None] * len(self.line_plots)
-        else:
-            return labels
+        if labels is not None:
+            if len(labels) < self.__files_num:
+                return labels + [None] * (self.__files_num - len(labels))
+            elif len(labels) > self.__files_num:
+                return labels[:self.__files_num]
+            else:
+                return labels
+        return [None] * self.__files_num
 
     def __check_titles(self, titles):
-        if len(titles) != len(self.line_plots):
-            return [None] * len(self.line_plots)
-        else:
-            return titles
+        if titles is not None:
+            if len(titles) < self.__files_num:
+                self.__logger.error('Not enough titles')
+                return titles + [None] * (self.__files_num - len(titles))
+            elif len(titles) > self.__files_num:
+                self.__logger.error('Too many titles')
+                return titles[:self.__files_num]
+            else:
+                return titles
+        return [None] * self.__files_num
 
     def __check_data(self, data, data_type: str):
         if data is None:
-            print(self.__uninitialized_str.format(data_type))
+            self.__logger.error(self.__uninitialized_str.format(data_type))
             return False
         return True
 
@@ -358,10 +397,17 @@ class BismarkFiles:
 
     @staticmethod
     def __current_time():
-        return datetime.datetime.now().strftime('%m/%d/%Y_%H:%M:%S')
+        return datetime.datetime.now().strftime('%m_%d_%Y_%H:%M:%S')
 
     @staticmethod
     def __plot_clear() -> (Axes, Figure):
         plt.clf()
         return plt.subplots()
 
+    @staticmethod
+    def __format_dir(directory):
+        if not directory:
+            return os.getcwd()
+        if list(directory)[-1] == '/':
+            return str(list(directory[:-1]))
+        return directory

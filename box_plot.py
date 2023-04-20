@@ -23,7 +23,7 @@ class BoxPlot:
         filter_expr = pl.col('context') == context
         if strand is not None:
             filter_expr = (pl.col('context') == context) & (pl.col('strand') == strand)
-        return self.bismark.filter(filter_expr['density'].to_list()[0])
+        return self.bismark.filter(filter_expr)['density'].to_list()[0]
 
 
 def boxplot_data(bismark: pl.DataFrame):
