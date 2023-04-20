@@ -65,5 +65,7 @@ class LinePlot:
         if smooth:
             data = signal.savgol_filter(data, int(len(data) * smooth), 3, mode='nearest')
         x = np.arange(len(data))
-
+        data = data * 100  # convert to percents
         axes.plot(x, data, label=label, linestyle=linestyle, linewidth=linewidth)
+        axes.set_ylabel('Methylation density, %')
+        axes.set_xlabel('Position')

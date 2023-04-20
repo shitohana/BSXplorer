@@ -62,7 +62,21 @@ class BismarkFiles:
         self.__flank_windows = flank_windows
         self.__gene_windows = gene_windows
 
+        logging_message = 'Starting BismarkFiles initialization\n' \
+            '_________________________________________________________\n' \
+            f'Numbers of CPU cores: {cpu}\n' \
+            f'Windows: Genes ({gene_windows}) | Flank ({flank_windows})\n' \
+            f'Calculating:\n'
+
+        for plot, enabled in zip(['Line Plot', 'Heat Map', 'Box Plot', 'Bar Plot'], [line_plot, heat_map, box_plot, bar_plot]):
+            if enabled:
+                logging_message += plot + '\n'
+
+        self.__logger.info(logging_message)
+
         for file in files:
+            self.__logger.info(f'Processing {file}')
+
             bismark = Bismark(file, genome, flank_windows, gene_windows, batch_size, cpu)
             if line_plot:
                 self.line_plots.append(bismark.line_plot())
@@ -122,7 +136,9 @@ class BismarkFiles:
         self.__add_flank_lines(axes)
 
         self.__set_single_fig_dim()
-        plt.savefig(f'{out_dir}/{title}_{self.__current_time()}.png', dpi=dpi)
+        file_name = f'{title}_{self.__current_time()}.png'
+        self.__logger.info(f'Line plot on {context}{strand} saved as {file_name}')
+        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi)
 
     def draw_heat_maps_filtered(
             self,
@@ -181,13 +197,16 @@ class BismarkFiles:
                 )
 
                 ax.set(title=labels[number])
-
+                ax.set_xlabel('Position')
+                ax.set_ylabel('')
                 self.__add_flank_lines(ax)
-                plt.colorbar(image, ax=ax)
+                plt.colorbar(image, ax=ax, label='Methylation density')
 
         plt.suptitle(title.replace('_', ' '), fontstyle='italic')
         fig.set_size_inches(6 * subplots_x, 5 * subplots_y)
-        plt.savefig(f'{out_dir}/{title}_{self.__current_time()}.png', dpi=dpi)
+        file_name = f'{title}_{self.__current_time()}.png'
+        self.__logger.info(f'Heat Map on {context}{strand} saved as {file_name}')
+        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi)
 
     def draw_line_plots_all(
             self,
@@ -195,7 +214,6 @@ class BismarkFiles:
             labels: list[str] = None,
             linewidth: float = 1.0,
             linestyle: str = '-',
-            titles: list[str] = None,
             out_dir: str = '',
             dpi: int = 300
     ):
@@ -205,7 +223,6 @@ class BismarkFiles:
         :param labels: Labels for files data
         :param linewidth: Line width
         :param linestyle: Line width see Linestyles_
-        :param titles: Titles of the plot
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
         """
@@ -214,16 +231,14 @@ class BismarkFiles:
             return
 
         filters = [(context, strand) for context in ['CG', 'CHG', 'CHH'] for strand in ['+', '-']]
-        titles = self.__check_titles(titles)
 
-        for title, (context, strand) in zip(titles, filters):
-            self.draw_line_plots_filtered(context, strand, smooth, labels, linewidth, linestyle, title, out_dir, dpi)
+        for context, strand in filters:
+            self.draw_line_plots_filtered(context, strand, smooth, labels, linewidth, linestyle, None, out_dir, dpi)
 
     def draw_heat_maps_all(
             self,
             resolution: int = 100,
             labels: list[str] = None,
-            titles: list[str] = None,
             out_dir: str = '',
             dpi: int = 300
     ):
@@ -231,7 +246,6 @@ class BismarkFiles:
         Method to plot all heatmaps and strands
         :param resolution: Number of vertical rows in the resulting image
         :param labels: Labels for files data
-        :param titles: Titles of the plot
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
         """
@@ -240,10 +254,9 @@ class BismarkFiles:
             return
 
         filters = [(context, strand) for context in ['CG', 'CHG', 'CHH'] for strand in ['+', '-']]
-        titles = self.__check_titles(titles)
 
-        for title, (context, strand) in zip(titles, filters):
-            self.draw_heat_maps_filtered(context, strand, resolution, labels, title, out_dir, dpi)
+        for context, strand in filters:
+            self.draw_heat_maps_filtered(context, strand, resolution, labels, None, out_dir, dpi)
 
     def draw_bar_plot(
             self,
@@ -274,7 +287,9 @@ class BismarkFiles:
         df.plot(x='context', kind='bar', stacked=False, edgecolor='k', linewidth=1)
         plt.xlabel('Context')
         plt.ylabel('Methylation density')
-        plt.savefig(f'{out_dir}/bar_{self.__current_time()}.png', dpi=dpi, bbox_inches='tight')
+        file_name = f'bar_{self.__current_time()}.png'
+        self.__logger.info(f'Bar Plot saved as {file_name}')
+        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi, bbox_inches='tight')
 
     def draw_box_plot(
             self,
@@ -346,11 +361,16 @@ class BismarkFiles:
 
         plt.xlabel('Context')
         plt.ylabel('Methylation density')
-        plt.savefig(f'{out_dir}/box_{self.__current_time()}.png', dpi=dpi)
+        file_name = f'box_{self.__current_time()}.png'
+        self.__logger.info(f'Box Plot saved as {file_name}')
+        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi, bbox_inches='tight')
 
     def __add_flank_lines(self, axes: plt.Axes):
+        """
+        Add flank lines to the given axis (for line plot)
+        """
         if self.__flank_windows:
-            x_ticks = [self.__flank_windows - 1, self.__gene_windows]
+            x_ticks = [self.__flank_windows - 1, self.__gene_windows - self.__flank_windows]
             x_labels = ['TSS', 'TES']
             axes.set_xticks(x_ticks)
             axes.set_xticklabels(x_labels)
@@ -358,6 +378,9 @@ class BismarkFiles:
                 axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
 
     def __check_labels(self, labels):
+        """
+        Check if labels length is the same as data length and fix it if it's False
+        """
         if labels is not None:
             if len(labels) < self.__files_num:
                 return labels + [None] * (self.__files_num - len(labels))
@@ -368,6 +391,9 @@ class BismarkFiles:
         return [None] * self.__files_num
 
     def __check_titles(self, titles):
+        """
+        Check if titles length is the same as data length and fix it if it's False
+        """
         if titles is not None:
             if len(titles) < self.__files_num:
                 self.__logger.error('Not enough titles')
@@ -380,32 +406,50 @@ class BismarkFiles:
         return [None] * self.__files_num
 
     def __check_data(self, data, data_type: str):
+        """
+        Method to skip plot if data for it was not calculated during the initialization
+        """
         if data is None:
             self.__logger.error(self.__uninitialized_str.format(data_type))
             return False
         return True
 
     def __set_single_fig_dim(self):
+        """
+        Set size for a Figure with single plot
+        """
         plt.gcf().set_size_inches(self.single_fig_dim)
 
     @staticmethod
     def __format_title(title, context, strand, plot_type):
+        """
+        Format title if it's not given
+        """
         if title is None:
-            return f'{plot_type}_{context}_{strand}'
+            return f'{plot_type}{context}_{strand}'
         else:
             return title
 
     @staticmethod
     def __current_time():
-        return datetime.datetime.now().strftime('%m_%d_%Y_%H:%M:%S')
+        """
+        Current time for file names
+        """
+        return datetime.datetime.now().strftime('%m_%d_%H:%M')
 
     @staticmethod
     def __plot_clear() -> (Axes, Figure):
+        """
+        Cleat previous plot and get new Axes, Figure
+        """
         plt.clf()
         return plt.subplots()
 
     @staticmethod
     def __format_dir(directory):
+        """
+        Format directory name
+        """
         if not directory:
             return os.getcwd()
         if list(directory)[-1] == '/':

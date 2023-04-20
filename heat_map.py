@@ -6,16 +6,15 @@ from matplotlib.axes import Axes
 
 
 class HeatMap:
-    def __init__(self, bismark: pl.DataFrame, rescale: float = None, sort_type: int = 'count'):
-        if sort_type == 'count':
-            sort_expr = pl.col('sum').ceil().sum() / pl.col('count').sum()
-        else:
-            sort_expr = pl.col('sum').sum() / pl.col('count').sum()
+    """
+    Base class for Heat Map data
+    """
+    def __init__(self, bismark: pl.DataFrame):
+        """
+        :param bismark: Bismark DataFrame
+        """
 
-        if rescale is not None:
-            bismark = bismark.with_columns(
-                (pl.col('fragment') * rescale).floor().cast(pl.Int32).alias('fragment')
-            )
+        sort_expr = pl.col('sum').ceil().sum() / pl.col('count').sum()
 
         density = (
             # sort
@@ -88,41 +87,3 @@ class HeatMap:
 
         return density
 
-    def draw(
-            self,
-            axes: Axes = None,
-            context: str = 'CG',
-            strand: str = '+',
-            resolution: int = 100,
-            vmin: float = None,
-            vmax: float = None,
-            flank_windows=0,
-            label: list = None,
-            data: np.ndarray = None
-    ):
-        if axes is None:
-            _, axes = plt.subplots()
-
-        if data is None:
-            data = self.filter(context, strand, resolution)
-
-        image = axes.imshow(
-            data,
-            interpolation="nearest",
-            aspect='auto',
-            cmap=colormaps['cividis'],
-            vmin=vmin, vmax=vmax,
-            label=label
-        )
-        x_ticks = [flank_windows - 1, len(data[0][0]) - flank_windows]
-        x_labels = ['TSS', 'TES']
-        axes.set(
-            xticks=x_ticks,
-            xticklabels=x_labels,
-            yticks=[],
-            ylabel='Methylation density',
-            xlabel='Position'
-        )
-        for tick in x_ticks:
-            axes.axvline(tick, linestyle='--', color='w', alpha=.3)
-        plt.colorbar(image, ax=axes)
