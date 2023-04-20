@@ -2,6 +2,7 @@ import polars as pl
 import numpy as np
 import scipy.signal as signal
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
 
 
 class LinePlot:
@@ -50,12 +51,11 @@ class LinePlot:
 
     def draw(
             self,
-            axes: plt.Axes = None,
+            axes: Axes = None,
             context: str = 'CG',
             strand: str = '+',
             smooth: float = .05,
             label: str = None,
-            color: str = None,
             linewidth: float = 1.0,
             linestyle: str = '-',
     ):
@@ -66,7 +66,7 @@ class LinePlot:
             data = signal.savgol_filter(data, int(len(data) * smooth), 3, mode='nearest')
         x = np.arange(len(data))
 
-        axes.plot(x, data, label=label, color=color, linestyle=linestyle, linewidth=linewidth)
+        axes.plot(x, data, label=label, linestyle=linestyle, linewidth=linewidth)
 
 
 def line_plot_data(bismark: pl.DataFrame):

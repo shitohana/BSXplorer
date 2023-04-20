@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 from matplotlib import colormaps
+from matplotlib.axes import Axes
 
 
 class HeatMap:
@@ -28,7 +29,7 @@ class HeatMap:
 
         self.bismark = density
 
-    def filter(self, context: str = 'CG', strand: str = '+', resolution: int = 100):
+    def filter(self, context: str = 'CG', strand: str = '+', resolution: int = 100) -> np.ndarray:
         density = self.bismark.filter(
             (pl.col('context') == context) & (pl.col('strand') == strand)
         )
@@ -89,18 +90,22 @@ class HeatMap:
 
     def draw(
             self,
-            axes: plt.Axes = None,
+            axes: Axes = None,
+            context: str = 'CG',
+            strand: str = '+',
             resolution: int = 100,
             vmin: float = None,
             vmax: float = None,
-            context: str = 'CG',
-            strand: str = '+',
             flank_windows=0,
-            label: list = None
+            label: list = None,
+            data: np.ndarray = None
     ):
         if axes is None:
             _, axes = plt.subplots()
-        data = self.filter(context, strand, resolution)
+
+        if data is None:
+            data = self.filter(context, strand, resolution)
+
         image = axes.imshow(
             data,
             interpolation="nearest",
