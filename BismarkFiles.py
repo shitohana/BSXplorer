@@ -1,21 +1,21 @@
 import datetime
-
-import numpy as np
-
-from Bismark import Bismark
-import polars as pl
-from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib import colormaps, colors as mpl_colors
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib import colormaps
-from heat_map import HeatMap
+
+from Bismark import *
 
 
 class BismarkFiles:
     """
     Class to process and plot multiple files
     """
+
+    __uninitialized_str = '{1} is None. Ensure that you specified them in constructor'
+
     def __init__(
             self,
             files: list[str],
@@ -43,16 +43,13 @@ class BismarkFiles:
         :param bar_plot: Whether to plot Bar plot or not
         :param box_plot: Whether to plot Box plot or not
         """
-        self.line_plots = []
-        """List with :class:`LinePlot` data"""
-        self.heat_maps = []
-        """List with :class:`HeatMap` data"""
-        self.bar_plots = []
-        """List with :class:`BarPlot` data"""
-        self.box_plots = []
-        """List with :class:`BoxPlot` data"""
-        self.bismarks = []
-        """List with :class:`Bismark` data"""
+        self.line_plots: list[LinePlot] = []
+        self.heat_maps:  list[HeatMap]  = []
+        self.bar_plots:  list[BarPlot]  = []
+        self.box_plots:  list[BoxPlot]  = []
+        self.bismarks:   list[Bismark]  = []
+
+        self.single_fig_dim: tuple = (7, 5)
 
         self.__flank_windows = flank_windows
         self.__gene_windows = gene_windows
@@ -62,11 +59,11 @@ class BismarkFiles:
             if line_plot:
                 self.line_plots.append(bismark.line_plot())
             if heat_map:
-                self.line_plots.append(bismark.heat_map())
+                self.heat_maps.append(bismark.heat_map())
             if bar_plot:
-                self.line_plots.append(bismark.bar_plot())
+                self.bar_plots.append(bismark.bar_plot())
             if box_plot:
-                self.line_plots.append(bismark.box_plot())
+                self.box_plots.append(bismark.box_plot())
             if store_res:
                 self.bismarks.append(bismark)
 
@@ -99,7 +96,10 @@ class BismarkFiles:
         .. _Linestyles: https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html/
         """
 
-        fig, axes = self.__plot_clear()
+        if not self.__check_data(self.line_plots, 'LinePlots'):
+            return
+
+        _, axes = self.__plot_clear()
 
         labels = self.__check_labels(labels)
         title = self.__format_title(title, context, strand, 'lp')
@@ -111,7 +111,7 @@ class BismarkFiles:
         axes.set_title(title, fontstyle='italic')
         self.__add_flank_lines(axes)
 
-        fig.set_size_inches(7, 5)
+        self.__set_single_fig_dim()
         plt.savefig(f'{out_dir}/{title}_{self.__current_time()}.png', dpi=dpi)
 
         return axes
@@ -126,6 +126,9 @@ class BismarkFiles:
             out_dir: str = '',
             dpi: int = 300
     ):
+        if not self.__check_data(self.heat_maps, 'HeatMaps'):
+            return
+
         plt.clf()
         if len(self.heat_maps) > 3:
             subplots_y = 2
@@ -153,7 +156,9 @@ class BismarkFiles:
                 else:
                     ax = axes[j]
                 im_data = data[number]
-                image = ax.imshow(im_data, interpolation="nearest", aspect='auto', cmap=colormaps['cividis'], vmin=vmin, vmax=vmax)
+                image = ax.imshow(
+                    im_data, interpolation="nearest", aspect='auto', cmap=colormaps['cividis'], vmin=vmin, vmax=vmax
+                )
 
                 ax.set(title=labels[number])
 
@@ -176,7 +181,6 @@ class BismarkFiles:
     ):
         """
         Method to plot all contexts and strands
-
         :param smooth: ``smooth * len(density) = window_length`` for SavGol filter
         :param labels: Labels for files data
         :param linewidth: Line width
@@ -185,6 +189,9 @@ class BismarkFiles:
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
         """
+        if not self.__check_data(self.line_plots, 'LinePlots'):
+            return
+
         filters = [(context, strand) for context in ['CG', 'CHG', 'CHH'] for strand in ['+', '-']]
         titles = self.__check_titles(titles)
 
@@ -199,11 +206,118 @@ class BismarkFiles:
             out_dir: str = '',
             dpi: int = 300
     ):
+        """
+        Method to plot all heatmaps and strands
+        :param resolution: Number of vertical rows in the resulting image
+        :param labels: Labels for files data
+        :param titles: Titles of the plot
+        :param out_dir: directory to save plots to
+        :param dpi: DPI of output pic
+        """
+        if not self.__check_data(self.heat_maps, 'HeatMaps'):
+            return
+
         filters = [(context, strand) for context in ['CG', 'CHG', 'CHH'] for strand in ['+', '-']]
         titles = self.__check_titles(titles)
 
         for title, (context, strand) in zip(titles, filters):
             self.draw_heat_maps_filtered(context, strand, resolution, labels, title, out_dir, dpi)
+
+    def draw_bar_plot(
+            self,
+            labels: list[str] = None,
+            out_dir: str = '',
+            dpi: int = 300
+    ):
+        """
+        Method to plot data for all contexts as bar plot. The plot isn't strand specific.
+        :param labels: Labels for files data
+        :param out_dir: directory to save plots to
+        :param dpi: DPI of output pic
+        """
+        if not self.__check_data(self.bar_plots, 'BarPlots'):
+            return
+
+        plt.clf()
+        labels = self.__check_labels(labels)
+        df = pd.DataFrame({'context': ['CG', 'CHG', 'CHH']})
+
+        for bar_plot, label in zip(self.bar_plots, labels):
+            # convert pl.Dataframe to pd.Dataframe - cast Categorical `context` as Utf8. Sort and convert to list
+            df[label] = bar_plot.bismark.with_columns(pl.col('context').cast(pl.Utf8)).sort('context')['density'].to_list()
+
+        self.__set_single_fig_dim()
+
+        df.plot(x='context', kind='bar', stacked=False, edgecolor='k', linewidth=1)
+        plt.ylabel('Methylation density')
+        plt.savefig(f'{out_dir}/bar_{self.__current_time()}.png', dpi=dpi, bbox_inches='tight')
+
+    def draw_box_plot(
+            self,
+            strand_specific: bool = False,
+            widths: float = .6,
+            labels: list[str] = None,
+            out_dir: str = '',
+            dpi: int = 300
+    ):
+        """
+        Method to plot data for all contexts as box plot
+        :param strand_specific: Distinguish strand or not
+        :param widths: Widths of bars
+        :param labels: Labels for files data
+        :param out_dir: directory to save plots to
+        :param dpi: DPI of output pic
+        """
+        if not self.__check_data(self.box_plots, 'BoxPlots'):
+            return
+
+        plt.clf()
+        labels = self.__check_labels(labels)
+
+        # filters list
+        if strand_specific:
+            filters = [(context, strand) for context in ['CG', 'CHG', 'CHH'] for strand in ['+', '-']]
+        else:
+            filters = [context for context in ['CG', 'CHG', 'CHH']]
+
+        x_ticks, x_labels = [], []
+        bplots = []
+        start = 1
+        for fil in filters:
+            if isinstance(fil, tuple):
+                context, strand = fil
+            else:
+                context, strand = fil, None
+
+            data = [box_plot.filter_density(context, strand) for box_plot in self.box_plots]  # data from all samples filtered
+            x_pos = np.arange(start, start + len(data))  # positions of boxes
+
+            bplot = plt.boxplot(data, positions=x_pos, widths=widths, showfliers=False, patch_artist=True)
+            bplots.append(bplot)
+
+            for patch, color in zip(bplot['boxes'], mpl_colors.TABLEAU_COLORS):
+                patch.set_facecolor(color)  # color boxes
+            for median in bplot['medians']:
+                median.set_color('black')  # make medians black instead of orange
+
+            x_ticks.append(np.mean(x_pos))
+            x_labels.append(f'{context}{strand}')
+            start += 1
+
+        plt.xticks(x_ticks, x_labels)
+
+        # This block is needed to make a legend with colors and labels
+        lines = []
+        for (_, color) in zip(self.box_plots, mpl_colors.TABLEAU_COLORS):
+            line, = plt.plot([1, 1], color)
+            lines.append(line)
+        plt.legend(lines, labels)
+        [line.set_visible(False) for line in lines]
+
+        self.__set_single_fig_dim()
+
+        plt.ylabel('Methylation density')
+        plt.savefig(f'{out_dir}/box_{self.__current_time()}.png', dpi=dpi)
 
     def __add_flank_lines(self, axes: plt.Axes):
         if self.__flank_windows:
@@ -226,10 +340,19 @@ class BismarkFiles:
         else:
             return titles
 
+    def __check_data(self, data, data_type: str):
+        if data is None:
+            print(self.__uninitialized_str.format(data_type))
+            return False
+        return True
+
+    def __set_single_fig_dim(self):
+        plt.gcf().set_size_inches(self.single_fig_dim)
+
     @staticmethod
-    def __format_title(title, context, strand, type):
+    def __format_title(title, context, strand, plot_type):
         if title is None:
-            return f'{type}_{context}_{strand}'
+            return f'{plot_type}_{context}_{strand}'
         else:
             return title
 
@@ -241,3 +364,4 @@ class BismarkFiles:
     def __plot_clear() -> (Axes, Figure):
         plt.clf()
         return plt.subplots()
+
