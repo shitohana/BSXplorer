@@ -1,0 +1,5 @@
+﻿BismarkFiles
+============
+
+.. automodule:: BismarkFiles
+    :members:
