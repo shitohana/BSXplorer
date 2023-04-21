@@ -1,5 +1,29 @@
-﻿bar_plot
-========
+﻿bar\_plot
+=========
 
 .. automodule:: bar_plot
-    :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      BarPlot
+   
+   
+
+   
+   
+   
+
+
+

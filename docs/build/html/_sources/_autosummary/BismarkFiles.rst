@@ -2,4 +2,28 @@
 ============
 
 .. automodule:: BismarkFiles
-    :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      BismarkFiles
+   
+   
+
+   
+   
+   
+
+
+

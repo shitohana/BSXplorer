@@ -253,9 +253,7 @@ document.write(`
   </button>
 `);
 </script>
-<label class="sidebar-toggle secondary-toggle btn btn-sm" for="__secondary"title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
-    <span class="fa-solid fa-list"></span>
-</label>
+
 </div></div>
       
     </div>
@@ -271,18 +269,6 @@ document.write(`
     <div id="print-main-content">
         <div id="jb-print-toc">
             
-            <div>
-                <h2> Contents </h2>
-            </div>
-            <nav aria-label="Page">
-                <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#box_plot.BoxPlot"><code class="docutils literal notranslate"><span class="pre">BoxPlot</span></code></a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#box_plot.BoxPlot.filter"><code class="docutils literal notranslate"><span class="pre">BoxPlot.filter()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#box_plot.BoxPlot.filter_density"><code class="docutils literal notranslate"><span class="pre">BoxPlot.filter_density()</span></code></a></li>
-</ul>
-</li>
-</ul>
-            </nav>
         </div>
     </div>
 </div>
@@ -294,41 +280,22 @@ document.write(`
                   
   <section id="module-box_plot">
 <span id="box-plot"></span><h1>box_plot<a class="headerlink" href="#module-box_plot" title="Permalink to this heading">#</a></h1>
-<dl class="py class">
-<dt class="sig sig-object py" id="box_plot.BoxPlot">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">box_plot.</span></span><span class="sig-name descname"><span class="pre">BoxPlot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bismark</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#box_plot.BoxPlot" title="Permalink to this definition">#</a></dt>
-<dd><p>Base class for Box Plot data</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>bismark</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code>) – bismark polars.Dataframe from <a class="reference internal" href="Bismark.html#module-Bismark" title="Bismark"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bismark</span></code></a></p>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="box_plot.BoxPlot.filter">
-<span class="sig-name descname"><span class="pre">filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">context</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strand</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#box_plot.BoxPlot.filter" title="Permalink to this definition">#</a></dt>
-<dd><p>Get filtered data as DataFrame
-:type context: <code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>
-:param context: Context to filter
-:type strand: <code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]
-:param strand: Strand to filter
-:rtype: <code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code>
-:return: Filtered Dataframe</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="box_plot.BoxPlot.filter_density">
-<span class="sig-name descname"><span class="pre">filter_density</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">context</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strand</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#box_plot.BoxPlot.filter_density" title="Permalink to this definition">#</a></dt>
-<dd><p>Get filtered density as list
-:type context: <code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>
-:param context: Context to filter
-:type strand: <code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]
-:param strand: Strand to filter
-:rtype: <code class="xref py py-class docutils literal notranslate"><span class="pre">list</span></code>
-:return: List of density of filtered Dataframe</p>
-</dd></dl>
-
-</dd></dl>
-
+<p class="rubric">Functions</p>
+<table class="autosummary longtable table autosummary">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">boxplot_data</span></code>(bismark)</p></td>
+<td><p></p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable table autosummary">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">BoxPlot</span></code>(bismark)</p></td>
+<td><p>Base class for Box Plot data</p></td>
+</tr>
+</tbody>
+</table>
 </section>
 
 
@@ -370,24 +337,6 @@ document.write(`
             </div>
             
             
-              
-                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
-
-  <div class="sidebar-secondary-item">
-  <div class="page-toc tocsection onthispage">
-    <i class="fa-solid fa-list"></i> Contents
-  </div>
-  <nav class="bd-toc-nav page-toc">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#box_plot.BoxPlot"><code class="docutils literal notranslate"><span class="pre">BoxPlot</span></code></a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#box_plot.BoxPlot.filter"><code class="docutils literal notranslate"><span class="pre">BoxPlot.filter()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#box_plot.BoxPlot.filter_density"><code class="docutils literal notranslate"><span class="pre">BoxPlot.filter_density()</span></code></a></li>
-</ul>
-</li>
-</ul>
-  </nav></div>
-
-</div></div>
               
             
           </div>

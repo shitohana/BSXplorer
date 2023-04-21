@@ -1,5 +1,29 @@
-﻿heat_map
-========
+﻿heat\_map
+=========
 
 .. automodule:: heat_map
-    :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      HeatMap
+   
+   
+
+   
+   
+   
+
+
+

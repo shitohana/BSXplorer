@@ -1,5 +1,29 @@
-﻿line_plot
-=========
+﻿line\_plot
+==========
 
 .. automodule:: line_plot
-    :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      LinePlot
+   
+   
+
+   
+   
+   
+
+
+

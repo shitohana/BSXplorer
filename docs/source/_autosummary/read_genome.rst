@@ -1,5 +1,29 @@
-﻿read_genome
-===========
+﻿read\_genome
+============
 
 .. automodule:: read_genome
-    :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      read_genome
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+

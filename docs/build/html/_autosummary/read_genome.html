@@ -253,9 +253,7 @@ document.write(`
   </button>
 `);
 </script>
-<label class="sidebar-toggle secondary-toggle btn btn-sm" for="__secondary"title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
-    <span class="fa-solid fa-list"></span>
-</label>
+
 </div></div>
       
     </div>
@@ -271,14 +269,6 @@ document.write(`
     <div id="print-main-content">
         <div id="jb-print-toc">
             
-            <div>
-                <h2> Contents </h2>
-            </div>
-            <nav aria-label="Page">
-                <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#read_genome.read_genome"><code class="docutils literal notranslate"><span class="pre">read_genome()</span></code></a></li>
-</ul>
-            </nav>
         </div>
     </div>
 </div>
@@ -290,30 +280,14 @@ document.write(`
                   
   <section id="module-read_genome">
 <span id="read-genome"></span><h1>read_genome<a class="headerlink" href="#module-read_genome" title="Permalink to this heading">#</a></h1>
-<dl class="py function">
-<dt class="sig sig-object py" id="read_genome.read_genome">
-<span class="sig-prename descclassname"><span class="pre">read_genome.</span></span><span class="sig-name descname"><span class="pre">read_genome</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">columns</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flank_length</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_length</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">has_header</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">comment_char</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'#'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#read_genome.read_genome" title="Permalink to this definition">#</a></dt>
-<dd><p>Method to <strong>read gff (or any TSV) as reference genome</strong>. Mandatory columns are chr, type, start, end, strand.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>has_header</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>) – Specify if there is a header</p></li>
-<li><p><strong>comment_char</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Comment character in genome file</p></li>
-<li><p><strong>file</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Path to a file.</p></li>
-<li><p><strong>columns</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">list</span></code>]) – Array with columns to use <code class="docutils literal notranslate"><span class="pre">[&lt;chr&gt;,</span> <span class="pre">&lt;type&gt;,</span> <span class="pre">&lt;start&gt;,</span> <span class="pre">&lt;end&gt;,</span> <span class="pre">&lt;strand&gt;]</span></code>.</p></li>
-<li><p><strong>flank_length</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – Length of flank regions. If not needed - set zero.</p></li>
-<li><p><strong>min_length</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>]) – Filter for length of selected regions. flank_length * 2 by default.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></p>
-</dd>
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>polars.Dataframe with selected regions ranges.</p>
-</dd>
-</dl>
-</dd></dl>
-
+<p class="rubric">Functions</p>
+<table class="autosummary longtable table autosummary">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">read_genome</span></code>(file[, columns, flank_length, ...])</p></td>
+<td><p>Method to <strong>read gff (or any TSV) as reference genome</strong>.</p></td>
+</tr>
+</tbody>
+</table>
 </section>
 
 
@@ -355,20 +329,6 @@ document.write(`
             </div>
             
             
-              
-                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
-
-  <div class="sidebar-secondary-item">
-  <div class="page-toc tocsection onthispage">
-    <i class="fa-solid fa-list"></i> Contents
-  </div>
-  <nav class="bd-toc-nav page-toc">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#read_genome.read_genome"><code class="docutils literal notranslate"><span class="pre">read_genome()</span></code></a></li>
-</ul>
-  </nav></div>
-
-</div></div>
               
             
           </div>

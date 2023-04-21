@@ -253,9 +253,7 @@ document.write(`
   </button>
 `);
 </script>
-<label class="sidebar-toggle secondary-toggle btn btn-sm" for="__secondary"title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
-    <span class="fa-solid fa-list"></span>
-</label>
+
 </div></div>
       
     </div>
@@ -271,20 +269,6 @@ document.write(`
     <div id="print-main-content">
         <div id="jb-print-toc">
             
-            <div>
-                <h2> Contents </h2>
-            </div>
-            <nav aria-label="Page">
-                <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark"><code class="docutils literal notranslate"><span class="pre">Bismark</span></code></a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark.bar_plot"><code class="docutils literal notranslate"><span class="pre">Bismark.bar_plot()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark.box_plot"><code class="docutils literal notranslate"><span class="pre">Bismark.box_plot()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark.heat_map"><code class="docutils literal notranslate"><span class="pre">Bismark.heat_map()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark.line_plot"><code class="docutils literal notranslate"><span class="pre">Bismark.line_plot()</span></code></a></li>
-</ul>
-</li>
-</ul>
-            </nav>
         </div>
     </div>
 </div>
@@ -296,68 +280,14 @@ document.write(`
                   
   <section id="module-Bismark">
 <span id="bismark"></span><h1>Bismark<a class="headerlink" href="#module-Bismark" title="Permalink to this heading">#</a></h1>
-<dl class="py class">
-<dt class="sig sig-object py" id="Bismark.Bismark">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">Bismark.</span></span><span class="sig-name descname"><span class="pre">Bismark</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">genome</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flank_windows</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gene_windows</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cpu</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Bismark.Bismark" title="Permalink to this definition">#</a></dt>
-<dd><p>Base class for Bismark data</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>cpu</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – How many cores to use. Uses every physical core by default</p></li>
-<li><p><strong>file</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – path to bismark genomeWide report</p></li>
-<li><p><strong>genome</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code>) – polars.Dataframe with gene ranges</p></li>
-<li><p><strong>flank_windows</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – Number of windows flank regions to split</p></li>
-<li><p><strong>gene_windows</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – Number of windows gene regions to split</p></li>
-<li><p><strong>batch_size</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – Number of rows to read by one CPU core</p></li>
-</ul>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="Bismark.Bismark.bar_plot">
-<span class="sig-name descname"><span class="pre">bar_plot</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Bismark.Bismark.bar_plot" title="Permalink to this definition">#</a></dt>
-<dd><p>Getter for bar plot. Calculates data once after first call.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="bar_plot.html#bar_plot.BarPlot" title="bar_plot.BarPlot"><code class="xref py py-class docutils literal notranslate"><span class="pre">BarPlot</span></code></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="Bismark.Bismark.box_plot">
-<span class="sig-name descname"><span class="pre">box_plot</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Bismark.Bismark.box_plot" title="Permalink to this definition">#</a></dt>
-<dd><p>Getter for box plot. Calculates data once after first call.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="box_plot.html#box_plot.BoxPlot" title="box_plot.BoxPlot"><code class="xref py py-class docutils literal notranslate"><span class="pre">BoxPlot</span></code></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="Bismark.Bismark.heat_map">
-<span class="sig-name descname"><span class="pre">heat_map</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Bismark.Bismark.heat_map" title="Permalink to this definition">#</a></dt>
-<dd><p>Getter for heat map. Calculates data once after first call.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="heat_map.html#heat_map.HeatMap" title="heat_map.HeatMap"><code class="xref py py-class docutils literal notranslate"><span class="pre">HeatMap</span></code></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="Bismark.Bismark.line_plot">
-<span class="sig-name descname"><span class="pre">line_plot</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Bismark.Bismark.line_plot" title="Permalink to this definition">#</a></dt>
-<dd><p>Getter for line plot. Calculates data once after first call.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="line_plot.html#line_plot.LinePlot" title="line_plot.LinePlot"><code class="xref py py-class docutils literal notranslate"><span class="pre">LinePlot</span></code></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
+<p class="rubric">Classes</p>
+<table class="autosummary longtable table autosummary">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Bismark</span></code>(file, genome[, flank_windows, ...])</p></td>
+<td><p>Base class for Bismark data</p></td>
+</tr>
+</tbody>
+</table>
 </section>
 
 
@@ -399,26 +329,6 @@ document.write(`
             </div>
             
             
-              
-                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
-
-  <div class="sidebar-secondary-item">
-  <div class="page-toc tocsection onthispage">
-    <i class="fa-solid fa-list"></i> Contents
-  </div>
-  <nav class="bd-toc-nav page-toc">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark"><code class="docutils literal notranslate"><span class="pre">Bismark</span></code></a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark.bar_plot"><code class="docutils literal notranslate"><span class="pre">Bismark.bar_plot()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark.box_plot"><code class="docutils literal notranslate"><span class="pre">Bismark.box_plot()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark.heat_map"><code class="docutils literal notranslate"><span class="pre">Bismark.heat_map()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Bismark.Bismark.line_plot"><code class="docutils literal notranslate"><span class="pre">Bismark.line_plot()</span></code></a></li>
-</ul>
-</li>
-</ul>
-  </nav></div>
-
-</div></div>
               
             
           </div>

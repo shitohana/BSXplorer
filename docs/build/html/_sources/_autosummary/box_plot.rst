@@ -1,5 +1,35 @@
-﻿box_plot
-========
+﻿box\_plot
+=========
 
 .. automodule:: box_plot
-    :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      boxplot_data
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      BoxPlot
+   
+   
+
+   
+   
+   
+
+
+

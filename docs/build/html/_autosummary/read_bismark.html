@@ -253,9 +253,7 @@ document.write(`
   </button>
 `);
 </script>
-<label class="sidebar-toggle secondary-toggle btn btn-sm" for="__secondary"title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
-    <span class="fa-solid fa-list"></span>
-</label>
+
 </div></div>
       
     </div>
@@ -271,14 +269,6 @@ document.write(`
     <div id="print-main-content">
         <div id="jb-print-toc">
             
-            <div>
-                <h2> Contents </h2>
-            </div>
-            <nav aria-label="Page">
-                <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#read_bismark.read_bismark_batches"><code class="docutils literal notranslate"><span class="pre">read_bismark_batches()</span></code></a></li>
-</ul>
-            </nav>
         </div>
     </div>
 </div>
@@ -290,35 +280,14 @@ document.write(`
                   
   <section id="module-read_bismark">
 <span id="read-bismark"></span><h1>read_bismark<a class="headerlink" href="#module-read_bismark" title="Permalink to this heading">#</a></h1>
-<dl class="py function">
-<dt class="sig sig-object py" id="read_bismark.read_bismark_batches">
-<span class="sig-prename descclassname"><span class="pre">read_bismark.</span></span><span class="sig-name descname"><span class="pre">read_bismark_batches</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">genome</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flank_windows</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gene_windows</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cpu</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#read_bismark.read_bismark_batches" title="Permalink to this definition">#</a></dt>
-<dd><p>Method to read Bismark <strong>genomeWide cytosine report</strong></p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>cpu</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – How many cores to use. Uses every physical core by default</p></li>
-<li><p><strong>file</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – path to bismark genomeWide report</p></li>
-<li><p><strong>genome</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code>) – polars.Dataframe with gene ranges</p></li>
-<li><p><strong>flank_windows</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – Number of windows flank regions to split</p></li>
-<li><p><strong>gene_windows</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – Number of windows gene regions to split</p></li>
-<li><p><strong>batch_size</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – Number of rows to read by one CPU core</p></li>
-</ul>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></p>
-</dd>
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p><div class="line-block">
-<div class="line">polars.Dataframe with windowed cytosine report with columns</div>
-<div class="line"><code class="docutils literal notranslate"><span class="pre">[&lt;chr&gt;,</span> <span class="pre">&lt;strand&gt;,</span> <span class="pre">&lt;start&gt;,</span> <span class="pre">&lt;context&gt;,</span> <span class="pre">&lt;fragment&gt;,</span> <span class="pre">&lt;density&gt;]</span></code></div>
-<div class="line">(density = count_methylated / count_unmethylated)</div>
-</div>
-</p>
-</dd>
-</dl>
-</dd></dl>
-
+<p class="rubric">Functions</p>
+<table class="autosummary longtable table autosummary">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">read_bismark_batches</span></code>(file, genome[, ...])</p></td>
+<td><p>Method to read Bismark <strong>genomeWide cytosine report</strong></p></td>
+</tr>
+</tbody>
+</table>
 </section>
 
 
@@ -360,20 +329,6 @@ document.write(`
             </div>
             
             
-              
-                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
-
-  <div class="sidebar-secondary-item">
-  <div class="page-toc tocsection onthispage">
-    <i class="fa-solid fa-list"></i> Contents
-  </div>
-  <nav class="bd-toc-nav page-toc">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#read_bismark.read_bismark_batches"><code class="docutils literal notranslate"><span class="pre">read_bismark_batches()</span></code></a></li>
-</ul>
-  </nav></div>
-
-</div></div>
               
             
           </div>
