@@ -12,13 +12,16 @@ def read_bismark_batches(
 ) -> pl.DataFrame:
     """
     Method to read Bismark **genomeWide cytosine report**
+
     :param cpu: How many cores to use. Uses every physical core by default
     :param file: path to bismark genomeWide report
     :param genome: polars.Dataframe with gene ranges
     :param flank_windows: Number of windows flank regions to split
     :param gene_windows: Number of windows gene regions to split
     :param batch_size: Number of rows to read by one CPU core
-    :return: polars.Dataframe with windowed cytosine report with columns ``[<chr>, <strand>, <start>, <context>, <fragment>, <density>]`` (density = count_methylated / count_unmethylated)
+    :return: | polars.Dataframe with windowed cytosine report with columns
+             | ``[<chr>, <strand>, <start>, <context>, <fragment>, <density>]``
+             | (density = count_methylated / count_unmethylated)
     """
     with pl.StringCache():
         total = None

@@ -6,7 +6,13 @@ from matplotlib.axes import Axes
 
 
 class LinePlot:
+    """
+    Base class for Line Plot data
+    """
     def __init__(self, bismark: pl.DataFrame):
+        """
+        :param bismark: bismark polars.Dataframe from :class:`Bismark`
+        """
         density = (
             bismark.lazy()
             .groupby(
@@ -37,7 +43,13 @@ class LinePlot:
         ).collect()
         self.bismark = density
 
-    def filter(self, context: str = 'CG', strand: str = '+'):
+    def filter(self, context: str = 'CG', strand: str = '+') -> pl.DataFrame:
+        """
+        Filter Line Plot data
+        :param context: Context to filter
+        :param strand: Strand to filter
+        :return: Filtered data
+        """
         density = self.bismark.filter(
             (pl.col('context') == context) & (pl.col('strand') == strand)
         )
@@ -59,6 +71,16 @@ class LinePlot:
             linewidth: float = 1.0,
             linestyle: str = '-',
     ):
+        """
+
+        :param axes: :class:`matplotlib.axes.Axes` where to plot
+        :param context: Methylation context to filter
+        :param strand: Strand to filter
+        :param smooth: ``smooth * len(density) = window_length`` for :meth:`scipy.savgol_filter`
+        :param label: Labels for this line
+        :param linewidth: Line width
+        :param linestyle: Line style
+        """
         if axes is None:
             _, axes = plt.subplots()
         data = self.filter(context, strand)

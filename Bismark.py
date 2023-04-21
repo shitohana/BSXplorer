@@ -8,6 +8,9 @@ from bar_plot import BarPlot
 
 
 class Bismark:
+    """
+    Base class for Bismark data
+    """
     def __init__(
             self,
             file: str,
@@ -44,7 +47,6 @@ class Bismark:
     def line_plot(self) -> LinePlot:
         """
         Getter for line plot. Calculates data once after first call.
-        :return: :class:`LinePlot`
         """
         if self.__line_plot is None:
             self.__line_plot = LinePlot(self.bismark)
@@ -53,7 +55,6 @@ class Bismark:
     def heat_map(self) -> HeatMap:
         """
         Getter for heat map. Calculates data once after first call.
-        :return: :class:`HeatMap`
         """
         if self.__heat_map is None:
             self.__heat_map = HeatMap(self.bismark)
@@ -62,7 +63,6 @@ class Bismark:
     def box_plot(self) -> BoxPlot:
         """
         Getter for box plot. Calculates data once after first call.
-        :return: :class:`BoxPlot`
         """
         if self.__box_plot is None:
             self.__box_plot = BoxPlot(self.bismark)
@@ -71,7 +71,6 @@ class Bismark:
     def bar_plot(self) -> BarPlot:
         """
         Getter for bar plot. Calculates data once after first call.
-        :return: :class:`BarPlot`
         """
         if self.__bar_plot is None:
             self.__bar_plot = BarPlot(self.bismark)

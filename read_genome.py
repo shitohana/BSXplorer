@@ -11,6 +11,7 @@ def read_genome(
 ) -> pl.DataFrame:
     """
     Method to **read gff (or any TSV) as reference genome**. Mandatory columns are chr, type, start, end, strand.
+
     :param has_header: Specify if there is a header
     :param comment_char: Comment character in genome file
     :param file: Path to a file.

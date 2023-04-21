@@ -11,7 +11,7 @@ class HeatMap:
     """
     def __init__(self, bismark: pl.DataFrame):
         """
-        :param bismark: Bismark DataFrame
+        :param bismark: bismark polars.Dataframe from :class:`Bismark`
         """
 
         sort_expr = pl.col('sum').ceil().sum() / pl.col('count').sum()

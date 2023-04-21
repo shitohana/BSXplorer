@@ -36,8 +36,8 @@ class BismarkFiles:
         """
         :param files: List with paths to bismark genomeWide reports
         :param genome: polars.Dataframe with gene ranges
-        :param flank_windows: Number of windows flank regions to split
-        :param gene_windows: Number of windows gene regions to split
+        :param flank_windows: Number of windows for flank regions
+        :param gene_windows: Number of windows for gene regions
         :param batch_size: Number of rows to read by one CPU core
         :param cpu: How many cores to use. Uses every physical core by default
         :param line_plot: Whether to plot Line plot or not
@@ -219,10 +219,11 @@ class BismarkFiles:
     ):
         """
         Method to plot all contexts and strands
+
         :param smooth: ``smooth * len(density) = window_length`` for SavGol filter
         :param labels: Labels for files data
         :param linewidth: Line width
-        :param linestyle: Line width see Linestyles_
+        :param linestyle: Line style
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
         """
@@ -244,6 +245,7 @@ class BismarkFiles:
     ):
         """
         Method to plot all heatmaps and strands
+
         :param resolution: Number of vertical rows in the resulting image
         :param labels: Labels for files data
         :param out_dir: directory to save plots to
@@ -266,6 +268,7 @@ class BismarkFiles:
     ):
         """
         Method to plot data for all contexts as bar plot. The plot isn't strand specific.
+
         :param labels: Labels for files data
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
@@ -301,6 +304,7 @@ class BismarkFiles:
     ):
         """
         Method to plot data for all contexts as box plot
+
         :param strand_specific: Distinguish strand or not
         :param widths: Widths of bars
         :param labels: Labels for files data
