@@ -1,10 +1,10 @@
 import polars as pl
 from multiprocessing import cpu_count
 from read_bismark import read_bismark_batches
-from line_plot import LinePlot
-from heat_map import HeatMap
-from box_plot import BoxPlot
-from bar_plot import BarPlot
+from LinePlot import LinePlot
+from HeatMap import HeatMap
+from BoxPlot import BoxPlot
+from BarPlot import BarPlot
 
 
 class Bismark:

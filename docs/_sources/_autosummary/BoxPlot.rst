@@ -1,0 +1,5 @@
+﻿BoxPlot
+=======
+
+.. automodule:: BoxPlot
+    :members:
