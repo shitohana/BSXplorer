@@ -12,8 +12,8 @@ author = 'shitohana'
 release = '0.1'
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../..'))
-sys.path.append(os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('..'))
+sys.path.append(os.path.abspath('../docs'))
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -35,4 +35,3 @@ html_short_title='BismarkPlot'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'sphinx_book_theme'
-html_static_path = ['_static']

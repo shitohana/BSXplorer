@@ -11,7 +11,7 @@ This page gives an overview of all public objects, functions and methods.
     BismarkFiles
     read_bismark
     read_genome
-    line_plot
-    heat_map
-    box_plot
-    bar_plot
+    LinePlot
+    HeatMap
+    BoxPlot
+    BarPlot
