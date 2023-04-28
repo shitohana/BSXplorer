@@ -1,5 +1,0 @@
-﻿BoxPlot
-=======
-
-.. automodule:: BoxPlot
-    :members:
