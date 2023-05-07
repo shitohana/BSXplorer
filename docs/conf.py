@@ -1,7 +1,7 @@
 project = 'BismarkPlot'
 copyright = '2023, shitohana'
 author = 'shitohana'
-release = '0.2.4'
+release = '0.2.5'
 import os
 import sys
 sys.path.insert(0, os.path.abspath('../src'))
