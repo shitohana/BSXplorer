@@ -5,6 +5,12 @@ See the docs: https://shitohana.github.io/BismarkPlot
 
 Right now only ``coverage2cytosine`` input is supported, but support for ``bismark2bedGraph`` will be added soon.
 
+## Installation
+
+```commandline
+pip install bismarkplot
+```
+
 ## Example
 
 First we need to initialize ``genome`` and ``BismarkFiles``. ``genome`` is .gff or .bed file with gene coordinates. ``BismarkFiles`` is a class, which calculates data for all plots, so their types need to be specified when it is initialized.
