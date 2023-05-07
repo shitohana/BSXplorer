@@ -11,8 +11,7 @@ from matplotlib.figure import Figure
 from multiprocessing import cpu_count
 import polars as pl
 
-from Bismark import Bismark, LinePlot, HeatMap, BoxPlot, BarPlot
-
+from .Bismark import *
 
 class BismarkFiles:
     """
