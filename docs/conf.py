@@ -29,6 +29,7 @@ autodoc_default_options = {
     'exclude-members': '__init__'
 }
 autosummary_generate = True
+add_module_names = False
 html_short_title='BismarkPlot'
 
 
