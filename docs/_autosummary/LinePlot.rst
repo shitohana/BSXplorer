@@ -1,5 +1,0 @@
-﻿LinePlot
-========
-
-.. automodule:: LinePlot
-    :members:

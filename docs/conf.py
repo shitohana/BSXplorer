@@ -6,13 +6,13 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'BismarkPlot'
+project = 'bismarkplot'
 copyright = '2023, shitohana'
 author = 'shitohana'
 release = '0.1'
 import os
 import sys
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../src/bismarkplot'))
 sys.path.append(os.path.abspath('../docs'))
 
 # -- General configuration ---------------------------------------------------
@@ -28,7 +28,7 @@ templates_path = ['_templates']
 exclude_patterns = ['_build', '_templates']
 autosummary_generate = True
 autoclass_content = 'both'
-html_short_title='BismarkPlot'
+html_short_title='bismarkplot'
 
 
 # -- Options for HTML output -------------------------------------------------

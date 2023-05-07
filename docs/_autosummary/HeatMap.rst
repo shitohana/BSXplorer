@@ -1,5 +1,0 @@
-﻿HeatMap
-=======
-
-.. automodule:: HeatMap
-    :members:

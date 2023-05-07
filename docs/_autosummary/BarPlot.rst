@@ -1,5 +1,0 @@
-﻿BarPlot
-=======
-
-.. automodule:: BarPlot
-    :members:

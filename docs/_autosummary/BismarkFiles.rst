@@ -1,5 +1,0 @@
-﻿BismarkFiles
-============
-
-.. automodule:: BismarkFiles
-    :members:

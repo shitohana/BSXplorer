@@ -1,5 +1,0 @@
-﻿Bismark
-=======
-
-.. automodule:: Bismark
-    :members:
