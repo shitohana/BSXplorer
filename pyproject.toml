@@ -28,9 +28,9 @@ classifiers = [
 # dynamic = ["version", "description"]
 
 [project.urls]
-homepage = "https://https://github.com/shitohana/BismarkPlo"
-documentation = "https://shitohana.github.io/BismarkPlot/"
-"Bug Tracker" = "https://https://github.com/shitohana/BismarkPlot/issues"
+Homepage = "https://github.com/shitohana/BismarkPlot"
+Documentation = "https://shitohana.github.io/BismarkPlot/"
+"Bug Tracker" = "https://github.com/shitohana/BismarkPlot/issues"
 
 [tool.hatch.build]
 exclude = ["/venv", "/dist", "/test"]

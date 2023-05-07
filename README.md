@@ -44,7 +44,7 @@ bismark.draw_line_plots_filtered(
 ) 
 ```
 Result:
-![Plot for CG+](..%2Ftest%2Ftest%2FPlot%20for%20CG%2B_05_07_23%3A54.png)
+![Plot for CG+](https://user-images.githubusercontent.com/43905117/236703691-023818e9-fb0d-47e6-a328-a712c9285928.png)
 
 For heat maps use (or ``draw_heat_maps_all`` for all contexts)
 ```python
@@ -58,12 +58,13 @@ bismark.draw_heat_maps_filtered(
 ```
 
 Result:
-![Heatmap for CG+](..%2Ftest%2Ftest%2FHeatmap%20for%20CG%2B_05_07_23%3A54.png)
+![Heatmap for CG+](https://user-images.githubusercontent.com/43905117/236703690-b46c7579-3068-4e98-82f0-9a6435c7808b.png)
 For box plot or bar plot use
 ```python
 bismark.draw_box_plot(strand_specific=True, labels=['exp1', 'exp2'])
 bismark.draw_bar_plot(labels=['exp1', 'exp2'])
 ```
+
 Result
-![box_05_07_23:54.png](..%2Ftest%2Ftest%2Fbox_05_07_23%3A54.png)
-![bar_05_07_23:54.png](..%2Ftest%2Ftest%2Fbar_05_07_23%3A54.png)
+![box_05_07_23:54.png](https://user-images.githubusercontent.com/43905117/236703689-9eaaa28a-1a98-4300-a0d0-83039ed9a541.png)
+![bar_05_07_23:54.png](https://user-images.githubusercontent.com/43905117/236703687-f3fd1225-1ad1-45b0-9318-b2282a694e68.png
