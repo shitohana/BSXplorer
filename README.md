@@ -43,6 +43,8 @@ bismark.draw_line_plots_filtered(
     title = 'Plot for CG+'
 ) 
 ```
+Result:
+![Plot for CG+](..%2Ftest%2Ftest%2FPlot%20for%20CG%2B_05_07_23%3A54.png)
 
 For heat maps use (or ``draw_heat_maps_all`` for all contexts)
 ```python
@@ -55,8 +57,13 @@ bismark.draw_heat_maps_filtered(
 )   
 ```
 
+Result:
+![Heatmap for CG+](..%2Ftest%2Ftest%2FHeatmap%20for%20CG%2B_05_07_23%3A54.png)
 For box plot or bar plot use
 ```python
 bismark.draw_box_plot(strand_specific=True, labels=['exp1', 'exp2'])
 bismark.draw_bar_plot(labels=['exp1', 'exp2'])
 ```
+Result
+![box_05_07_23:54.png](..%2Ftest%2Ftest%2Fbox_05_07_23%3A54.png)
+![bar_05_07_23:54.png](..%2Ftest%2Ftest%2Fbar_05_07_23%3A54.png)
