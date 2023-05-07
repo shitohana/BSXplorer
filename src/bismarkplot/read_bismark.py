@@ -1,6 +1,3 @@
-
-
-
 from multiprocessing import cpu_count
 import polars as pl
 
