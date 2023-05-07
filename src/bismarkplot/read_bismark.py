@@ -60,8 +60,11 @@ def read_bismark_batches(
                     # delete redundant columns
                     .drop(['count_m', 'count_um'])
                     # join on nearest start for every row
+                    .sort('position')
+                    # join on nearest start for every row
                     .join_asof(
-                        genome.lazy(), left_on='position', right_on='upstream', by=['chr', 'strand']
+                        genome.lazy().sort('upstream'),
+                        left_on='position', right_on='upstream', by=['chr', 'strand']
                     )
                     # limit by end of gene
                     .filter(pl.col('position') <= pl.col('downstream'))

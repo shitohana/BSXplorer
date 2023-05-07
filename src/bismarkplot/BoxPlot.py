@@ -11,11 +11,11 @@ class BoxPlot:
         """
         self.bismark = (
             bismark.lazy()
-            .groupby(['chr', 'start', 'context'])
+            .groupby(['chr', 'start', 'context', 'strand'])
             .agg(
                 (pl.sum('sum') / pl.sum('count')).alias('density')
             )
-            .groupby(['context'])
+            .groupby(['context', 'strand'])
             .agg(pl.col('density'))
         ).collect()
 
@@ -26,10 +26,15 @@ class BoxPlot:
         :param strand: Strand to filter
         :return: Filtered Dataframe
         """
-        filter_expr = pl.col('context') == context
+
         if strand is not None:
             filter_expr = (pl.col('context') == context) & (pl.col('strand') == strand)
-        return self.bismark.filter(filter_expr)
+            return self.bismark.filter(filter_expr)
+        else:
+            filter_expr = pl.col('context') == context
+            return self.bismark.groupby('context').agg(pl.sum('density')).filter(filter_expr)
+
+
 
     def filter_density(self, context: str, strand: str = None) -> list:
         """
@@ -38,7 +43,10 @@ class BoxPlot:
         :param strand: Strand to filter
         :return: List of density of filtered Dataframe
         """
-        filter_expr = pl.col('context') == context
         if strand is not None:
             filter_expr = (pl.col('context') == context) & (pl.col('strand') == strand)
-        return self.bismark.filter(filter_expr)['density'].to_list()[0]
+            return self.bismark.filter(filter_expr)['density'].to_list()[0]
+        else:
+            filter_expr = pl.col('context') == context
+            return self.bismark.groupby('context').agg(pl.sum('density')).filter(filter_expr)['density'].to_list()[0]
+

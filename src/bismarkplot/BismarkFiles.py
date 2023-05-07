@@ -1,17 +1,16 @@
 import datetime
+import logging
 import os
 
 import matplotlib.pyplot as plt
-import logging
 import numpy as np
 import pandas as pd
 from matplotlib import colormaps, colors as mpl_colors
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from multiprocessing import cpu_count
-import polars as pl
 
 from .Bismark import *
+
 
 class BismarkFiles:
     """
@@ -47,7 +46,9 @@ class BismarkFiles:
         :param box_plot: Whether to plot Box plot or not
         """
         self.__logger = logging.Logger('BismarkFiles')
-        self.__logger.addHandler(logging.StreamHandler())
+        sh = logging.StreamHandler()
+        sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(message)s', '%H:%M:%S'))
+        self.__logger.addHandler(sh)
         self.__logger.setLevel(logging.INFO)
 
         self.line_plots: list[LinePlot] = []
@@ -375,7 +376,7 @@ class BismarkFiles:
         Add flank lines to the given axis (for line plot)
         """
         if self.__flank_windows:
-            x_ticks = [self.__flank_windows - 1, self.__gene_windows - self.__flank_windows]
+            x_ticks = [self.__flank_windows - 1, self.__gene_windows + self.__flank_windows]
             x_labels = ['TSS', 'TES']
             axes.set_xticks(x_ticks)
             axes.set_xticklabels(x_labels)

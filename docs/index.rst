@@ -7,11 +7,11 @@ This page gives an overview of all public objects, functions and methods.
 .. autosummary::
    :toctree: _autosummary
 
-    Bismark
-    BismarkFiles
-    read_bismark
-    read_genome
-    LinePlot
-    HeatMap
-    BoxPlot
-    BarPlot
+    bismarkplot.Bismark
+    bismarkplot.BismarkFiles
+    bismarkplot.read_bismark
+    bismarkplot.read_genome
+    bismarkplot.LinePlot
+    bismarkplot.HeatMap
+    bismarkplot.BoxPlot
+    bismarkplot.BarPlot
