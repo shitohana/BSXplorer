@@ -11,11 +11,11 @@ authors = [
 keywords = ['bismark', 'methylation', 'plot']
 license = {file = "LICENSE.txt"}
 dependencies = [
-    'numpy',
-    'scipy',
-    'polars',
-    'matplotlib',
-    'pandas'
+    "matplotlib>=3.7.1",
+    "numpy>=1.24.2",
+    "pandas>=2.0.0",
+    "polars>=0.17.5",
+    "scipy>=1.10.1"
 ]
 description = "A small library to plot Bismark methylation_exctractor reports."
 readme = "README.md"
