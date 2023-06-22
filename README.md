@@ -1,5 +1,5 @@
 # BismarkPlot
-A small library to plot Bismark ``methylation_exctractor`` reports.
+A small library to plot Bismark ``methylation_extractor`` reports.
 
 See the docs: https://shitohana.github.io/BismarkPlot
 
