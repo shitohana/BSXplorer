@@ -48,5 +48,5 @@ class BoxPlot:
             return self.bismark.filter(filter_expr)['density'].to_list()[0]
         else:
             filter_expr = pl.col('context') == context
-            return self.bismark.groupby('context').agg(pl.sum('density')).filter(filter_expr)['density'].to_list()[0]
+            return self.bismark.explode('density').groupby('context').agg(pl.col('density')).filter(filter_expr)['density'].to_list()[0]
 
