@@ -1,5 +1,7 @@
 import argparse
 import os
+import traceback
+from datetime import datetime
 
 from .BismarkFiles import BismarkFiles
 from .read_genome import read_genome
@@ -28,50 +30,61 @@ parser.add_argument('-LB', '--labels', help='labels for plots', nargs='+', metav
 parser.add_argument('-RS', '--resolution', help='vertical resolution for heat-map', type=int, metavar='N', default=100)
 parser.add_argument('-SS', '--sspecific', help='strand specificity for box plot', action='store_true')
 
-parser.add_argument('-FM', '--format', help='format of output plots', choices=['png', 'pdf', 'svg'], default='pdf')
+parser.add_argument('-FF', '--format', help='format of output plots', choices=['png', 'pdf', 'svg'], default='pdf', dest='file_format')
 
 
 def main():
     args = parser.parse_args()
-    # TODO add format choice
-    genome = read_genome(
-        file=args.genome,
-        flank_length=args.flength,
-        min_length=args.mlength
-    )
 
-    bismark = BismarkFiles(
-        files=args.filename,
-        genome=genome,
-        flank_windows=args.fwindows,
-        gene_windows=args.gwindows,
-        batch_size=args.batch,
-        line_plot=args.line_plot,
-        heat_map=args.heat_map,
-        box_plot=args.box_plot,
-        bar_plot=args.bar_plot
-    )
+    try:
+        genome = read_genome(
+            file=args.genome,
+            flank_length=args.flength,
+            min_length=args.mlength
+        )
 
-    if args.line_plot:
-        bismark.draw_line_plots_all(
-            smooth=args.smooth,
-            labels=args.labels,
-            out_dir=args.out
+        bismark = BismarkFiles(
+            files=args.filename,
+            genome=genome,
+            flank_windows=args.fwindows,
+            gene_windows=args.gwindows,
+            batch_size=args.batch,
+            line_plot=args.line_plot,
+            heat_map=args.heat_map,
+            box_plot=args.box_plot,
+            bar_plot=args.bar_plot
         )
-    if args.heat_map:
-        bismark.draw_heat_maps_all(
-            resolution=args.resolution,
-            labels=args.labels,
-            out_dir=args.out,
-        )
-    if args.box_plot:
-        bismark.draw_box_plot(
-            strand_specific=args.sspecific,
-            labels=args.labels,
-            out_dir=args.out
-        )
-    if args.bar_plot:
-        bismark.draw_bar_plot(
-            labels=args.labels,
-            out_dir=args.out
-        )
+
+        if args.line_plot:
+            bismark.draw_line_plots_all(
+                smooth=args.smooth,
+                labels=args.labels,
+                out_dir=args.out,
+                file_format=args.file_format
+            )
+        if args.heat_map:
+            bismark.draw_heat_maps_all(
+                resolution=args.resolution,
+                labels=args.labels,
+                out_dir=args.out,
+                file_format=args.file_format
+            )
+        if args.box_plot:
+            bismark.draw_box_plot(
+                strand_specific=args.sspecific,
+                labels=args.labels,
+                out_dir=args.out,
+                file_format=args.file_format
+            )
+        if args.bar_plot:
+            bismark.draw_bar_plot(
+                labels=args.labels,
+                out_dir=args.out,
+                file_format=args.file_format
+            )
+
+    except Exception:
+        filename = f'error{datetime.now().strftime("%m_%d_%H:%M")}.txt'
+        with open(args.out + '/' + filename, 'w') as f:
+            f.write(traceback.format_exc())
+        print(f'Error happened. Please open an issue at GitHub with Traceback from file: {f}')

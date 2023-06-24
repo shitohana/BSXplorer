@@ -101,17 +101,19 @@ class BismarkFiles:
             linestyle: str = '-',
             title: str = None,
             out_dir: str = '',
-            dpi: int = 300
+            dpi: int = 300,
+            file_format: str = 'png'
     ):
         """
         Method to plot selected context and strand
 
+        :param file_format: Format of output image
         :param context: Methylation context to filter
         :param strand: Strand to filter
         :param smooth: Smooth * len(density) = window_length for SavGol filter
         :param labels: Labels for files data
         :param linewidth: Line width
-        :param linestyle: Line width see Linestyles_
+        :param linestyle: See Linestyles_
         :param title: Title of the plot
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
@@ -138,9 +140,9 @@ class BismarkFiles:
         self.__add_flank_lines(axes)
 
         self.__set_single_fig_dim()
-        file_name = f'{title}_{self.__current_time()}.png'
+        file_name = f'{title}_{self.__current_time()}.{file_format}'
         self.__logger.info(f'Line plot on {context}{strand} saved as {file_name}')
-        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi)
+        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi, format=file_format)
 
     def draw_heat_maps_filtered(
             self,
@@ -150,11 +152,13 @@ class BismarkFiles:
             labels: list[str] = None,
             title: str = None,
             out_dir: str = '',
-            dpi: int = 300
+            dpi: int = 300,
+            file_format: str = 'png'
     ):
         """
         Method to plot heatmap for selected context and strand
 
+        :param file_format: Format of output image
         :param context: Methylation context to filter
         :param strand: Strand to filter
         :param resolution:
@@ -206,9 +210,9 @@ class BismarkFiles:
 
         plt.suptitle(title.replace('_', ' '), fontstyle='italic')
         fig.set_size_inches(6 * subplots_x, 5 * subplots_y)
-        file_name = f'{title}_{self.__current_time()}.png'
+        file_name = f'{title}_{self.__current_time()}.{file_format}'
         self.__logger.info(f'Heat Map on {context}{strand} saved as {file_name}')
-        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi)
+        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi, format=file_format)
 
     def draw_line_plots_all(
             self,
@@ -217,11 +221,13 @@ class BismarkFiles:
             linewidth: float = 1.0,
             linestyle: str = '-',
             out_dir: str = '',
-            dpi: int = 300
+            dpi: int = 300,
+            file_format: str = 'png'
     ):
         """
         Method to plot all contexts and strands
 
+        :param file_format: Format of output image
         :param smooth: ``smooth * len(density) = window_length`` for SavGol filter
         :param labels: Labels for files data
         :param linewidth: Line width
@@ -236,18 +242,20 @@ class BismarkFiles:
         filters = [(context, strand) for context in ['CG', 'CHG', 'CHH'] for strand in ['+', '-']]
 
         for context, strand in filters:
-            self.draw_line_plots_filtered(context, strand, smooth, labels, linewidth, linestyle, None, out_dir, dpi)
+            self.draw_line_plots_filtered(context, strand, smooth, labels, linewidth, linestyle, None, out_dir, dpi, file_format)
 
     def draw_heat_maps_all(
             self,
             resolution: int = 100,
             labels: list[str] = None,
             out_dir: str = '',
-            dpi: int = 300
+            dpi: int = 300,
+            file_format: str = 'png'
     ):
         """
         Method to plot all heatmaps and strands
 
+        :param file_format: Format of output image
         :param resolution: Number of vertical rows in the resulting image
         :param labels: Labels for files data
         :param out_dir: directory to save plots to
@@ -260,17 +268,19 @@ class BismarkFiles:
         filters = [(context, strand) for context in ['CG', 'CHG', 'CHH'] for strand in ['+', '-']]
 
         for context, strand in filters:
-            self.draw_heat_maps_filtered(context, strand, resolution, labels, None, out_dir, dpi)
+            self.draw_heat_maps_filtered(context, strand, resolution, labels, None, out_dir, dpi, file_format)
 
     def draw_bar_plot(
             self,
             labels: list[str] = None,
             out_dir: str = '',
-            dpi: int = 300
+            dpi: int = 300,
+            file_format: str = 'png'
     ):
         """
         Method to plot data for all contexts as bar plot. The plot isn't strand specific.
 
+        :param file_format: Format of output image
         :param labels: Labels for files data
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
@@ -292,9 +302,9 @@ class BismarkFiles:
         df.plot(x='context', kind='bar', stacked=False, edgecolor='k', linewidth=1)
         plt.xlabel('Context')
         plt.ylabel('Methylation density')
-        file_name = f'bar_{self.__current_time()}.png'
+        file_name = f'bar_{self.__current_time()}.{file_format}'
         self.__logger.info(f'Bar Plot saved as {file_name}')
-        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi, bbox_inches='tight')
+        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi, bbox_inches='tight', format=file_format)
 
     def draw_box_plot(
             self,
@@ -302,11 +312,13 @@ class BismarkFiles:
             widths: float = .6,
             labels: list[str] = None,
             out_dir: str = '',
-            dpi: int = 300
+            dpi: int = 300,
+            file_format: str = 'png'
     ):
         """
         Method to plot data for all contexts as box plot
 
+        :param file_format: Format of output image
         :param strand_specific: Distinguish strand or not
         :param widths: Widths of bars
         :param labels: Labels for files data
@@ -367,9 +379,9 @@ class BismarkFiles:
 
         plt.xlabel('Context')
         plt.ylabel('Methylation density')
-        file_name = f'box_{self.__current_time()}.png'
+        file_name = f'box_{self.__current_time()}.{file_format}'
         self.__logger.info(f'Box Plot saved as {file_name}')
-        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi, bbox_inches='tight')
+        plt.savefig(f'{out_dir}/{file_name}', dpi=dpi, bbox_inches='tight', format=file_format)
 
     def __add_flank_lines(self, axes: plt.Axes):
         """
