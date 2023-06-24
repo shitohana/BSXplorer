@@ -11,7 +11,22 @@ Right now only ``coverage2cytosine`` input is supported, but support for ``bisma
 pip install bismarkplot
 ```
 
-## Example
+## Usage
+You can use ```bismarkplot``` either as python library or directly from console after installing it. 
+To see options:
+```commandline
+bismarkplot --help
+```
+
+## Examples
+### Example in command line
+```commandline
+bismarkplot --genome path/to/genome.gff --flength 2000 --mlength 4000 --fwindows 500 --gwindows 2000 --line-plot --heat-map --box-plot --bar-plot --labels exp1 exp2 --resolution 100 --format pdf path/to/genomeWide1.txt path/to/genomeWide2.txt
+```
+This command will generate line plots and heat maps pdf files for all contexts and box and bar plots.
+
+### Example in python script
+If using bismarkplot as python library is more suitable for you, you can call ```bismarkplot``` methods right from python script.
 
 First we need to initialize ``genome`` and ``BismarkFiles``. ``genome`` is .gff or .bed file with gene coordinates. ``BismarkFiles`` is a class, which calculates data for all plots, so their types need to be specified when it is initialized.
 ```python
