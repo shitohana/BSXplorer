@@ -70,7 +70,8 @@ class BismarkFiles:
             f'Windows: Genes ({gene_windows}) | Flank ({flank_windows})\n' \
             f'Calculating:\n'
 
-        for plot, enabled in zip(['Line Plot', 'Heat Map', 'Box Plot', 'Bar Plot'], [line_plot, heat_map, box_plot, bar_plot]):
+        for plot, enabled in zip(['Line Plot', 'Heat Map', 'Box Plot', 'Bar Plot'],
+                                 [line_plot, heat_map, box_plot, bar_plot]):
             if enabled:
                 logging_message += plot + '\n'
 
