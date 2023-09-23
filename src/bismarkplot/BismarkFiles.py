@@ -2,6 +2,7 @@ import datetime
 import logging
 import os
 
+import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -82,13 +83,13 @@ class BismarkFiles:
 
             bismark = Bismark(file, genome, flank_windows, gene_windows, batch_size, cpu)
             if line_plot:
-                self.line_plots.append(bismark.line_plot())
+                self.line_plots.append(bismark.line_plot)
             if heat_map:
-                self.heat_maps.append(bismark.heat_map())
+                self.heat_maps.append(bismark.heat_map)
             if bar_plot:
-                self.bar_plots.append(bismark.bar_plot())
+                self.bar_plots.append(bismark.bar_plot)
             if box_plot:
-                self.box_plots.append(bismark.box_plot())
+                self.box_plots.append(bismark.box_plot)
             if store_res:
                 self.bismarks.append(bismark)
 
@@ -202,7 +203,7 @@ class BismarkFiles:
                 image = ax.imshow(
                     im_data, interpolation="nearest", aspect='auto', cmap=colormaps['cividis'], vmin=vmin, vmax=vmax
                 )
-
+                assert isinstance(ax, matplotlib.axes.Axes)
                 ax.set(title=labels[number])
                 ax.set_xlabel('Position')
                 ax.set_ylabel('')

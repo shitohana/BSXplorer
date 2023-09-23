@@ -36,14 +36,10 @@ class Bismark:
         self.genome  = genome
         self.bismark = read_bismark_batches(file, genome, flank_windows, gene_windows, batch_size, cpu)
 
-        self.__flank_windows = flank_windows
-        self.__gene_windows  = gene_windows
+        self.__flank_windows, self.__gene_windows = flank_windows, gene_windows
+        self.__line_plot, self.__heat_map, self.__bar_plot, self.__box_plot = [None]*4
 
-        self.__line_plot = None
-        self.__heat_map  = None
-        self.__bar_plot  = None
-        self.__box_plot  = None
-
+    @property
     def line_plot(self) -> LinePlot:
         """
         Getter for line plot. Calculates data once after first call.
@@ -52,6 +48,7 @@ class Bismark:
             self.__line_plot = LinePlot(self.bismark)
         return self.__line_plot
 
+    @property
     def heat_map(self) -> HeatMap:
         """
         Getter for heat map. Calculates data once after first call.
@@ -60,6 +57,7 @@ class Bismark:
             self.__heat_map = HeatMap(self.bismark)
         return self.__heat_map
 
+    @property
     def box_plot(self) -> BoxPlot:
         """
         Getter for box plot. Calculates data once after first call.
@@ -68,6 +66,7 @@ class Bismark:
             self.__box_plot = BoxPlot(self.bismark)
         return self.__box_plot
 
+    @property
     def bar_plot(self) -> BarPlot:
         """
         Getter for bar plot. Calculates data once after first call.
