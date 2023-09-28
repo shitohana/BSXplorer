@@ -120,7 +120,7 @@ class BismarkFiles:
         :param out_dir: directory to save plots to
         :param dpi: DPI of output pic
 
-        .. _Linestyles: https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html/
+        . _Linestyles: https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html/
         """
 
         out_dir = self.__format_dir(out_dir)

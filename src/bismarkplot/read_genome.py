@@ -32,7 +32,7 @@ def read_genome(
         has_header   = has_header,
         separator    = '\t',
         new_columns  = ['chr', 'type', 'start', 'end', 'strand'],
-        dtypes       = {'start': pl.Int32, 'end': pl.Int32}
+        dtypes       = {'start': pl.Int32, 'end': pl.Int32, 'chr': pl.Utf8}
     ).filter(pl.col('type') == 'gene').drop('type')
 
     if flank_length != 0:

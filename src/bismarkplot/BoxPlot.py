@@ -35,7 +35,6 @@ class BoxPlot:
             return self.bismark.groupby('context').agg(pl.sum('density')).filter(filter_expr)
 
 
-
     def filter_density(self, context: str, strand: str = None) -> list:
         """
         Get filtered density as list
