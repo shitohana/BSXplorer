@@ -1,6 +1,6 @@
 import re
 from multiprocessing import cpu_count
-
+from os.path import getsize, basename
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
@@ -10,6 +10,25 @@ from matplotlib.figure import Figure
 from pandas import DataFrame as pdDataFrame
 from pyreadr import write_rds
 from scipy import signal
+import gzip
+
+from scipy.spatial.distance import pdist
+import scipy.cluster.hierarchy as hclust
+
+
+def remove_extension(path):
+    re.sub("\.[^./]+$", "", path)
+
+
+def approx_batch_num(path, batch_size, check_lines=1000):
+    size = getsize(path)
+
+    length = 0
+    with open(path, "rb") as file:
+        for _ in range(check_lines):
+            length += len(file.readline())
+
+    return round(np.ceil(size / (length / check_lines * batch_size)))
 
 
 class Genome:
@@ -47,6 +66,11 @@ class Genome:
         flank_length = 0
         genes = self.__filter_genes(self.genome, 'CDS', min_length, flank_length)
         genes = self.__trim_genes(genes, flank_length).collect()
+        return self.__check_empty(genes)
+
+    def chrom(self):
+        genes = self.genome.group_by(["chr", "strand"]).agg([pl.min("start").alias("start"), pl.max("end").alias("end")]).sort(["chr", "strand"])
+        genes = self.__trim_genes(genes, 0).collect()
         return self.__check_empty(genes)
 
     def near_TSS(self, min_length: int = 4000, flank_length: int = 2000):
@@ -190,8 +214,13 @@ class BismarkBase:
     def save_rds(self, filename, compress: bool = False):
         write_rds(filename, self.bismark.to_pandas(), compress="gzip" if compress else None)
 
-    def save_tsv(self, filename):
-        self.bismark.write_csv(filename, separator="\t")
+    def save_tsv(self, filename, compress = False):
+        if compress:
+            with gzip.open(filename + ".gz", "wb") as file:
+                # noinspection PyTypeChecker
+                self.bismark.write_csv(file, separator="\t")
+        else:
+            self.bismark.write_csv(filename, separator="\t")
 
     @property
     def total_windows(self):
@@ -245,94 +274,102 @@ class Bismark(BismarkBase):
             upstream_windows: int = 500,
             gene_windows: int = 2000,
             downstream_windows: int = 500,
-            batch_size: int = 10 ** 6,
+            batch_size: int = 10 ** 7,
             cpu: int = cpu_count()
     ) -> pl.DataFrame:
-        with pl.StringCache():
-            total = None
-            genome = genome.with_columns(
-                [
-                    pl.col('strand').cast(pl.Categorical),
-                    pl.col('chr').cast(pl.Categorical)
-                ]
-            )
-            bismark = pl.read_csv_batched(
-                file,
-                separator='\t', has_header=False,
-                new_columns=['chr', 'position', 'strand', 'count_m', 'count_um', 'context'],
-                columns=[0, 1, 2, 3, 4, 5],
-                batch_size=batch_size
-            )
+        pl.enable_string_cache(True)
+        total = None
+        genome = genome.with_columns(
+            [
+                pl.col('strand').cast(pl.Categorical),
+                pl.col('chr').cast(pl.Categorical)
+            ]
+        )
+        bismark = pl.read_csv_batched(
+            file,
+            separator='\t', has_header=False,
+            new_columns=['chr', 'position', 'strand', 'count_m', 'count_um', 'context'],
+            columns=[0, 1, 2, 3, 4, 5],
+            batch_size=batch_size
+        )
+        read_approx = approx_batch_num(file, batch_size)
+        read_batches = 0
+
+        batches = bismark.next_batches(cpu)
+        print(f"Reading from {file}")
+        while batches:
+            for df in batches:
+                df = (
+                    df.lazy()
+                    .filter((pl.col('count_m') + pl.col('count_um') != 0))
+                    # calculate density for each cytosine
+                    .with_columns([
+                        pl.col('position').cast(pl.Int32),
+                        pl.col('count_m').cast(pl.Int16),
+                        pl.col('count_um').cast(pl.Int16),
+                        pl.col('chr').cast(pl.Categorical),
+                        pl.col('strand').cast(pl.Categorical),
+                        pl.col('context').cast(pl.Categorical),
+                        ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density')
+                    ])
+                    # delete redundant columns
+                    .drop(['count_m', 'count_um'])
+                    # join on nearest start for every row
+                    .sort('position')
+                    # join on nearest start for every row
+                    .join_asof(
+                        genome.lazy().sort('upstream'),
+                        left_on='position', right_on='upstream', by=['chr', 'strand']
+                    )
+                    # limit by end of gene
+                    .filter(pl.col('position') <= pl.col('downstream'))
+                    .with_columns(
+                        # upstream
+                        pl.when(
+                            pl.col('position') < pl.col('start')
+                        ).then(
+                            (((pl.col('position') - pl.col('upstream')) /
+                              (pl.col('start') - pl.col('upstream'))
+                              ) * upstream_windows).floor()
+                        )
+                        # gene body
+                        .when(
+                            (pl.col('start') <= pl.col('position')) & (pl.col('position') <= pl.col('end'))
+                        ).then(
+                            (((pl.col('position') - pl.col('start'))
+                              / (pl.col('end') - pl.col('start') + 1e-10)
+                              ) * gene_windows).floor() + upstream_windows
+                        )
+                        # downstream
+                        .when(
+                            (pl.col('position') > pl.col('end'))
+                        ).then(
+                            (((pl.col('position') - pl.col('end'))
+                              / (pl.col('downstream') - pl.col('end') + 1e-10)
+                              ) * downstream_windows).floor() + upstream_windows + gene_windows
+                        )
+                        .cast(pl.Int32).alias('fragment')
+                    )
+                    .groupby(
+                        by=['chr', 'strand', 'start', 'context', 'fragment']
+                    )
+                    .agg([
+                        pl.sum('density').alias('sum'),
+                        pl.count('density').alias('count')
+                    ])
+                    .drop_nulls(subset=['sum'])
+                ).collect()
+                if total is None and len(df) == 0:
+                    raise Exception("Error reading Bismark file. Check format or genome. No joins on first batch.")
+                elif total is None:
+                    total = df
+                else:
+                    total = total.extend(df)
+
+                read_batches += 1
+                print(f"\tRead {read_batches}/{read_approx} batch | Total size - {round(total.estimated_size('mb'), 1)}Mb RAM", end="\r")
             batches = bismark.next_batches(cpu)
-            while batches:
-                for df in batches:
-                    df = (
-                        df.lazy()
-                        .filter((pl.col('count_m') + pl.col('count_um') != 0))
-                        # calculate density for each cytosine
-                        .with_columns([
-                            pl.col('position').cast(pl.Int32),
-                            pl.col('count_m').cast(pl.Int8),
-                            pl.col('count_um').cast(pl.Int8),
-                            pl.col('chr').cast(pl.Categorical),
-                            pl.col('strand').cast(pl.Categorical),
-                            pl.col('context').cast(pl.Categorical),
-                            ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density')
-                        ])
-                        # delete redundant columns
-                        .drop(['count_m', 'count_um'])
-                        # join on nearest start for every row
-                        .sort('position')
-                        # join on nearest start for every row
-                        .join_asof(
-                            genome.lazy().sort('upstream'),
-                            left_on='position', right_on='upstream', by=['chr', 'strand']
-                        )
-                        # limit by end of gene
-                        .filter(pl.col('position') <= pl.col('downstream'))
-                        .with_columns(
-                            # upstream
-                            pl.when(
-                                pl.col('position') < pl.col('start')
-                            ).then(
-                                (((pl.col('position') - pl.col('upstream')) /
-                                  (pl.col('start') - pl.col('upstream'))
-                                  ) * upstream_windows).floor()
-                            )
-                            # gene body
-                            .when(
-                                (pl.col('start') <= pl.col('position')) & (pl.col('position') <= pl.col('end'))
-                            ).then(
-                                (((pl.col('position') - pl.col('start'))
-                                  / (pl.col('end') - pl.col('start') + 1e-10)
-                                  ) * gene_windows).floor() + upstream_windows
-                            )
-                            # downstream
-                            .when(
-                                (pl.col('position') > pl.col('end'))
-                            ).then(
-                                (((pl.col('position') - pl.col('end'))
-                                  / (pl.col('downstream') - pl.col('end') + 1e-10)
-                                  ) * downstream_windows).floor() + upstream_windows + gene_windows
-                            )
-                            .cast(pl.Int32).alias('fragment')
-                        )
-                        .groupby(
-                            by=['chr', 'strand', 'start', 'context', 'fragment']
-                        )
-                        .agg([
-                            pl.sum('density').alias('sum'),
-                            pl.count('density').alias('count')
-                        ])
-                        .drop_nulls(subset=['sum'])
-                    ).collect()
-                    if total is None and len(df) == 0:
-                        raise Exception("Error reading Bismark file. Check format or genome. No joins on first batch.")
-                    elif total is None:
-                        total = df
-                    else:
-                        total = total.extend(df)
-                batches = bismark.next_batches(cpu)
+        print("DONE")
         return total
 
     def filter(self, context: str = None, strand: str = None, chr: str = None):
@@ -379,17 +416,17 @@ class Bismark(BismarkBase):
 
         return self.__class__(resized, **metadata)
 
-    def trim_flank(self, upstream = True, downstream = True):
+    def keep_gene(self, upstream = False, downstream = False):
         trimmed = self.bismark.lazy()
         metadata = self.metadata
-        if downstream:
+        if not downstream:
             trimmed = (
                 trimmed
                 .filter(pl.col("fragment") < self.upstream_windows + self.gene_windows)
             )
             metadata["downstream_windows"] = 0
 
-        if upstream:
+        if not upstream:
             trimmed = (
                 trimmed
                 .filter(pl.col("fragment") > self.upstream_windows - 1)
@@ -399,13 +436,43 @@ class Bismark(BismarkBase):
 
         return self.__class__(trimmed.collect(), **metadata)
 
+
+    def dendrogram(self, dist_method="euclidean", clust_method="complete"):
+        template = (
+            self.bismark.lazy()
+            .group_by(["strand", "context", "chr", "start"], maintain_order=True)
+            .agg()
+            .with_columns(pl.lit([list(range(self.bismark["fragment"].max() + 1))]).alias("fragment"))
+            .explode("fragment")
+            .with_columns(pl.col("fragment").cast(pl.Int32))
+        )
+        joined = (
+            template
+            .join(self.bismark.lazy().with_columns((pl.col("sum") / pl.col("count")).alias("density")),
+                  on = ["strand", "context", "chr", "start", "fragment"],
+                  how = "left")
+            .fill_null(0)
+            .group_by(["strand", "context", "chr", "start"], maintain_order=True)
+            .agg(pl.col("density"))
+        ).collect()
+
+        data_matrix = np.matrix(
+            joined["density"].to_list(),
+            dtype=np.float32
+        )
+
+        dist = pdist(data_matrix, metric=dist_method)
+        linkage = hclust.linkage(dist, method=clust_method)
+        ordering = hclust.optimal_leaf_ordering(linkage, dist)
+        return hclust.leaves_list(ordering)
+
     def line_plot(self, resolution: int = None):
         bismark = self.resize(resolution)
         return LinePlot(bismark.bismark, **bismark.metadata)
 
-    def heat_map(self, nrow: int = 100, ncol: int = None):
+    def heat_map(self, nrow: int = 100, ncol: int = None, order = None):
         bismark = self.resize(ncol)
-        return HeatMap(bismark.bismark, nrow, **bismark.metadata)
+        return HeatMap(bismark.bismark, nrow, order = order, **bismark.metadata)
 
 
 class LinePlot(BismarkBase):
@@ -474,7 +541,7 @@ class LinePlot(BismarkBase):
 
 
 class HeatMap(BismarkBase):
-    def __init__(self, bismark_df: pl.DataFrame, nrow, **kwargs):
+    def __init__(self, bismark_df: pl.DataFrame, nrow, order = None, **kwargs):
         super().__init__(bismark_df, **kwargs)
 
         order = (
@@ -483,7 +550,7 @@ class HeatMap(BismarkBase):
             .agg(
                 (pl.col('sum').sum() / pl.col('count').sum()).alias("order")
             )
-        ).collect()["order"]
+        ).collect()["order"] if order is None else order
 
         # sort by rows and add row numbers
         hm_data = (
@@ -522,7 +589,6 @@ class HeatMap(BismarkBase):
                 pl.col("row").cast(pl.Int16)
             )
         )
-
         # join template with actual data
         hm_data = (
             # template
@@ -602,6 +668,8 @@ class BismarkFilesBase:
         if samples is None:
             raise Exception("Flank or gene windows number does not match!")
         self.labels = [str(v) for v in list(range(len(samples)))] if labels is None else labels
+        if len(self.labels) != len(self.samples):
+            raise Exception("Labels length doesn't match samples number")
 
     def save_rds(self, base_filename, compress: bool = False, merge: bool = False):
         if merge:
@@ -615,12 +683,18 @@ class BismarkFilesBase:
 
     def save_tsv(self, base_filename, compress: bool = False, merge: bool = False):
         if merge:
-            pl.concat(
+            merged = pl.concat(
                 [sample.bismark.lazy().with_columns(pl.lit(label)) for sample, label in zip(self.samples, self.labels)]
-            ).write_csv(base_filename, separator="\t")
+            )
+            if compress:
+                with gzip.open(base_filename + ".gz", "wb") as file:
+                    # noinspection PyTypeChecker
+                    merged.write_csv(file, separator="\t")
+            else:
+                merged.write_csv(base_filename, separator="\t")
         if not merge:
             for sample, label in zip(self.samples, self.labels):
-                sample.save_tsv(f"{remove_extension(base_filename)}_{label}.rds", compress="gzip" if compress else None)
+                sample.save_tsv(f"{remove_extension(base_filename)}_{label}.rds", compress=compress)
 
     @staticmethod
     def __check_metadata(samples: list[BismarkBase]):
@@ -659,6 +733,27 @@ class BismarkFiles(BismarkFilesBase):
     def resize(self, to_fragments: int):
         return self.__class__([sample.resize(to_fragments) for sample in self.samples], self.labels)
 
+    @pl.StringCache()
+    def merge(self):
+        metadata = [sample.metadata for sample in self.samples]
+        upstream_windows = set([md.get("upstream_windows") for md in metadata])
+        gene_windows = set([md.get("gene_windows") for md in metadata])
+        downstream_windows = set([md.get("downstream_windows") for md in metadata])
+
+        if len(upstream_windows) == len(downstream_windows) == len(gene_windows) == 1:
+            merged = (
+                pl.concat([sample.bismark for sample in self.samples]).lazy()
+                .group_by(["strand", "context", "chr", "start", "fragment"])
+                .agg([pl.sum("sum").alias("sum"), pl.sum("count").alias("count")])
+            ).collect()
+
+            return Bismark(merged,
+                           upstream_windows=list(upstream_windows)[0],
+                           downstream_windows=list(downstream_windows)[0],
+                           gene_windows=list(gene_windows)[0])
+        else:
+            raise Exception("Metadata for merge DataFrames does not match!")
+
     def line_plot(self, resolution: int = None):
         return LinePlotFiles([sample.line_plot(resolution) for sample in self.samples], self.labels)
 
@@ -675,13 +770,13 @@ class BismarkFiles(BismarkFilesBase):
         else:
             fig, axes = fig_axes
 
+        axes.violinplot(data, showmeans=False, showmedians=True)
         axes.set_xticks(np.arange(1, len(self.labels) + 1), labels=self.labels)
         axes.set_ylabel('Methylation density')
-        axes.violinplot(data, showmeans=False, showmedians=True)
 
         return fig
 
-    def box_plot(self, fig_axes: tuple = None):
+    def box_plot(self, fig_axes: tuple = None, showfliers = False):
         data = LinePlotFiles([sample.line_plot() for sample in self.samples], self.labels)
         data = [sample.plot_data.sort("fragment")["density"].to_numpy() for sample in data.samples]
 
@@ -691,13 +786,11 @@ class BismarkFiles(BismarkFilesBase):
         else:
             fig, axes = fig_axes
 
+        axes.boxplot(data, showfliers=showfliers)
         axes.set_xticks(np.arange(1, len(self.labels) + 1), labels=self.labels)
         axes.set_ylabel('Methylation density')
-        axes.boxplot(data)
 
         return fig
-
-
 
 
 class LinePlotFiles(BismarkFilesBase):
@@ -738,7 +831,7 @@ class HeatMapFiles(BismarkFilesBase):
         else:
             subplots_y = 1
 
-        subplots_x = len(self.samples) // subplots_y
+        subplots_x = len(self.samples) + len(self.samples) % 2 // subplots_y
         fig, axes = plt.subplots(subplots_y, subplots_x)
 
         if not isinstance(axes, np.ndarray):
@@ -759,13 +852,6 @@ class HeatMapFiles(BismarkFilesBase):
                 hm = self.samples[number]
                 assert isinstance(hm, HeatMap)
                 hm.draw((fig, ax), self.labels[number], vmin, vmax)
-                # image = ax.imshow(
-                #     im_data, interpolation="nearest", aspect='auto', cmap=colormaps['cividis'], vmin=vmin, vmax=vmax
-                # )
-                # ax.set(title=self.labels[number])
-                # ax.set_xlabel('Position')
-                # ax.set_ylabel('')
-                # plt.colorbar(image, ax=ax, label='Methylation density')
 
         fig.suptitle(title, fontstyle='italic')
         fig.set_size_inches(6 * subplots_x, 5 * subplots_y)
@@ -775,7 +861,3 @@ class HeatMapFiles(BismarkFilesBase):
         for sample, label in zip(self.samples, self.labels):
             sample.save_plot_rds(f"{remove_extension(base_filename)}_{label}.rds",
                                  compress="gzip" if compress else None)
-
-
-def remove_extension(path):
-    re.sub("\.[^./]+$", "", path)
