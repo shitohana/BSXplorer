@@ -1,26 +1,30 @@
+import gzip
 import re
 from multiprocessing import cpu_count
-from os.path import getsize, basename
-import matplotlib.pyplot as plt
-import numpy as np
+from os.path import getsize
+
 import polars as pl
+
+import numpy as np
+
+import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from pandas import DataFrame as pdDataFrame
-from pyreadr import write_rds
-from scipy import signal
-import gzip
 
+from scipy.signal import savgol_filter
 from scipy.spatial.distance import pdist
 import scipy.cluster.hierarchy as hclust
+
+from pandas import DataFrame as pdDataFrame
+from pyreadr import write_rds
 
 
 def remove_extension(path):
     re.sub("\.[^./]+$", "", path)
 
 
-def approx_batch_num(path, batch_size, check_lines=1000):
+def approx_batch_num(path, batch_size, check_lines=10000):
     size = getsize(path)
 
     length = 0
@@ -33,10 +37,27 @@ def approx_batch_num(path, batch_size, check_lines=1000):
 
 class Genome:
     def __init__(self, genome: pl.LazyFrame):
+        """
+        Class for storing and manipulating genome DataFrame.
+
+        Genome Dataframe columns:
+
+        +------+--------+-------+-------+----------+------------+
+        | chr  | strand | start | end   | upstream | downstream |
+        +======+========+=======+=======+==========+============+
+        | Utf8 | Utf8   | Int32 | Int32 | Int32    | Int32      |
+        +------+--------+-------+-------+----------+------------+
+
+        :param genome: pl.LazyFrame with genome data.
+        """
         self.genome = genome
 
     @classmethod
     def from_gff(cls, file: str):
+        """
+        Constructor with parameters for default gff file.
+        :param file: path to genome.gff.
+        """
         comment_char = '#'
         has_header = False
 
@@ -52,28 +73,54 @@ class Genome:
         return cls(genes)
 
     def gene_body(self, min_length: int = 4000, flank_length: int = 2000) -> pl.DataFrame:
+        """
+        Filter type == gene from gff.
+        :param min_length: minimal length of genes.
+        :param flank_length: length of the flanking region.
+        :return: pl.LazyFrame with genes and their flanking regions.
+        """
         genes = self.__filter_genes(self.genome, 'gene', min_length, flank_length)
         genes = self.__trim_genes(genes, flank_length).collect()
         return self.__check_empty(genes)
 
     def exon(self, min_length: int = 100) -> pl.DataFrame:
+        """
+        Filter type == exon from gff.
+        :param min_length: minimal length of exons.
+        :return: pl.LazyFrame with exons.
+        """
         flank_length = 0
         genes = self.__filter_genes(self.genome, 'exon', min_length, flank_length)
         genes = self.__trim_genes(genes, flank_length).collect()
         return self.__check_empty(genes)
 
     def cds(self, min_length: int = 100) -> pl.DataFrame:
+        """
+        Filter type == CDS from gff.
+        :param min_length: minimal length of CDS.
+        :return: pl.LazyFrame with CDS.
+        """
         flank_length = 0
         genes = self.__filter_genes(self.genome, 'CDS', min_length, flank_length)
         genes = self.__trim_genes(genes, flank_length).collect()
         return self.__check_empty(genes)
 
     def chrom(self):
+        """
+        Get strand-specific chromosome start and end.
+        :return: pl.LazyFrame with chromosome positions.
+        """
         genes = self.genome.group_by(["chr", "strand"]).agg([pl.min("start").alias("start"), pl.max("end").alias("end")]).sort(["chr", "strand"])
         genes = self.__trim_genes(genes, 0).collect()
         return self.__check_empty(genes)
 
     def near_TSS(self, min_length: int = 4000, flank_length: int = 2000):
+        """
+        Get region near TSS - upstream and same length from TSS.
+        :param min_length: minimal length of genes.
+        :param flank_length: length of the flanking region.
+        :return: pl.LazyFrame with genes and their flanking regions.
+        """
         gene_type = "gene"
         genes = self.__filter_genes(self.genome, gene_type, min_length, flank_length)
         genes = (
@@ -102,6 +149,12 @@ class Genome:
         return self.__check_empty(genes)
 
     def near_TES(self, min_length: int = 4000, flank_length: int = 2000):
+        """
+        Get region near TES - downstream and same length from TES.
+        :param min_length: minimal length of genes.
+        :param flank_length: length of the flanking region.
+        :return: pl.LazyFrame with genes and their flanking regions.
+        """
         gene_type = "gene"
         genes = self.__filter_genes(self.genome, gene_type, min_length, flank_length)
         genes = (
@@ -129,8 +182,14 @@ class Genome:
 
         return self.__check_empty(genes)
 
-    def other(self, gene_type: str, min_length: int = 100) -> pl.DataFrame:
-        flank_length = 0
+    def other(self, gene_type: str, min_length: int = 1000, flank_length: int = 100) -> pl.DataFrame:
+        """
+        Filter by selected type.
+        :param gene_type: selected type from gff. Cases need to match.
+        :param min_length: minimal length of genes.
+        :param flank_length: length of the flanking region.
+        :return: pl.LazyFrame with genes and their flanking regions.
+        """
         genes = self.__filter_genes(self.genome, gene_type, min_length, flank_length)
         genes = self.__trim_genes(genes, flank_length).collect()
         return self.__check_empty(genes)
@@ -191,6 +250,26 @@ class Genome:
 
 class BismarkBase:
     def __init__(self, bismark_df: pl.DataFrame, **kwargs):
+        """
+        Base class for Bismark data.
+
+        DataFrame Structure:
+
+        +-----------------+-------------+---------------------+----------------------+------------------+----------------+-----------------------------------------+
+        |       chr       |   strand    |       context       |        start         |     fragment     |      sum       |                  count                  |
+        +=================+=============+=====================+======================+==================+================+=========================================+
+        |   Categorical   | Categorical |     Categorical     |        Int32         |      Int32       |     Int32      |                  Int32                  |
+        | chromosome name |   strand    | methylation context | position of cytosine | fragment in gene | sum methylated | count of all cytosines in this position |
+        +-----------------+-------------+---------------------+----------------------+------------------+----------------+-----------------------------------------+
+
+        :param bismark_df: pl.DataFrame with cytosine methylation status.
+        :param upstream_windows: Number of upstream windows. Required.
+        :param gene_windows: Number of gene windows. Required.
+        :param downstream_windows: Number of downstream windows. Required.
+        :param strand: Strand if filtered.
+        :param context: Methylation context if filtered.
+        :param plot_data: Data for plotting.
+        """
         self.bismark: pl.DataFrame = bismark_df
 
         self.upstream_windows: int | None = kwargs.get("upstream_windows")
@@ -202,6 +281,9 @@ class BismarkBase:
 
     @property
     def metadata(self) -> dict:
+        """
+        :return: Bismark metadata in dict
+        """
         return {
             "upstream_windows": self.upstream_windows,
             "downstream_windows": self.downstream_windows,
@@ -212,9 +294,19 @@ class BismarkBase:
         }
 
     def save_rds(self, filename, compress: bool = False):
+        """
+        Save Bismark DataFrame in Rds.
+        :param filename: path for file.
+        :param compress: whether to compress to gzip or not.
+        """
         write_rds(filename, self.bismark.to_pandas(), compress="gzip" if compress else None)
 
     def save_tsv(self, filename, compress = False):
+        """
+        Save Bismark DataFrame in TSV.
+        :param filename: path for file.
+        :param compress: whether to compress to gzip or not.
+        """
         if compress:
             with gzip.open(filename + ".gz", "wb") as file:
                 # noinspection PyTypeChecker
@@ -243,6 +335,8 @@ class Bismark(BismarkBase):
             cpu: int = cpu_count()
     ):
         """
+        Constructor from Bismark coverage2cytosine output.
+
         :param cpu: How many cores to use. Uses every physical core by default
         :param file: path to bismark genomeWide report
         :param genome: polars.Dataframe with gene ranges
@@ -373,6 +467,12 @@ class Bismark(BismarkBase):
         return total
 
     def filter(self, context: str = None, strand: str = None, chr: str = None):
+        """
+        :param context: methylation context (CG, CHG, CHH) to filter (only one).
+        :param strand: strand to filter (+ or -).
+        :param chr: chromosome name to filter.
+        :return: Filtered ..py:class:: Bismark.
+        """
         context_filter = self.bismark["context"] == context if context is not None else True
         strand_filter  = self.bismark["strand"] == strand if strand is not None else True
         chr_filter     = self.bismark["chr"] == chr if chr is not None else True
@@ -388,6 +488,11 @@ class Bismark(BismarkBase):
                                   **metadata)
 
     def resize(self, to_fragments: int = None):
+        """
+        Modify DataFrame to fewer fragments.
+        :param to_fragments: number of final fragments.
+        :return: Resized ..py:class:: Bismark.
+        """
         if self.upstream_windows is not None and self.gene_windows is not None and self.downstream_windows is not None:
             from_fragments = self.total_windows
         else:
@@ -417,6 +522,12 @@ class Bismark(BismarkBase):
         return self.__class__(resized, **metadata)
 
     def keep_gene(self, upstream = False, downstream = False):
+        """
+        Trim fragments
+        :param upstream: keep upstream?
+        :param downstream: keep downstream?
+        :return: Trimmed ..py:class:: Bismark.
+        """
         trimmed = self.bismark.lazy()
         metadata = self.metadata
         if not downstream:
@@ -436,8 +547,15 @@ class Bismark(BismarkBase):
 
         return self.__class__(trimmed.collect(), **metadata)
 
-
     def dendrogram(self, dist_method="euclidean", clust_method="complete"):
+        """
+        Gives an order for genes in specified method.
+
+        *WARNING* - experimental function. May be very slow!
+        :param dist_method: Distance method to use. See .. py:function:: scipy.spatial.distance.pdist
+        :param clust_method: Clustering method to use. See ..py:function:: scipy.cluster.hierarchy.linkage
+        :return: list of indexes of ordered rows.
+        """
         template = (
             self.bismark.lazy()
             .group_by(["strand", "context", "chr", "start"], maintain_order=True)
@@ -467,12 +585,21 @@ class Bismark(BismarkBase):
         return hclust.leaves_list(ordering)
 
     def line_plot(self, resolution: int = None):
+        """
+        :param resolution: Number of fragments to resize to. Keep None if not needed.
+        :return: .. py:class:: LinePlot
+        """
         bismark = self.resize(resolution)
         return LinePlot(bismark.bismark, **bismark.metadata)
 
-    def heat_map(self, nrow: int = 100, ncol: int = None, order = None):
+    def heat_map(self, nrow: int = 100, ncol: int = 100):
+        """
+        :param nrow: Number of fragments to resize to. Keep None if not needed.
+        :param ncol: Number of columns in the resulting heat-map.
+        :return: ..py:class:: HeatMap
+        """
         bismark = self.resize(ncol)
-        return HeatMap(bismark.bismark, nrow, order = order, **bismark.metadata)
+        return HeatMap(bismark.bismark, nrow, order = None, **bismark.metadata)
 
 
 class LinePlot(BismarkBase):
@@ -509,7 +636,7 @@ class LinePlot(BismarkBase):
         window = int(len(data) * smooth) if int(len(data) * smooth) > polyorder else polyorder + 1
 
         if smooth:
-            data = signal.savgol_filter(data, window, 3, mode='nearest')
+            data = savgol_filter(data, window, 3, mode='nearest')
         x = np.arange(len(data))
         data = data * 100  # convert to percents
         axes.plot(x, data, label=label, linestyle=linestyle, linewidth=linewidth)
@@ -843,6 +970,9 @@ class HeatMapFiles(BismarkFilesBase):
         for i in range(subplots_y):
             for j in range(subplots_x):
                 number = i * subplots_x + j
+                if number > len(self.samples) - 1:
+                    break
+
                 if subplots_y > 1:
                     ax = axes[i, j]
                 else:

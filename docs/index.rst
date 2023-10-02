@@ -8,11 +8,4 @@ This page gives an overview of all public objects, functions and methods.
    :toctree: _autosummary
    :template: module.rst
 
-    bismarkplot.Bismark
-    bismarkplot.BismarkFiles
-    bismarkplot.read_bismark
-    bismarkplot.read_genome
-    bismarkplot.LinePlot
-    bismarkplot.HeatMap
-    bismarkplot.BoxPlot
-    bismarkplot.BarPlot
+    bismarkplot.BismarkPlot

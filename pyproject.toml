@@ -37,4 +37,4 @@ Documentation = "https://shitohana.github.io/BismarkPlot/"
 exclude = ["/venv", "/dist", "/test"]
 
 [project.scripts]
-bismarkplot = "bismarkplot.__main__:main"
+bismarkplot = "bismarkplot.main:main"
