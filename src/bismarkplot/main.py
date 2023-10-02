@@ -3,9 +3,6 @@ import os
 import traceback
 from datetime import datetime
 
-from .BismarkFiles import BismarkFiles
-from .read_genome import read_genome
-
 parser = argparse.ArgumentParser(
     prog='BismarkPlot',
     description='A small library to plot Bismark methylation_extractor reports.'
@@ -37,6 +34,8 @@ def main():
     args = parser.parse_args()
 
     try:
+        from .BismarkFiles import BismarkFiles
+        from .read_genome import read_genome
         genome = read_genome(
             file=args.genome,
             flank_length=args.flength,

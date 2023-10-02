@@ -1,7 +1,7 @@
 project = 'BismarkPlot'
 copyright = '2023, shitohana'
 author = 'shitohana'
-release = '1.0'
+release = '1.2'
 import os
 import sys
 sys.path.insert(0, os.path.abspath('../src'))
@@ -15,7 +15,7 @@ extensions = [
 ]
 
 templates_path = ['_templates']
-autodoc_mock_imports = ['polars', 'matplotlib', 'numpy', 'scipy', 'pandas']
+autodoc_mock_imports = ['polars', 'matplotlib', 'numpy', 'scipy', 'pandas', 'pyarrow']
 autodoc_default_options = {
     'members': True,
     'exclude-members': '__init__'
