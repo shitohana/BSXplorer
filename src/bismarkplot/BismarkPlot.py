@@ -48,7 +48,7 @@ class Genome:
         | Utf8 | Utf8   | Int32 | Int32 | Int32    | Int32      |
         +------+--------+-------+-------+----------+------------+
 
-        :param genome: pl.LazyFrame with genome data.
+        :param genome: :class:`pl.LazyFrame` with genome data.
         """
         self.genome = genome
 
@@ -56,6 +56,7 @@ class Genome:
     def from_gff(cls, file: str):
         """
         Constructor with parameters for default gff file.
+
         :param file: path to genome.gff.
         """
         comment_char = '#'
@@ -75,9 +76,10 @@ class Genome:
     def gene_body(self, min_length: int = 4000, flank_length: int = 2000) -> pl.DataFrame:
         """
         Filter type == gene from gff.
+
         :param min_length: minimal length of genes.
         :param flank_length: length of the flanking region.
-        :return: pl.LazyFrame with genes and their flanking regions.
+        :return: :class:`pl.LazyFrame` with genes and their flanking regions.
         """
         genes = self.__filter_genes(self.genome, 'gene', min_length, flank_length)
         genes = self.__trim_genes(genes, flank_length).collect()
@@ -86,8 +88,9 @@ class Genome:
     def exon(self, min_length: int = 100) -> pl.DataFrame:
         """
         Filter type == exon from gff.
+
         :param min_length: minimal length of exons.
-        :return: pl.LazyFrame with exons.
+        :return: :class:`pl.LazyFrame` with exons.
         """
         flank_length = 0
         genes = self.__filter_genes(self.genome, 'exon', min_length, flank_length)
@@ -97,8 +100,9 @@ class Genome:
     def cds(self, min_length: int = 100) -> pl.DataFrame:
         """
         Filter type == CDS from gff.
+
         :param min_length: minimal length of CDS.
-        :return: pl.LazyFrame with CDS.
+        :return: :class:`pl.LazyFrame` with CDS.
         """
         flank_length = 0
         genes = self.__filter_genes(self.genome, 'CDS', min_length, flank_length)
@@ -108,7 +112,8 @@ class Genome:
     def chrom(self):
         """
         Get strand-specific chromosome start and end.
-        :return: pl.LazyFrame with chromosome positions.
+
+        :return: :class:`pl.LazyFrame` with chromosome positions.
         """
         genes = self.genome.group_by(["chr", "strand"]).agg([pl.min("start").alias("start"), pl.max("end").alias("end")]).sort(["chr", "strand"])
         genes = self.__trim_genes(genes, 0).collect()
@@ -117,9 +122,10 @@ class Genome:
     def near_TSS(self, min_length: int = 4000, flank_length: int = 2000):
         """
         Get region near TSS - upstream and same length from TSS.
+
         :param min_length: minimal length of genes.
         :param flank_length: length of the flanking region.
-        :return: pl.LazyFrame with genes and their flanking regions.
+        :return: :class:`pl.LazyFrame` with genes and their flanking regions.
         """
         gene_type = "gene"
         genes = self.__filter_genes(self.genome, gene_type, min_length, flank_length)
@@ -151,9 +157,10 @@ class Genome:
     def near_TES(self, min_length: int = 4000, flank_length: int = 2000):
         """
         Get region near TES - downstream and same length from TES.
+
         :param min_length: minimal length of genes.
         :param flank_length: length of the flanking region.
-        :return: pl.LazyFrame with genes and their flanking regions.
+        :return: :class:`pl.LazyFrame` with genes and their flanking regions.
         """
         gene_type = "gene"
         genes = self.__filter_genes(self.genome, gene_type, min_length, flank_length)
@@ -185,10 +192,11 @@ class Genome:
     def other(self, gene_type: str, min_length: int = 1000, flank_length: int = 100) -> pl.DataFrame:
         """
         Filter by selected type.
+
         :param gene_type: selected type from gff. Cases need to match.
         :param min_length: minimal length of genes.
         :param flank_length: length of the flanking region.
-        :return: pl.LazyFrame with genes and their flanking regions.
+        :return: :class:`pl.LazyFrame` with genes and their flanking regions.
         """
         genes = self.__filter_genes(self.genome, gene_type, min_length, flank_length)
         genes = self.__trim_genes(genes, flank_length).collect()
@@ -256,11 +264,13 @@ class BismarkBase:
         DataFrame Structure:
 
         +-----------------+-------------+---------------------+----------------------+------------------+----------------+-----------------------------------------+
-        |       chr       |   strand    |       context       |        start         |     fragment     |      sum       |                  count                  |
+        | chr             | strand      | context             | start                | fragment         | sum            | count                                   |
         +=================+=============+=====================+======================+==================+================+=========================================+
-        |   Categorical   | Categorical |     Categorical     |        Int32         |      Int32       |     Int32      |                  Int32                  |
-        | chromosome name |   strand    | methylation context | position of cytosine | fragment in gene | sum methylated | count of all cytosines in this position |
+        | Categorical     | Categorical | Categorical         | Int32                | Int32            | Int32          | Int32                                   |
         +-----------------+-------------+---------------------+----------------------+------------------+----------------+-----------------------------------------+
+        | chromosome name | strand      | methylation context | position of cytosine | fragment in gene | sum methylated | count of all cytosines in this position |
+        +-----------------+-------------+---------------------+----------------------+------------------+----------------+-----------------------------------------+
+
 
         :param bismark_df: pl.DataFrame with cytosine methylation status.
         :param upstream_windows: Number of upstream windows. Required.
@@ -296,6 +306,7 @@ class BismarkBase:
     def save_rds(self, filename, compress: bool = False):
         """
         Save Bismark DataFrame in Rds.
+
         :param filename: path for file.
         :param compress: whether to compress to gzip or not.
         """
@@ -304,6 +315,7 @@ class BismarkBase:
     def save_tsv(self, filename, compress = False):
         """
         Save Bismark DataFrame in TSV.
+
         :param filename: path for file.
         :param compress: whether to compress to gzip or not.
         """
@@ -471,7 +483,7 @@ class Bismark(BismarkBase):
         :param context: methylation context (CG, CHG, CHH) to filter (only one).
         :param strand: strand to filter (+ or -).
         :param chr: chromosome name to filter.
-        :return: Filtered ..py:class:: Bismark.
+        :return: Filtered :class:`Bismark`.
         """
         context_filter = self.bismark["context"] == context if context is not None else True
         strand_filter  = self.bismark["strand"] == strand if strand is not None else True
@@ -490,8 +502,9 @@ class Bismark(BismarkBase):
     def resize(self, to_fragments: int = None):
         """
         Modify DataFrame to fewer fragments.
+
         :param to_fragments: number of final fragments.
-        :return: Resized ..py:class:: Bismark.
+        :return: Resized :class:`Bismark`.
         """
         if self.upstream_windows is not None and self.gene_windows is not None and self.downstream_windows is not None:
             from_fragments = self.total_windows
@@ -524,9 +537,10 @@ class Bismark(BismarkBase):
     def keep_gene(self, upstream = False, downstream = False):
         """
         Trim fragments
+
         :param upstream: keep upstream?
         :param downstream: keep downstream?
-        :return: Trimmed ..py:class:: Bismark.
+        :return: Trimmed :class:`Bismark`.
         """
         trimmed = self.bismark.lazy()
         metadata = self.metadata
@@ -552,8 +566,9 @@ class Bismark(BismarkBase):
         Gives an order for genes in specified method.
 
         *WARNING* - experimental function. May be very slow!
-        :param dist_method: Distance method to use. See .. py:function:: scipy.spatial.distance.pdist
-        :param clust_method: Clustering method to use. See ..py:function:: scipy.cluster.hierarchy.linkage
+
+        :param dist_method: Distance method to use. See :meth:`scipy.spatial.distance.pdist`
+        :param clust_method: Clustering method to use. See :meth:`scipy.cluster.hierarchy.linkage`
         :return: list of indexes of ordered rows.
         """
         template = (
@@ -587,7 +602,7 @@ class Bismark(BismarkBase):
     def line_plot(self, resolution: int = None):
         """
         :param resolution: Number of fragments to resize to. Keep None if not needed.
-        :return: .. py:class:: LinePlot
+        :return: :class:`LinePlot`.
         """
         bismark = self.resize(resolution)
         return LinePlot(bismark.bismark, **bismark.metadata)
@@ -596,7 +611,7 @@ class Bismark(BismarkBase):
         """
         :param nrow: Number of fragments to resize to. Keep None if not needed.
         :param ncol: Number of columns in the resulting heat-map.
-        :return: ..py:class:: HeatMap
+        :return: :class:`HeatMap`.
         """
         bismark = self.resize(ncol)
         return HeatMap(bismark.bismark, nrow, order = None, **bismark.metadata)

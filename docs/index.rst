@@ -5,7 +5,10 @@ This page gives an overview of all public objects, functions and methods.
 .. toctree::
 
 .. autosummary::
-   :toctree: _autosummary
-   :template: module.rst
+    :toctree: _autosummary
+    :template: module.rst
 
-    bismarkplot.BismarkPlot
+    bismarkplot.Genome
+    bismarkplot.BismarkPlot.BismarkBase
+    bismarkplot.Bismark
+    bismarkplot.BismarkFiles

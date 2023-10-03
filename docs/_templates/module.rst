@@ -1,5 +1,6 @@
 {{ name }}
 {{ underline }}
 
-.. automodule:: {{ fullname }}
+.. autoclass:: {{ fullname }}
+    :special-members: __init__
     :members:
