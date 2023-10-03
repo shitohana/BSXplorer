@@ -335,6 +335,9 @@ class BismarkBase:
 
 
 class Bismark(BismarkBase):
+    """
+    Uses BismarkBase as parent class.
+    """
     @classmethod
     def from_file(
             cls,
@@ -619,6 +622,9 @@ class Bismark(BismarkBase):
 
 class LinePlot(BismarkBase):
     def __init__(self, bismark_df: pl.DataFrame, **kwargs):
+        """
+        Calculates plot data for line-plot.
+        """
         super().__init__(bismark_df, **kwargs)
 
         self.plot_data = self.bismark.group_by("fragment").agg(
@@ -630,16 +636,35 @@ class LinePlot(BismarkBase):
             self.plot_data = self.plot_data.with_columns((max_fragment - pl.col("fragment")).alias("fragment"))
 
     def save_plot_rds(self, path, compress: bool = False):
+        """
+        Saves plot data in a rds DataFrame with columns:
+
+        +----------+---------+
+        | fragment | density |
+        +==========+=========+
+        | Int      | Float   |
+        +----------+---------+
+        """
         write_rds(path, self.plot_data.to_pandas(), compress="gzip" if compress else None)
 
     def draw(
             self,
             fig_axes: tuple = None,
-            smooth: float = .05,
+            smooth: int = 10,
             label: str = None,
             linewidth: float = 1.0,
             linestyle: str = '-',
     ) -> Figure:
+        """
+        Draws line-plot on given :class:`matplotlib.Axes` or makes them itself.
+
+        :param fig_axes: Tuple with (fig, axes) from :meth:`matplotlib.plt.subplots`
+        :param smooth: Window for SavGol filter. (see :meth:`scipy.signal.savgol`)
+        :param label: Label of the plot
+        :param linewidth: See matplotlib documentation.
+        :param linestyle: See matplotlib documentation.
+        :return:
+        """
         if fig_axes is None:
             fig, axes = plt.subplots()
         else:
@@ -648,10 +673,11 @@ class LinePlot(BismarkBase):
         data = self.plot_data.sort("fragment")["density"]
 
         polyorder = 3
-        window = int(len(data) * smooth) if int(len(data) * smooth) > polyorder else polyorder + 1
+        window = smooth if smooth > polyorder else polyorder + 1
 
         if smooth:
             data = savgol_filter(data, window, 3, mode='nearest')
+
         x = np.arange(len(data))
         data = data * 100  # convert to percents
         axes.plot(x, data, label=label, linestyle=linestyle, linewidth=linewidth)
@@ -760,6 +786,15 @@ class HeatMap(BismarkBase):
             title: str = None,
             vmin: float = None, vmax: float = None
     ) -> Figure:
+        """
+        Draws heat-map on given :class:`matplotlib.Axes` or makes them itself.
+
+        :param fig_axes: Tuple with (fig, axes) from :meth:`matplotlib.plt.subplots`.
+        :param title: Title of the plot.
+        :param vmin: Minimum for colormap.
+        :param vmax: Maximum for colormap.
+        :return:
+        """
         if fig_axes is None:
             plt.clf()
             fig, axes = plt.subplots()
@@ -782,6 +817,9 @@ class HeatMap(BismarkBase):
         return fig
 
     def save_plot_rds(self, path, compress: bool = False):
+        """
+        Save heat-map data in a matrix (ncol:nrow)
+        """
         write_rds(path, pdDataFrame(self.plot_data), compress="gzip" if compress else None)
 
     def __add_flank_lines(self, axes: plt.Axes):
@@ -851,8 +889,13 @@ class BismarkFilesBase:
 
 
 class BismarkFiles(BismarkFilesBase):
+    """
+    Method for storing and plotting multiple Bismark data.
+
+    If you want to compare Bismark data with different genomes, create this class with a list of :class:`Bismark` classes.
+    """
     @classmethod
-    def fromList(
+    def from_list(
             cls,
             filenames: list[str],
             genome: pl.DataFrame,
@@ -863,20 +906,38 @@ class BismarkFiles(BismarkFilesBase):
             batch_size: int = 10 ** 6,
             cpu: int = cpu_count()
     ):
+        """
+        Constructor for BismarkFiles. See :meth:`Bismark.from_file`
+
+        :param filenames: List of filenames of files
+        :param genome: Same genome file for Bismark files to be aligned to.
+        """
         samples = [Bismark.from_file(file, genome, upstream_windows, gene_windows, downstream_windows, batch_size, cpu) for file in filenames]
         return cls(samples, labels)
 
     def filter(self, context: str = None, strand: str = None, chr: str = None):
+        """
+        :meth:`Bismark.filter` all BismarkFiles
+        """
         return self.__class__([sample.filter(context, strand, chr) for sample in self.samples], self.labels)
 
     def trim_flank(self, upstream = True, downstream = True):
+        """
+        :meth:`Bismark.trim_flank` all BismarkFiles
+        """
         return self.__class__([sample.trim_flank(upstream, downstream) for sample in self.samples], self.labels)
 
     def resize(self, to_fragments: int):
+        """
+        :meth:`Bismark.resize` all BismarkFiles
+        """
         return self.__class__([sample.resize(to_fragments) for sample in self.samples], self.labels)
 
     @pl.StringCache()
     def merge(self):
+        """
+        If data comes from replicates, this method allows to merge them into single DataFrame by grouping them by position.
+        """
         metadata = [sample.metadata for sample in self.samples]
         upstream_windows = set([md.get("upstream_windows") for md in metadata])
         gene_windows = set([md.get("gene_windows") for md in metadata])
@@ -897,12 +958,22 @@ class BismarkFiles(BismarkFilesBase):
             raise Exception("Metadata for merge DataFrames does not match!")
 
     def line_plot(self, resolution: int = None):
+        """
+        :class:`LinePlot` for all files.
+        """
         return LinePlotFiles([sample.line_plot(resolution) for sample in self.samples], self.labels)
 
     def heat_map(self, nrow: int = 100, ncol: int = None):
+        """
+        :class:`HeatMap` for all files.
+        """
         return HeatMapFiles([sample.heat_map(nrow, ncol) for sample in self.samples], self.labels)
 
     def violin_plot(self, fig_axes: tuple = None):
+        """
+        Draws violin plot for Bismark DataFrames.
+        :param fig_axes: see :meth:`LinePlot.__init__`
+        """
         data = LinePlotFiles([sample.line_plot() for sample in self.samples], self.labels)
         data = [sample.plot_data.sort("fragment")["density"].to_numpy() for sample in data.samples]
 
@@ -919,6 +990,10 @@ class BismarkFiles(BismarkFilesBase):
         return fig
 
     def box_plot(self, fig_axes: tuple = None, showfliers = False):
+        """
+        Draws box plot for Bismark DataFrames.
+        :param fig_axes: see :meth:`LinePlot.__init__`
+        """
         data = LinePlotFiles([sample.line_plot() for sample in self.samples], self.labels)
         data = [sample.plot_data.sort("fragment")["density"].to_numpy() for sample in data.samples]
 
