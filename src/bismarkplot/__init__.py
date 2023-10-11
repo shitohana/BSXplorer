@@ -1,3 +1,3 @@
-from .BismarkPlot import Bismark, BismarkFiles, Genome
+from .BismarkPlot import Metagene, MetageneFiles, Genome, ChrLevels
 
 __version__ = 1.2

@@ -19,7 +19,7 @@ dependencies = [
     "pyarrow>=13.0.0",
     "pyreadr>=0.4.9"
 ]
-description = "A small library to plot Bismark methylation_exctractor reports."
+description = "Comprehensive tool for visualizing genome-wide cytosine data."
 readme = "README.md"
 requires-python = ">=3.7"
 classifiers = [
@@ -38,4 +38,5 @@ Documentation = "https://shitohana.github.io/BismarkPlot/"
 exclude = ["/venv", "/dist", "/test"]
 
 [project.scripts]
-bismarkplot = "bismarkplot.main:main"
+bismarkplot-metagene = "bismarkplot.console_metagene:main"
+bismarkplot-chrs = "bismarkplot.console_chrlevels:main"
