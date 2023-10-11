@@ -109,16 +109,6 @@ class Genome:
         genes = self.__trim_genes(genes, flank_length).collect()
         return self.__check_empty(genes)
 
-    def chrom(self):
-        """
-        Get strand-specific chromosome start and end.
-
-        :return: :class:`pl.LazyFrame` with chromosome positions.
-        """
-        genes = self.genome.group_by(["chr", "strand"]).agg([pl.min("start").alias("start"), pl.max("end").alias("end")]).sort(["chr", "strand"])
-        genes = self.__trim_genes(genes, 0).collect()
-        return self.__check_empty(genes)
-
     def near_TSS(self, min_length: int = 4000, flank_length: int = 2000):
         """
         Get region near TSS - upstream and same length from TSS.
@@ -257,6 +247,9 @@ class Genome:
 
 
 class BismarkBase:
+    """
+    Base class for :class:`Bismark` and plots.
+    """
     def __init__(self, bismark_df: pl.DataFrame, **kwargs):
         """
         Base class for Bismark data.
@@ -336,7 +329,7 @@ class BismarkBase:
 
 class Bismark(BismarkBase):
     """
-    Uses BismarkBase as parent class.
+    Stores bismark coverage2cytosine data.
     """
     @classmethod
     def from_file(
@@ -537,7 +530,7 @@ class Bismark(BismarkBase):
 
         return self.__class__(resized, **metadata)
 
-    def keep_gene(self, upstream = False, downstream = False):
+    def trim_flank(self, upstream = True, downstream = True):
         """
         Trim fragments
 
@@ -546,15 +539,15 @@ class Bismark(BismarkBase):
         :return: Trimmed :class:`Bismark`.
         """
         trimmed = self.bismark.lazy()
-        metadata = self.metadata
-        if not downstream:
+        metadata = self.metadata.copy()
+        if downstream:
             trimmed = (
                 trimmed
                 .filter(pl.col("fragment") < self.upstream_windows + self.gene_windows)
             )
             metadata["downstream_windows"] = 0
 
-        if not upstream:
+        if upstream:
             trimmed = (
                 trimmed
                 .filter(pl.col("fragment") > self.upstream_windows - 1)
@@ -695,12 +688,12 @@ class LinePlot(BismarkBase):
         """
         x_ticks = []
         x_labels = []
-        if self.upstream_windows:
+        if self.upstream_windows > 0:
             x_ticks.append(self.upstream_windows - 1)
             x_labels.append('TSS')
-        if self.downstream_windows:
+        if self.downstream_windows > 0:
             x_ticks.append(self.gene_windows + self.upstream_windows)
-            x_labels.append('TSS')
+            x_labels.append('TES')
 
         axes.set_xticks(x_ticks)
         axes.set_xticklabels(x_labels)
@@ -828,19 +821,18 @@ class HeatMap(BismarkBase):
         """
         x_ticks = []
         x_labels = []
-        if self.upstream_windows:
+        if self.upstream_windows > 0:
             x_ticks.append(self.upstream_windows - 1)
             x_labels.append('TSS')
-        if self.downstream_windows:
+        if self.downstream_windows > 0:
             x_ticks.append(self.gene_windows + self.upstream_windows)
-            x_labels.append('TSS')
+            x_labels.append('TES')
 
         if x_ticks and x_labels:
             axes.set_xticks(x_ticks)
             axes.set_xticklabels(x_labels)
             for tick in x_ticks:
                 axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
-
 
 class BismarkFilesBase:
     def __init__(self, samples, labels: list[str] | None):
@@ -890,7 +882,7 @@ class BismarkFilesBase:
 
 class BismarkFiles(BismarkFilesBase):
     """
-    Method for storing and plotting multiple Bismark data.
+    Stores and plots multiple Bismark data.
 
     If you want to compare Bismark data with different genomes, create this class with a list of :class:`Bismark` classes.
     """
@@ -1048,7 +1040,7 @@ class HeatMapFiles(BismarkFilesBase):
         else:
             subplots_y = 1
 
-        subplots_x = len(self.samples) + len(self.samples) % 2 // subplots_y
+        subplots_x = (len(self.samples) + len(self.samples) % 2) // subplots_y
         fig, axes = plt.subplots(subplots_y, subplots_x)
 
         if not isinstance(axes, np.ndarray):
