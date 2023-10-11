@@ -1,9 +1,9 @@
 # BismarkPlot
-A small library to plot Bismark ``methylation_extractor`` reports.
+Comprehensive tool for visualizing genome-wide cytosine data.
 
 See the docs: https://shitohana.github.io/BismarkPlot
 
-Right now only ``coverage2cytosine`` input is supported, but support for ``bismark2bedGraph`` will be added soon.
+Right now only ``coverage2cytosine`` input is supported, but support for other input types will be added soon.
 
 ## Installation
 
@@ -13,79 +13,80 @@ pip install bismarkplot
 
 ## Usage
 You can use ```bismarkplot``` either as python library or directly from console after installing it. 
-To see options:
+
+Console options:
+- *bismarkplot-metagene* - methylation density visualizing tool. 
+- *bismarkplot-chrs* - chromosome methylation levels visualizing tool.
+
+### bismarkplot-metagene
+
 ```commandline
-bismarkplot --help
+usage: BismarkPlot. [-h] [-o OUT] [-g GENOME] [-r {gene,exon,tss,tes}] [-b BATCH] [-c CORES] [-f FLENGTH] [-u UWINDOWS] [-d DWINDOWS] [-m MLENGTH] [-w GWINDOWS] [--line] [--heatmap] [--box] [--violin]
+                    [-S SMOOTH] [-L LABELS [LABELS ...]] [-H H] [-V V] [--dpi DPI] [-F {png,pdf,svg}]
+                    filename [filename ...]
+
+Metagene visualizing tool.
+
+positional arguments:
+  filename              path to bismark methylation_extractor files
+
+options:
+  -h, --help            show this help message and exit
+  -o OUT, --out OUT     output base name (default: current/path)
+  -g GENOME, --genome GENOME
+                        path to GFF genome file (default: None)
+  -r {gene,exon,tss,tes}, --region {gene,exon,tss,tes}
+                        path to GFF genome file (default: gene)
+  -b BATCH, --batch BATCH
+                        number of rows to be read from bismark file by batch (default: 1000000)
+  -c CORES, --cores CORES
+                        number of cores to use (default: None)
+  -f FLENGTH, --flength FLENGTH
+                        length in bp of flank regions (default: 2000)
+  -u UWINDOWS, --uwindows UWINDOWS
+                        number of windows for upstream (default: 50)
+  -d DWINDOWS, --dwindows DWINDOWS
+                        number of windows for downstream (default: 50)
+  -m MLENGTH, --mlength MLENGTH
+                        minimal length in bp of gene (default: 4000)
+  -w GWINDOWS, --gwindows GWINDOWS
+                        number of windows for genes (default: 100)
+  --line                line-plot enabled (default: False)
+  --heatmap             heat-map enabled (default: False)
+  --box                 box-plot enabled (default: False)
+  --violin              violin-plot enabled (default: False)
+  -S SMOOTH, --smooth SMOOTH
+                        windows for smoothing (default: 10)
+  -L LABELS [LABELS ...], --labels LABELS [LABELS ...]
+                        labels for plots (default: None)
+  -H H                  vertical resolution for heat-map (default: 100)
+  -V V                  vertical resolution for heat-map (default: 100)
+  --dpi DPI             dpi of output plot (default: 200)
+  -F {png,pdf,svg}, --format {png,pdf,svg}
+                        format of output plots (default: pdf)
 ```
 
-## Examples
-### Example in command line
+### bismarkplot-chrs
+
 ```commandline
-bismarkplot --genome path/to/genome.gff --flength 2000 --mlength 4000 --fwindows 500 --gwindows 2000 --line-plot --heat-map --box-plot --bar-plot --labels exp1 exp2 --resolution 100 --format pdf path/to/genomeWide1.txt path/to/genomeWide2.txt
+usage: BismarkPlot [-h] [-o DIR] [-b N] [-c CORES] [-w N] [-m N] [-S FLOAT] [-F {png,pdf,svg}] path/to/txt [path/to/txt ...]
+
+Chromosome methylation levels visualization.
+
+positional arguments:
+  path/to/txt           path to bismark methylation_extractor file
+
+options:
+  -h, --help            show this help message and exit
+  -o DIR, --out DIR     output base name (default: current/path)
+  -b N, --batch N       number of rows to be read from bismark file by batch (default: 1000000)
+  -c CORES, --cores CORES
+                        number of cores to use (default: None)
+  -w N, --wlength N     number of windows for genes (default: 100000)
+  -m N, --mlength N     minimum chromosome length (default: 1000000)
+  -S FLOAT, --smooth FLOAT
+                        windows for smoothing (0 - no smoothing, 1 - straight line (default: 50)
+  -F {png,pdf,svg}, --format {png,pdf,svg}
+                        format of output plots (default: pdf)
+
 ```
-This command will generate line plots and heat maps pdf files for all contexts and box and bar plots.
-
-### Example in python script
-If using bismarkplot as python library is more suitable for you, you can call ```bismarkplot``` methods right from python script.
-
-First we need to initialize ``genome`` and ``BismarkFiles``. ``genome`` is .gff or .bed file with gene coordinates. ``BismarkFiles`` is a class, which calculates data for all plots, so their types need to be specified when it is initialized.
-```python
-import bismarkplot
-
-file = 'path/to/genome.gff'
-
-genome = bismarkplot.read_genome(
-    file,
-    flank_length=2000,
-    min_length=4000
-)
-
-files = ['path/to/genomeWide1.txt', 'path/to/genomeWide2.txt']
-bismark = bismarkplot.BismarkFiles(
-    files, genome,
-    flank_windows=500,
-    gene_windows=2000,
-    line_plot=True,
-    heat_map=True,
-    box_plot=True,
-    bar_plot=True
-)
-```
-
-Let's now draw plots themselves.
-
-For line plots use (or ``draw_line_plots_all`` for all contexts)
-```python
-bismark.draw_line_plots_filtered(
-    context='CG',
-    strand='+',
-    smooth=.05,
-    labels = ['exp1', 'exp2'],
-    title = 'Plot for CG+'
-) 
-```
-
-<img alt="Plot for CG+" src="https://user-images.githubusercontent.com/43905117/236703691-023818e9-fb0d-47e6-a328-a712c9285928.png" width="" height="400"/>
-
-
-For heat maps use (or ``draw_heat_maps_all`` for all contexts)
-```python
-bismark.draw_heat_maps_filtered(
-    context='CG',
-    strand='+',
-    resolution=100,
-    labels = ['exp1', 'exp2'],
-    title = 'Heatmap for CG+'
-)   
-```
-
-<img alt="Heatmap for CG+" height="300" src="https://user-images.githubusercontent.com/43905117/236703690-b46c7579-3068-4e98-82f0-9a6435c7808b.png"/>
-
-
-For box plot or bar plot use
-```python
-bismark.draw_box_plot(strand_specific=True, labels=['exp1', 'exp2'])
-bismark.draw_bar_plot(labels=['exp1', 'exp2'])
-```
-<img alt="box_05_07_23:54.png" height="400" src="https://user-images.githubusercontent.com/43905117/236703689-9eaaa28a-1a98-4300-a0d0-83039ed9a541.png"/>
-<img alt="bar_05_07_23:54.png" height="400" src="https://user-images.githubusercontent.com/43905117/236703687-f3fd1225-1ad1-45b0-9318-b2282a694e68.png"/>
