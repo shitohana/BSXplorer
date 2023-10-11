@@ -4,8 +4,8 @@ import traceback
 from datetime import datetime
 
 parser = argparse.ArgumentParser(
-    prog='BismarkPlot Chromosome methylation levels',
-    description='A small library to plot Bismark methylation_extractor reports.'  # TODO CHANGE
+    prog='BismarkPlot',
+    description='Chromosome methylation levels visualization.'
 )
 
 parser.add_argument('filename', help='path to bismark methylation_extractor file', nargs='+', metavar='path/to/txt')
