@@ -128,9 +128,10 @@ lp.draw().savefig("path/to/hm.pdf")       # matplotlib.Figure
 ```
 Output:
 
-<img src="https://user-images.githubusercontent.com/43905117/274546389-8b97edcb-6ab4-4f17-a970-389819fbeaec.png" width="300">
-<img src="https://user-images.githubusercontent.com/43905117/274546419-079e004b-8f6e-4ce9-a3dc-fc4ad9592adc.png" width="300">
-
+<p float="left" align="middle">
+    <img src="https://user-images.githubusercontent.com/43905117/274546389-8b97edcb-6ab4-4f17-a970-389819fbeaec.png" width="300">
+    <img src="https://user-images.githubusercontent.com/43905117/274546419-079e004b-8f6e-4ce9-a3dc-fc4ad9592adc.png" width="300">
+</p>
 ### Multiple samples, same specie
 
 ```python
