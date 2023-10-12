@@ -358,6 +358,15 @@ class ChrLevels:
         batch_size: int = 10 ** 6,
         cpu: int = cpu_count()
     ):
+        """
+        Initialize ChrLevels with CX_report file
+
+        :param file: path to file
+        :param chr_min_length: minimum length of chromosome to be analyzed
+        :param window_length: length of windows in bp
+        :param cpu: How many cores to use. Uses every physical core by default
+        :param batch_size: Number of rows to read by one CPU core
+        """
         bismark = pl.read_csv_batched(
             file,
             separator='\t', has_header=False,
