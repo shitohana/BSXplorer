@@ -5,31 +5,31 @@ from datetime import datetime
 
 parser = argparse.ArgumentParser(
     prog='BismarkPlot.',
-    description='Metagene visualizing tool.'
+    description='Metagene visualizing tool.',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter
 )
-
-parser.add_argument('filename', help='path to bismark methylation_extractor files', nargs='+', metavar='path/to/txt')
-parser.add_argument('-o', '--out', help='output base name', default=os.path.abspath(os.getcwd()), metavar='DIR')
-parser.add_argument('-g', '--genome', help='path to GFF genome file', metavar='/path/to/gff')
-parser.add_argument('-r', '--region', help='path to GFF genome file', metavar='/path/to/gff', default = "gene", choices=["gene", "exon", "tss", "tes"])
-parser.add_argument('-b', '--batch', help='number of rows to be read from bismark file by batch', type=int, default=10**6, metavar='N')
+parser.add_argument('filename', help='path to bismark methylation_extractor files', nargs='+')
+parser.add_argument('-o', '--out', help='output base name', default=os.path.abspath(os.getcwd()))
+parser.add_argument('-g', '--genome', help='path to GFF genome file')
+parser.add_argument('-r', '--region', help='path to GFF genome file', default = "gene", choices=["gene", "exon", "tss", "tes"])
+parser.add_argument('-b', '--batch', help='number of rows to be read from bismark file by batch', type=int, default=10**6)
 parser.add_argument('-c', '--cores', help='number of cores to use', type=int, default=None)
-parser.add_argument('-f', '--flength', help='length in bp of flank regions', type=int, default=2000, metavar='LENGTH')
-parser.add_argument('-u', '--uwindows', help='number of windows for upstream', type=int, default=50, metavar='N')
-parser.add_argument('-d', '--dwindows', help='number of windows for downstream', type=int, default=50, metavar='N')
-parser.add_argument('-m', '--mlength', help='minimal length in bp of gene', type=int, default=4000, metavar='LENGTH')
-parser.add_argument('-w', '--gwindows', help='number of windows for genes', type=int, default=100, metavar='N')
+parser.add_argument('-f', '--flength', help='length in bp of flank regions', type=int, default=2000)
+parser.add_argument('-u', '--uwindows', help='number of windows for upstream', type=int, default=50)
+parser.add_argument('-d', '--dwindows', help='number of windows for downstream', type=int, default=50)
+parser.add_argument('-m', '--mlength', help='minimal length in bp of gene', type=int, default=4000)
+parser.add_argument('-w', '--gwindows', help='number of windows for genes', type=int, default=100)
 
-parser.add_argument('-LP', '--line-plot', help='line-plot enabled', action='store_true')
-parser.add_argument('-HM', '--heat-map', help='heat-map enabled', action='store_true')
-parser.add_argument('-BX', '--box-plot', help='box-plot enabled', action='store_true')
-parser.add_argument('-VL', '--violin-plot', help='bar-plot enabled', action='store_true')
+parser.add_argument('--line', help='line-plot enabled', action='store_true')
+parser.add_argument('--heatmap', help='heat-map enabled', action='store_true')
+parser.add_argument('--box', help='box-plot enabled', action='store_true')
+parser.add_argument('--violin', help='violin-plot enabled', action='store_true')
 
-parser.add_argument('-S', '--smooth', help='windows for smoothing (0 - no smoothing, 1 - straight line', type=float, default=10, metavar='FLOAT')
-parser.add_argument('-L', '--labels', help='labels for plots', nargs='+', metavar='NAME')
-parser.add_argument('-HR', '--hresolution', help='vertical resolution for heat-map', type=int, metavar='N', default=100)
-parser.add_argument('-VR', '--vresolution', help='vertical resolution for heat-map', type=int, metavar='N', default=100)
-parser.add_argument("--dpi", help="dpi of output plot", type=int, metavar="N", default=200)
+parser.add_argument('-S', '--smooth', help='windows for smoothing', type=float, default=10)
+parser.add_argument('-L', '--labels', help='labels for plots', nargs='+')
+parser.add_argument('-H', help='vertical resolution for heat-map', type=int, default=100)
+parser.add_argument('-V', help='vertical resolution for heat-map', type=int, default=100)
+parser.add_argument("--dpi", help="dpi of output plot", type=int, default=200)
 
 parser.add_argument('-F', '--format', help='format of output plots', choices=['png', 'pdf', 'svg'], default='pdf', dest='file_format')
 
@@ -82,3 +82,7 @@ def main():
         with open(args.out + '/' + filename, 'w') as f:
             f.write(traceback.format_exc())
         print(f'Error happened. Please open an issue at GitHub with Traceback from file: {f}')
+
+
+if __name__ == "__main__":
+    main()

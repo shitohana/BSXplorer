@@ -5,7 +5,8 @@ from datetime import datetime
 
 parser = argparse.ArgumentParser(
     prog='BismarkPlot',
-    description='Chromosome methylation levels visualization.'
+    description='Chromosome methylation levels visualization.',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter
 )
 
 parser.add_argument('filename', help='path to bismark methylation_extractor file', nargs='+', metavar='path/to/txt')
@@ -46,3 +47,7 @@ def main():
         with open(args.out + '/' + filename, 'w') as f:
             f.write(traceback.format_exc())
         print(f'Error happened. Please open an issue at GitHub with Traceback from file: {f}')
+
+
+if __name__ == "__main__":
+    main()
