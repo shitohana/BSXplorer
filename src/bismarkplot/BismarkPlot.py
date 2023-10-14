@@ -121,6 +121,18 @@ class Genome:
         :param flank_length: length of the flanking region.
         :return: :class:`pl.LazyFrame` with genes and their flanking regions.
         """
+        upstream_length = (
+            # when before length is enough
+            # we set upstream length to specified
+            pl.when(pl.col('upstream') >= flank_length).then(flank_length)
+            # when genes are intersecting (current start < previous end)
+            # we don't take this as upstream region
+            .when(pl.col('upstream') < 0).then(0)
+            # when length between genes is not enough for full specified length
+            # we divide it into half
+            .otherwise((pl.col('upstream') - (pl.col('upstream') % 2)) // 2)
+        )
+
         gene_type = "gene"
         genes = self.__filter_genes(
             self.genome, gene_type, min_length, flank_length)
@@ -135,13 +147,7 @@ class Genome:
             ])
             .explode(['start', 'upstream'])
             .with_columns([
-                (pl.col('start') - pl.when(
-                    pl.col('upstream') >= flank_length
-                )
-                    .then(flank_length)
-                    .otherwise(
-                    (pl.col('upstream') - pl.col('upstream') % 2) // 2
-                )).alias('upstream'),
+                (pl.col('start') - upstream_length).alias('upstream'),
                 (pl.col("start") + flank_length).alias("end")
             ])
             .with_columns(pl.col("end").alias("downstream"))
@@ -157,6 +163,19 @@ class Genome:
         :param flank_length: length of the flanking region.
         :return: :class:`pl.LazyFrame` with genes and their flanking regions.
         """
+
+        downstream_length = (
+            # when before length is enough
+            # we set upstream length to specified
+            pl.when(pl.col('downstream') >= flank_length).then(flank_length)
+            # when genes are intersecting (current start < previous end)
+            # we don't take this as upstream region
+            .when(pl.col('downstream') < 0).then(0)
+            # when length between genes is not enough for full specified length
+            # we divide it into half
+            .otherwise((pl.col('downstream') - pl.col('downstream') % 2) // 2)
+        )
+
         gene_type = "gene"
         genes = self.__filter_genes(
             self.genome, gene_type, min_length, flank_length)
@@ -171,13 +190,7 @@ class Genome:
             ])
             .explode(['end', 'downstream'])
             .with_columns([
-                (pl.col('end') + pl.when(
-                    pl.col('downstream') >= flank_length
-                )
-                    .then(flank_length)
-                    .otherwise(
-                    (pl.col('downstream') - pl.col('downstream') % 2) // 2
-                )).alias('downstream'),
+                (pl.col('end') + downstream_length).alias('downstream'),
                 (pl.col("end") - flank_length).alias("start")
             ])
             .with_columns(pl.col("start").alias("upstream"))
@@ -203,45 +216,62 @@ class Genome:
     def __filter_genes(genes, gene_type, min_length, flank_length):
         genes = genes.filter(pl.col('type') == gene_type).drop('type')
 
+        # filter genes, which start < flank_length
         if flank_length > 0:
             genes = genes.filter(pl.col('start') > flank_length)
+        # filter genes which don't pass length threshold
         if min_length > 0:
-            genes = genes.filter(pl.col('end') - pl.col('start') > min_length)
+            genes = genes.filter((pl.col('end') - pl.col('start')) > min_length)
 
         return genes
 
     @staticmethod
     def __trim_genes(genes, flank_length) -> pl.LazyFrame:
+        # upstream shift
+        # calculates length to previous gene on same chr_strand
+        length_before = (pl.col('start').shift(-1) - pl.col('end')).shift(1).fill_null(flank_length)
+        # downstream shift
+        # calculates length to next gene on same chr_strand
+        length_after = (pl.col('start').shift(-1) - pl.col('end')).fill_null(flank_length)
+
+        upstream_length = (
+            # when before length is enough
+            # we set upstream length to specified
+            pl.when(pl.col('upstream') >= flank_length).then(flank_length)
+            # when genes are intersecting (current start < previous end)
+            # we don't take this as upstream region
+            .when(pl.col('upstream') < 0).then(0)
+            # when length between genes is not enough for full specified length
+            # we divide it into half
+            .otherwise((pl.col('upstream') - (pl.col('upstream') % 2)) // 2)
+        )
+
+        downstream_length = (
+            # when before length is enough
+            # we set upstream length to specified
+            pl.when(pl.col('downstream') >= flank_length).then(flank_length)
+            # when genes are intersecting (current start < previous end)
+            # we don't take this as upstream region
+            .when(pl.col('downstream') < 0).then(0)
+            # when length between genes is not enough for full specified length
+            # we divide it into half
+            .otherwise((pl.col('downstream') - pl.col('downstream') % 2) // 2)
+        )
+
         return (
             genes
             .groupby(['chr', 'strand'], maintain_order=True).agg([
-                pl.col('start'), pl.col('end'),
-                # upstream shift
-                (pl.col('start').shift(-1) - pl.col('end')).shift(1)
-                .fill_null(flank_length)
-                .alias('upstream'),
-                # downstream shift
-                (pl.col('start').shift(-1) - pl.col('end'))
-                .fill_null(flank_length)
-                .alias('downstream')
+                pl.col('start'),
+                pl.col('end'),
+                length_before.alias('upstream'),
+                length_after.alias('downstream')
             ])
             .explode(['start', 'end', 'upstream', 'downstream'])
             .with_columns([
-                (pl.col('start') - pl.when(
-                    pl.col('upstream') >= flank_length
-                )
-                    .then(flank_length)
-                    .otherwise(
-                    (pl.col('upstream') - pl.col('upstream') % 2) // 2
-                )).alias('upstream'),
-
-                (pl.col('end') + pl.when(
-                    pl.col('downstream') >= flank_length
-                )
-                    .then(flank_length)
-                    .otherwise(
-                    (pl.col('downstream') - pl.col('downstream') % 2) // 2
-                )).alias('downstream')
+                # calculates length of region
+                (pl.col('start') - upstream_length).alias('upstream'),
+                # calculates length of region
+                (pl.col('end') + downstream_length).alias('downstream')
             ])
         )
 
@@ -373,7 +403,8 @@ class ChrLevels:
             new_columns=['chr', 'position', 'strand',
                          'count_m', 'count_um', 'context'],
             columns=[0, 1, 2, 3, 4, 5],
-            batch_size=batch_size
+            batch_size=batch_size,
+            n_threads=cpu
         )
         read_approx = approx_batch_num(file, batch_size)
         read_batches = 0
@@ -551,8 +582,7 @@ class Metagene(BismarkBase):
             gene_windows: int = 2000,
             downstream_windows: int = 500,
             batch_size: int = 10 ** 7,
-            cpu: int = cpu_count(),
-            columns=None
+            cpu: int = cpu_count()
     ) -> pl.DataFrame:
         # enable string cache for categorical comparison
         pl.enable_string_cache(True)
@@ -568,8 +598,7 @@ class Metagene(BismarkBase):
                       ]
 
         UPSTREAM_REGION = pl.col('position') < pl.col('start')
-        BODY_REGION = (pl.col('start') <= pl.col('position')) & (
-            pl.col('position') <= pl.col('end'))
+        BODY_REGION = (pl.col('start') <= pl.col('position')) & (pl.col('position') <= pl.col('end'))
         DOWNSTREAM_REGION = (pl.col('position') > pl.col('end'))
 
         UPSTREAM_FRAGMENT = (((pl.col('position') - pl.col('upstream')) /
@@ -585,7 +614,8 @@ class Metagene(BismarkBase):
             new_columns=['chr', 'position', 'strand',
                          'count_m', 'count_um', 'context'],
             columns=[0, 1, 2, 3, 4, 5],
-            batch_size=batch_size
+            batch_size=batch_size,
+            n_threads=cpu
         )
         read_approx = approx_batch_num(file, batch_size)
         read_batches = 0
