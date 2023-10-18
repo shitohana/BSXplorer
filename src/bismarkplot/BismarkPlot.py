@@ -316,12 +316,12 @@ class BismarkBase:
         """
         self.bismark: pl.DataFrame = bismark_df
 
-        self.upstream_windows: int | None = kwargs.get("upstream_windows")
-        self.downstream_windows: int | None = kwargs.get("downstream_windows")
-        self.gene_windows: int | None = kwargs.get("gene_windows")
-        self.plot_data: pl.DataFrame | None = kwargs.get("plot_data")
-        self.context: str | None = kwargs.get("context")
-        self.strand: str | None = kwargs.get("strand")
+        self.upstream_windows: int = kwargs.get("upstream_windows")
+        self.downstream_windows: int = kwargs.get("downstream_windows")
+        self.gene_windows: int = kwargs.get("gene_windows")
+        self.plot_data: pl.DataFrame = kwargs.get("plot_data")
+        self.context: str = kwargs.get("context")
+        self.strand: str = kwargs.get("strand")
 
     @property
     def metadata(self) -> dict:
@@ -370,7 +370,7 @@ class BismarkBase:
 
 
 class Clustering(BismarkBase):
-    def __init__(self, bismark_df: pl.DataFrame, count_threshold = 5, **kwargs):
+    def __init__(self, bismark_df: pl.DataFrame, count_threshold=5, **kwargs):
         super().__init__(bismark_df, **kwargs)
 
         grouped = (
@@ -406,7 +406,7 @@ class Clustering(BismarkBase):
             pl.col("gene").alias("label")
         )
 
-        self.gene_labels = unpivot["label"].to_numpy()
+        self.gene_labels = unpivot.with_columns(pl.col("label").cast(pl.Utf8))["label"].to_numpy()
         self.matrix = unpivot[list(map(str, range(self.total_windows)))].to_numpy()
         self.matrix = self.matrix[~np.isnan(self.matrix).any(axis=1), :]
 
@@ -421,6 +421,63 @@ class Clustering(BismarkBase):
 
     def dynamicTreeCut(self, **kwargs):
         return cutreeHybrid(self.linkage, self.dist, **kwargs)
+
+    def draw(
+            self,
+            fig_axes: tuple = None,
+            title: str = None
+    ) -> Figure:
+        """
+        Draws heat-map on given :class:`matplotlib.Axes` or makes them itself.
+
+        :param fig_axes: Tuple with (fig, axes) from :meth:`matplotlib.plt.subplots`.
+        :param title: Title of the plot.
+        :param vmin: Minimum for colormap.
+        :param vmax: Maximum for colormap.
+        :return:
+        """
+        if fig_axes is None:
+            plt.clf()
+            fig, axes = plt.subplots()
+        else:
+            fig, axes = fig_axes
+
+        vmin = 0
+        vmax = np.max(np.array(self.plot_data))
+
+        image = axes.imshow(
+            self.matrix[self.order, :],
+            interpolation="nearest", aspect='auto',
+            cmap=colormaps['cividis'],
+            vmin=vmin, vmax=vmax
+        )
+        axes.set_title(title)
+        axes.set_xlabel('Position')
+        axes.set_ylabel('')
+        self.__add_flank_lines(axes)
+        axes.set_yticks([])
+        plt.colorbar(image, ax=axes, label='Methylation density')
+
+        return fig
+
+    def __add_flank_lines(self, axes: plt.Axes):
+        """
+        Add flank lines to the given axis (for line plot)
+        """
+        x_ticks = []
+        x_labels = []
+        if self.upstream_windows > 0:
+            x_ticks.append(self.upstream_windows - .5)
+            x_labels.append('TSS')
+        if self.downstream_windows > 0:
+            x_ticks.append(self.gene_windows + self.upstream_windows - .5)
+            x_labels.append('TES')
+
+        if x_ticks and x_labels:
+            axes.set_xticks(x_ticks)
+            axes.set_xticklabels(x_labels)
+            for tick in x_ticks:
+                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
 
 
 class ChrLevels:
@@ -1105,7 +1162,7 @@ class HeatMap(BismarkBase):
 
 
 class BismarkFilesBase:
-    def __init__(self, samples, labels: list[str] | None):
+    def __init__(self, samples, labels: list[str] = None):
         self.samples = self.__check_metadata(
             samples if isinstance(samples, list) else [samples])
         if samples is None:
