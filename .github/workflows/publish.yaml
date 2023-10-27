@@ -1,8 +1,6 @@
 name: Publish to PyPI and TestPyPI
 
-on:
-  push:
-    branches: [master] # branch to trigger deployment
+on: push
 
 jobs:
   build-n-publish:
