@@ -13,7 +13,6 @@ This page gives an overview of all public objects, functions and methods.
     BismarkPlot.Genome
     BismarkPlot.ChrLevels
     BismarkPlot.Clustering
-
     BismarkPlot.BismarkBase
     BismarkPlot.LinePlot
     BismarkPlot.HeatMap
