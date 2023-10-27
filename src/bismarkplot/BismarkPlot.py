@@ -1,5 +1,6 @@
 import gzip
 import re
+from functools import cache
 from multiprocessing import cpu_count
 from os.path import getsize
 
@@ -15,6 +16,7 @@ from matplotlib.figure import Figure
 from scipy.signal import savgol_filter
 from scipy.spatial.distance import pdist
 from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy import stats
 
 from pandas import DataFrame as pdDataFrame
 from pyreadr import write_rds
@@ -74,6 +76,7 @@ class Genome:
             dtypes={'start': pl.Int32, 'end': pl.Int32, 'chr': pl.Utf8}
         ).select(['chr', 'type', 'start', 'end', 'strand'])
 
+        print(f"Genome read from {file}")
         return cls(genes)
 
     def gene_body(self, min_length: int = 4000, flank_length: int = 2000) -> pl.DataFrame:
@@ -288,7 +291,7 @@ class Genome:
 
 class BismarkBase:
     """
-    Base class for :class:`Bismark` and plots.
+    Base class for :class:`Metagene` and plots.
     """
 
     def __init__(self, bismark_df: pl.DataFrame, **kwargs):
@@ -341,8 +344,8 @@ class BismarkBase:
         """
         Save Bismark DataFrame in Rds.
 
-        :param filename: path for file.
-        :param compress: whether to compress to gzip or not.
+        :param filename: Path for file.
+        :param compress: Whether to compress to gzip or not.
         """
         write_rds(filename, self.bismark.to_pandas(),
                   compress="gzip" if compress else None)
@@ -351,8 +354,8 @@ class BismarkBase:
         """
         Save Bismark DataFrame in TSV.
 
-        :param filename: path for file.
-        :param compress: whether to compress to gzip or not.
+        :param filename: Path for file.
+        :param compress: Whether to compress to gzip or not.
         """
         if compress:
             with gzip.open(filename + ".gz", "wb") as file:
@@ -370,7 +373,17 @@ class BismarkBase:
 
 
 class Clustering(BismarkBase):
-    def __init__(self, bismark_df: pl.DataFrame, count_threshold=5, **kwargs):
+    """
+    Class for clustering genes within sample
+    """
+
+    def __init__(self, bismark_df: pl.DataFrame, count_threshold=5, dist_method="euclidean", clust_method="average", **kwargs):
+        """
+        :param bismark_df: :class:polars.DataFrame with genes data
+        :param count_threshold: Minimum counts per fragment
+        :param dist_method: Method for evaluating distance
+        :param clust_method: Method for hierarchical clustering
+        """
         super().__init__(bismark_df, **kwargs)
 
         grouped = (
@@ -412,14 +425,25 @@ class Clustering(BismarkBase):
 
         # dist matrix
         print("Distances calculation")
-        self.dist = pdist(self.matrix, metric="euclidean")
+        self.dist = pdist(self.matrix, metric=dist_method)
         # linkage matrix
         print("Linkage calculation and minimizing distances")
-        self.linkage = linkage(self.dist, method="average", optimal_ordering=True)
+        self.linkage = linkage(self.dist, method=clust_method, optimal_ordering=True)
 
         self.order = leaves_list(self.linkage)
 
-    def dynamicTreeCut(self, **kwargs):
+        self.tree = None
+
+    @cache
+    def dynamicTreeCut(self, **kwargs) -> dict:
+        """
+        Method for asigning genes into modules with dynamic tree cut algorithm.
+
+        :param kwargs: all arguements for dynamicTreeCut
+
+        :return: tree dictionary
+        """
+        print("WARNING: dynamicTreeCut can take very long time to run")
         return cutreeHybrid(self.linkage, self.dist, **kwargs)
 
     def draw(
@@ -432,8 +456,6 @@ class Clustering(BismarkBase):
 
         :param fig_axes: Tuple with (fig, axes) from :meth:`matplotlib.plt.subplots`.
         :param title: Title of the plot.
-        :param vmin: Minimum for colormap.
-        :param vmax: Maximum for colormap.
         :return:
         """
         if fig_axes is None:
@@ -504,9 +526,9 @@ class ChrLevels:
         """
         Initialize ChrLevels with CX_report file
 
-        :param file: path to file
-        :param chr_min_length: minimum length of chromosome to be analyzed
-        :param window_length: length of windows in bp
+        :param file: Path to file
+        :param chr_min_length: Minimum length of chromosome to be analyzed
+        :param window_length: Length of windows in bp
         :param cpu: How many cores to use. Uses every physical core by default
         :param batch_size: Number of rows to read by one CPU core
         """
@@ -578,9 +600,9 @@ class ChrLevels:
 
     def filter(self, context: str = None, strand: str = None, chr: str = None):
         """
-        :param context: methylation context (CG, CHG, CHH) to filter (only one).
-        :param strand: strand to filter (+ or -).
-        :param chr: chromosome name to filter.
+        :param context: Methylation context (CG, CHG, CHH) to filter (only one).
+        :param strand: Strand to filter (+ or -).
+        :param chr: Chromosome name to filter.
         :return: Filtered :class:`Bismark`.
         """
         context_filter = self.bismark["context"] == context if context is not None else True
@@ -664,7 +686,7 @@ class Metagene(BismarkBase):
         Constructor from Bismark coverage2cytosine output.
 
         :param cpu: How many cores to use. Uses every physical core by default
-        :param file: path to bismark genomeWide report
+        :param file: Path to bismark genomeWide report
         :param genome: polars.Dataframe with gene ranges
         :param upstream_windows: Number of windows flank regions to split
         :param downstream_windows: Number of windows flank regions to split
@@ -817,9 +839,9 @@ class Metagene(BismarkBase):
 
     def filter(self, context: str = None, strand: str = None, chr: str = None):
         """
-        :param context: methylation context (CG, CHG, CHH) to filter (only one).
-        :param strand: strand to filter (+ or -).
-        :param chr: chromosome name to filter.
+        :param context: Methylation context (CG, CHG, CHH) to filter (only one).
+        :param strand: Strand to filter (+ or -).
+        :param chr: Chromosome name to filter.
         :return: Filtered :class:`Bismark`.
         """
         context_filter = self.bismark["context"] == context if context is not None else True
@@ -840,7 +862,7 @@ class Metagene(BismarkBase):
         """
         Modify DataFrame to fewer fragments.
 
-        :param to_fragments: number of final fragments.
+        :param to_fragments: Number of final fragments.
         :return: Resized :class:`Bismark`.
         """
         if self.upstream_windows is not None and self.gene_windows is not None and self.downstream_windows is not None:
@@ -879,8 +901,8 @@ class Metagene(BismarkBase):
         """
         Trim fragments
 
-        :param upstream: keep upstream?
-        :param downstream: keep downstream?
+        :param upstream: Keep upstream region?
+        :param downstream: Keep downstream region?
         :return: Trimmed :class:`Bismark`.
         """
         trimmed = self.bismark.lazy()
@@ -902,7 +924,7 @@ class Metagene(BismarkBase):
 
         return self.__class__(trimmed.collect(), **metadata)
 
-    def clustering(self, count_threshold = 5):
+    def clustering(self, count_threshold = 5, dist_method="euclidean", clust_method="average"):
         """
         Gives an order for genes in specified method.
 
@@ -910,10 +932,10 @@ class Metagene(BismarkBase):
 
         :param dist_method: Distance method to use. See :meth:`scipy.spatial.distance.pdist`
         :param clust_method: Clustering method to use. See :meth:`scipy.cluster.hierarchy.linkage`
-        :return: list of indexes of ordered rows.
+        :return: List of indexes of ordered rows.
         """
 
-        return Clustering(self.bismark, count_threshold, **self.metadata)
+        return Clustering(self.bismark, count_threshold, dist_method, clust_method, **self.metadata)
 
     def line_plot(self, resolution: int = None):
         """
@@ -940,14 +962,37 @@ class LinePlot(BismarkBase):
         """
         super().__init__(bismark_df, **kwargs)
 
-        self.plot_data = self.bismark.group_by("fragment").agg(
+        self.plot_data = self.bismark.group_by("fragment").agg([
+            pl.col("sum"), pl.col("count"),
             (pl.sum("sum") / pl.sum("count")).alias("density")
-        )
+        ]).sort("fragment")
 
         if self.strand == '-':
             max_fragment = self.plot_data["fragment"].max()
             self.plot_data = self.plot_data.with_columns(
                 (max_fragment - pl.col("fragment")).alias("fragment"))
+
+    @staticmethod
+    def __interval(sum_density: list[int], sum_counts: list[int], alpha=.95):
+        """
+        Evaluate confidence interval for point
+
+        :param sum_density: Sums of methylated counts in fragment
+        :param sum_counts: Sums of all read cytosines in fragment
+        :param alpha: Probability for confidence band
+        """
+        sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
+        average = sum_density.sum() / sum_counts.sum()
+
+        normalized = np.divide(sum_density, sum_counts)
+
+        variance = np.average((normalized - average) ** 2, weights=sum_counts)
+
+        n = sum(sum_counts) - 1
+
+        i = stats.t.interval(alpha, df=n, loc=average, scale=np.sqrt(variance / n))
+
+        return {"lower": i[0], "upper": i[1]}
 
     def save_plot_rds(self, path, compress: bool = False):
         """
@@ -959,7 +1004,10 @@ class LinePlot(BismarkBase):
         | Int      | Float   |
         +----------+---------+
         """
-        write_rds(path, self.plot_data.to_pandas(),
+        df = self.bismark.group_by("fragment").agg(
+            (pl.sum("sum") / pl.sum("count")).alias("density")
+        )
+        write_rds(path, df.to_pandas(),
                   compress="gzip" if compress else None)
 
     def draw(
@@ -967,6 +1015,7 @@ class LinePlot(BismarkBase):
             fig_axes: tuple = None,
             smooth: int = 10,
             label: str = None,
+            confidence = 0,
             linewidth: float = 1.0,
             linestyle: str = '-',
     ) -> Figure:
@@ -976,6 +1025,7 @@ class LinePlot(BismarkBase):
         :param fig_axes: Tuple with (fig, axes) from :meth:`matplotlib.plt.subplots`
         :param smooth: Window for SavGol filter. (see :meth:`scipy.signal.savgol`)
         :param label: Label of the plot
+        :param confidence: Probability for confidence bands. 0 for disabled.
         :param linewidth: See matplotlib documentation.
         :param linestyle: See matplotlib documentation.
         :return:
@@ -985,7 +1035,21 @@ class LinePlot(BismarkBase):
         else:
             fig, axes = fig_axes
 
-        data = self.plot_data.sort("fragment")["density"]
+        if 0 < confidence < 1:
+            df = (
+                self.plot_data
+                .with_columns(
+                    pl.struct(["sum", "count"]).map_elements(
+                        lambda x: self.__interval(x["sum"], x["count"], confidence)
+                    ).alias("interval")
+                )
+                .unnest("interval")
+                .select(["fragment", "lower", "density", "upper"])
+            )
+        else:
+            df = self.plot_data
+
+        data = df["density"]
 
         polyorder = 3
         window = smooth if smooth > polyorder else polyorder + 1
@@ -995,11 +1059,25 @@ class LinePlot(BismarkBase):
 
         x = np.arange(len(data))
         data = data * 100  # convert to percents
-        axes.plot(x, data, label=label,
+
+        axes.plot(x, data,
+                  label=label if label is not None else "_",
                   linestyle=linestyle, linewidth=linewidth)
+
+        if 0 < confidence < 1:
+            upper = df["upper"].to_numpy() * 100  # convert to percents
+            lower = df["lower"].to_numpy() * 100  # convert to percents
+
+            upper = savgol_filter(upper, window, 3, mode="nearest") if smooth else upper
+            lower = savgol_filter(lower, window, 3, mode="nearest") if smooth else lower
+
+            axes.fill_between(x, lower, upper, alpha=.2)
+
         self.__add_flank_lines(axes)
 
-        axes.legend()
+        if label is not None:
+            axes.legend()
+
         axes.set_ylabel('Methylation density, %')
         axes.set_xlabel('Position')
 
@@ -1148,10 +1226,10 @@ class HeatMap(BismarkBase):
         x_ticks = []
         x_labels = []
         if self.upstream_windows > 0:
-            x_ticks.append(self.upstream_windows - 1)
+            x_ticks.append(self.upstream_windows - .5)
             x_labels.append('TSS')
         if self.downstream_windows > 0:
-            x_ticks.append(self.gene_windows + self.upstream_windows)
+            x_ticks.append(self.gene_windows + self.upstream_windows - .5)
             x_labels.append('TES')
 
         if x_ticks and x_labels:
@@ -1348,15 +1426,16 @@ class MetageneFiles(BismarkFilesBase):
 class LinePlotFiles(BismarkFilesBase):
     def draw(
         self,
-        smooth: float = .05,
+        smooth: int = 10,
         linewidth: float = 1.0,
         linestyle: str = '-',
+        confidence=0
     ):
         plt.clf()
         fig, axes = plt.subplots()
         for lp, label in zip(self.samples, self.labels):
             assert isinstance(lp, LinePlot)
-            lp.draw((fig, axes), smooth, label, linewidth, linestyle)
+            lp.draw((fig, axes), smooth, label, confidence, linewidth, linestyle)
 
         return fig
 
