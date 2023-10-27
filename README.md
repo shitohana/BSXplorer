@@ -21,8 +21,9 @@ Console options:
 ### bismarkplot-metagene
 
 ```commandline
-usage: BismarkPlot. [-h] [-o OUT] [-g GENOME] [-r {gene,exon,tss,tes}] [-b BATCH] [-c CORES] [-f FLENGTH] [-u UWINDOWS] [-d DWINDOWS] [-m MLENGTH] [-w GWINDOWS] [--line] [--heatmap] [--box] [--violin]
-                    [-S SMOOTH] [-L LABELS [LABELS ...]] [-H H] [-V V] [--dpi DPI] [-F {png,pdf,svg}]
+usage: BismarkPlot. [-h] [-o OUT] [-g GENOME] [-r {gene,exon,tss,tes}] [-b BATCH] [-c CORES] [-f FLENGTH] [-u UWINDOWS] [-d DWINDOWS] [-m MLENGTH]
+                    [-w GWINDOWS] [--line] [--heatmap] [--box] [--violin] [-S SMOOTH] [-L LABELS [LABELS ...]] [-C CONFIDENCE] [-H H] [-V V] [--dpi DPI]
+                    [-F {png,pdf,svg}]
                     filename [filename ...]
 
 Metagene visualizing tool.
@@ -30,9 +31,9 @@ Metagene visualizing tool.
 positional arguments:
   filename              path to bismark methylation_extractor files
 
-options:
+optional arguments:
   -h, --help            show this help message and exit
-  -o OUT, --out OUT     output base name (default: current/path)
+  -o OUT, --out OUT     output base name (default: /Users/shitohana/Desktop/PycharmProjects/BismarkPlot)
   -g GENOME, --genome GENOME
                         path to GFF genome file (default: None)
   -r {gene,exon,tss,tes}, --region {gene,exon,tss,tes}
@@ -59,6 +60,8 @@ options:
                         windows for smoothing (default: 10)
   -L LABELS [LABELS ...], --labels LABELS [LABELS ...]
                         labels for plots (default: None)
+  -C CONFIDENCE, --confidence CONFIDENCE
+                        probability for confidence bands for line-plot. 0 if disabled (default: 0)
   -H H                  vertical resolution for heat-map (default: 100)
   -V V                  vertical resolution for heat-map (default: 100)
   --dpi DPI             dpi of output plot (default: 200)

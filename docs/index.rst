@@ -14,6 +14,6 @@ This page gives an overview of all public objects, functions and methods.
     bismarkplot.ChrLevels
     bismarkplot.Clustering
 
-    BismarkPlot.BismarkBase
-    BismarkPlot.LinePlot
-    BismarkPlot.HeatMap
+    bismarkplot.BismarkBase
+    bismarkplot.LinePlot
+    bismarkplot.HeatMap
