@@ -16,10 +16,10 @@ extensions = [
 ]
 
 templates_path = ['_templates']
-autodoc_mock_imports = ['polars', 'matplotlib', 'numpy', 'scipy', 'pandas', 'pyarrow', 'pyreadr']
+autodoc_mock_imports = ['polars', 'matplotlib', 'numpy', 'scipy', 'pandas', 'pyarrow', 'pyreadr', 'dynamicTreeCut']
 autodoc_default_options = {
     'members': True,
-    #'exclude-members': '__init__'
+    # 'exclude-members': '__init__'
 }
 autosummary_generate = True
 add_module_names = False
