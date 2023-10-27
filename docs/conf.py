@@ -23,7 +23,7 @@ autodoc_default_options = {
 }
 autosummary_generate = True
 add_module_names = False
-html_short_title = 'BismarkPlot'
+html_short_title = 'BismarkPlot Documentation'
 
 
 html_theme = 'sphinx_book_theme'
