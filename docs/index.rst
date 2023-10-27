@@ -12,6 +12,7 @@ This page gives an overview of all public objects, functions and methods.
     bismarkplot.MetageneFiles
     bismarkplot.Genome
     bismarkplot.ChrLevels
+    bismarkplot.Clustering
 
     bismarkplot.BismarkPlot.BismarkBase
     bismarkplot.BismarkPlot.LinePlot

@@ -27,6 +27,7 @@ parser.add_argument('--violin', help='violin-plot enabled', action='store_true')
 
 parser.add_argument('-S', '--smooth', help='windows for smoothing', type=float, default=10)
 parser.add_argument('-L', '--labels', help='labels for plots', nargs='+')
+parser.add_argument('-C', '--confidence', help='probability for confidence bands for line-plot. 0 if disabled', type=float, default=0)
 parser.add_argument('-H', help='vertical resolution for heat-map', type=int, default=100)
 parser.add_argument('-V', help='vertical resolution for heat-map', type=int, default=100)
 parser.add_argument("--dpi", help="dpi of output plot", type=int, default=200)
@@ -69,13 +70,13 @@ def main():
                 base_name = args.out + "_" + context + strand + "_{type}." + args.format
 
                 if args.line_plot:
-                    filtered.line_plot().draw(smooth=args.smooth).savefig(base_name.format(type = "line-plot"), dpi = args.dpi)
+                    filtered.line_plot().draw(smooth=args.smooth, confidence=args.confidence).savefig(base_name.format(type="line-plot"), dpi = args.dpi)
                 if args.heat_map:
-                    filtered.heat_map(args.hresolution, args.vresolution).draw().savefig(base_name.format(type = "heat-map"), dpi = args.dpi)
+                    filtered.heat_map(args.hresolution, args.vresolution).draw().savefig(base_name.format(type="heat-map"), dpi=args.dpi)
                 if args.box_plot:
-                    filtered.trim_flank().box_plot().savefig(base_name.format(type = "box-plot"), dpi = args.dpi)
+                    filtered.trim_flank().box_plot().savefig(base_name.format(type="box-plot"), dpi=args.dpi)
                 if args.violin_plot:
-                    filtered.trim_flank().violin_plot().savefig(base_name.format(type = "violin-plot"), dpi = args.dpi)
+                    filtered.trim_flank().violin_plot().savefig(base_name.format(type="violin-plot"), dpi=args.dpi)
 
     except Exception:
         filename = f'error{datetime.now().strftime("%m_%d_%H:%M")}.txt'
