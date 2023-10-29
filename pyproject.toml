@@ -40,4 +40,4 @@ exclude = ["/venv", "/dist", "/test"]
 
 [project.scripts]
 bismarkplot-metagene = "bismarkplot.console_metagene:main"
-bismarkplot-chrs = "bismarkplot.console_chrlevels:main"
+bismarkplot-chrs = "bismarkplot.console_chrs:main"
