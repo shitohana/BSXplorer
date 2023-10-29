@@ -1,3 +1,3 @@
 from .BismarkPlot import Metagene, MetageneFiles, Genome, ChrLevels
 
-__version__ = 1.2
+__version__ = 1.3
