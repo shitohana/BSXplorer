@@ -15,15 +15,14 @@ pip install bismarkplot
 You can use ```bismarkplot``` either as python library or directly from console after installing it. 
 
 Console options:
-- *bismarkplot-metagene* - methylation density visualizing tool. 
-- *bismarkplot-chrs* - chromosome methylation levels visualizing tool.
+- `bismarkplot-metagene` - methylation density visualizing tool. 
+- `bismarkplot-chrs` - chromosome methylation levels visualizing tool.
 
 ### bismarkplot-metagene
 
 ```commandline
-usage: BismarkPlot. [-h] [-o OUT] [-g GENOME] [-r {gene,exon,tss,tes}] [-b BATCH] [-c CORES] [-f FLENGTH] [-u UWINDOWS] [-d DWINDOWS] [-m MLENGTH]
-                    [-w GWINDOWS] [--line] [--heatmap] [--box] [--violin] [-S SMOOTH] [-L LABELS [LABELS ...]] [-C CONFIDENCE] [-H H] [-V V] [--dpi DPI]
-                    [-F {png,pdf,svg}]
+usage: BismarkPlot. [-h] [-o NAME] [--dir DIR] [-g GENOME] [-r {gene,exon,tss,tes}] [-b BATCH] [-c CORES] [-f FLENGTH] [-u UWINDOWS] [-d DWINDOWS] [-m MLENGTH] [-w GWINDOWS] [--line] [--heatmap]
+                    [--box] [--violin] [-S SMOOTH] [-L LABELS [LABELS ...]] [-C CONFIDENCE] [-H VRESOLUTION] [-V HRESOLUTION] [--dpi DPI] [-F {png,pdf,svg}]
                     filename [filename ...]
 
 Metagene visualizing tool.
@@ -33,7 +32,8 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  -o OUT, --out OUT     output base name (default: /Users/shitohana/Desktop/PycharmProjects/BismarkPlot)
+  -o NAME, --out NAME   output base name (default: plot)
+  --dir DIR             output dir (default: /Users/shitohana/PycharmProjects/BismarkPlot_test)
   -g GENOME, --genome GENOME
                         path to GFF genome file (default: None)
   -r {gene,exon,tss,tes}, --region {gene,exon,tss,tes}
@@ -62,8 +62,8 @@ optional arguments:
                         labels for plots (default: None)
   -C CONFIDENCE, --confidence CONFIDENCE
                         probability for confidence bands for line-plot. 0 if disabled (default: 0)
-  -H H                  vertical resolution for heat-map (default: 100)
-  -V V                  vertical resolution for heat-map (default: 100)
+  -H VRESOLUTION        vertical resolution for heat-map (default: 100)
+  -V HRESOLUTION        vertical resolution for heat-map (default: 100)
   --dpi DPI             dpi of output plot (default: 200)
   -F {png,pdf,svg}, --format {png,pdf,svg}
                         format of output plots (default: pdf)
@@ -80,25 +80,27 @@ bismarkplot-metagene -g path/to/genome.gff -r gene -f 2000 -m 4000  -u 500 -d 50
 ### bismarkplot-chrs
 
 ```commandline
-usage: BismarkPlot [-h] [-o DIR] [-b N] [-c CORES] [-w N] [-m N] [-S FLOAT] [-F {png,pdf,svg}] path/to/txt [path/to/txt ...]
+usage: BismarkPlot [-h] [-o NAME] [-d DIR] [-b N] [-c CORES] [-w N] [-m N] [-S FLOAT] [-F {png,pdf,svg}] [--dpi DPI] path/to/txt
 
 Chromosome methylation levels visualization.
 
 positional arguments:
   path/to/txt           path to bismark methylation_extractor file
 
-options:
+optional arguments:
   -h, --help            show this help message and exit
-  -o DIR, --out DIR     output base name (default: current/path)
+  -o NAME, --out NAME   output base name (default: plot)
+  -d DIR, --dir DIR     output dir (default: /Users/shitohana/PycharmProjects/BismarkPlot_test)
   -b N, --batch N       number of rows to be read from bismark file by batch (default: 1000000)
   -c CORES, --cores CORES
                         number of cores to use (default: None)
-  -w N, --wlength N     number of windows for genes (default: 100000)
+  -w N, --wlength N     number of windows for chromosome (default: 100000)
   -m N, --mlength N     minimum chromosome length (default: 1000000)
   -S FLOAT, --smooth FLOAT
                         windows for smoothing (0 - no smoothing, 1 - straight line (default: 50)
-  -F {png,pdf,svg}, --format {png,pdf,svg}
+  -F {png,pdf,svg}, --fmt {png,pdf,svg}
                         format of output plots (default: pdf)
+  --dpi DPI             dpi of output plot (default: 200)
 ```
 
 Example:
@@ -145,12 +147,63 @@ lp.draw().savefig("path/to/lp.pdf")       # matplotlib.Figure
 hm = filtered.heat_map(ncol=200, nrow=200)
 hm.draw().savefig("path/to/hm.pdf")       # matplotlib.Figure
 ```
-Output:
+Output for _Brachypodium distachyon_:
 
 <p float="left" align="middle">
-    <img src="https://user-images.githubusercontent.com/43905117/274546389-8b97edcb-6ab4-4f17-a970-389819fbeaec.png" width="300">
-    <img src="https://user-images.githubusercontent.com/43905117/274546419-079e004b-8f6e-4ce9-a3dc-fc4ad9592adc.png" width="300">
+    <img src="https://user-images.githubusercontent.com/43905117/280025496-b2336c72-5109-42d4-a770-f0a480ebf40d.png" width="300">
+    <img src="https://user-images.githubusercontent.com/43905117/280025490-c72da09a-7841-471a-bc39-086aa77f65e4.png" width="300">
 </p>
+
+If metagene is not filtered by context, **all available contexts will be plotted**:
+
+```python
+filtered_by_strand = metagene.filter(strand == "+")
+lp = filtered_by_strand.line_plot()
+lp.draw()
+```
+
+Output for _Brachypodium distachyon_:
+
+<img src="https://user-images.githubusercontent.com/43905117/280023042-849599c1-4b36-47e2-8b8f-6c9b9389b48e.png">
+
+**Confidence bands** can be visualized via setting the `confidence` parameter in `LinePlot.draw()`
+
+```python
+lp.draw(confidence=.95)
+```
+
+Output for _Brachypodium distachyon_: 
+
+<img src="https://user-images.githubusercontent.com/43905117/280023017-e1167a90-83d7-46d5-aa45-545d6bdbc033.png">
+
+### Heat-map clusterisation
+
+Genes can be clustered to minimize distances between them before plotting heat-map. This can be useful for capturing 
+overall methylation patterns in sample. _This operation is very time consuming. It is advised to set small number of
+windows (< 50)_.
+
+Output for _Brachypodium distachyon_
+
+<img src="https://user-images.githubusercontent.com/43905117/280022981-d6d4ffff-7f3d-4e33-8e42-05b98ca28161.png">
+
+```python
+metagene = bismarkplot.Metagene.from_file(
+    file = "path/to/CX_report.txt",
+    genome=genes,                         # filtered regions
+    upstream_windows = 5, gene_windows = 10, downstream_windows = 5,
+)
+clustered = metagene.clustering(
+    count_threshold=5,                    # Minimum counts per window
+    dist_method="euclidean",              # See scipy.spatial.distance.pdist
+    clust_method="average"                # See scipy.cluster.hierarchy.linkage
+)
+
+# Heatmap with optimized distances between genes will be drawn
+clustered.draw().savefig("path/to/clustered_hm.pdf")
+```
+
+Output:
+
 
 ### Smoothing the line plot
 
@@ -163,7 +216,7 @@ lp.draw(smooth = 0).savefig("path/to/lp.pdf")       # no smooth
 lp.draw(smooth = 50).savefig("path/to/lp.pdf")      # smoothed with window length = 50
 ```
 
-Output:
+Output for _Mus musculus_:
 
 <p float="left" align="middle">
     <img src="https://user-images.githubusercontent.com/43905117/274557328-5a087a43-5731-4cef-aa90-cf2ce046c747.png" width="300">
@@ -190,7 +243,7 @@ trimmed.violin_plot().savefig(...)
 merged = filtered.merge()
 ```
 
-Output:
+Output for _Brachypodium distachyon_:
 
 <p float="left" align="middle">
     <img src="https://user-images.githubusercontent.com/43905117/274546531-8516858a-8203-4e98-98a9-7351efb79d29.png" width="300">
@@ -300,10 +353,10 @@ for context in ["CG", "CHG", "CHH"]:
 fig.savefig(f"chrom.pdf", dpi = 200)
 ```
 
-Output for Arabidopsis t.:
+Output for _Arabidopsis thaliana_:
 
 <img src="https://user-images.githubusercontent.com/43905117/274563188-6efc5b71-9c83-4fe0-8b5a-767db6e1acb4.png">
 
-Output for Brachypodium d.:
+Output for _Brachypodium distachyon_:
 
 <img src="https://user-images.githubusercontent.com/43905117/274563210-4f5dc20a-4ab3-4e52-8263-6ebe7b0623d5.png">

@@ -389,6 +389,9 @@ class Clustering(BismarkBase):
         """
         super().__init__(bismark_df, **kwargs)
 
+        if self.bismark["fragment"].max() > 50:
+            print(f"WARNING: too many fragments ({self.bismark['fragment'].max() + 1}), clusterisation may take very long time")
+
         grouped = (
             self.bismark.lazy()
             .with_columns((pl.col("sum") / pl.col("count")).alias("density"))
@@ -937,6 +940,7 @@ class Metagene(BismarkBase):
 
         *WARNING* - experimental function. May be very slow!
 
+        :param count_threshold: Minimum counts per window
         :param dist_method: Distance method to use. See :meth:`scipy.spatial.distance.pdist`
         :param clust_method: Clustering method to use. See :meth:`scipy.cluster.hierarchy.linkage`
         :return: List of indexes of ordered rows.
@@ -1020,7 +1024,7 @@ class LinePlot(BismarkBase):
     def draw(
             self,
             fig_axes: tuple = None,
-            smooth: int = 10,
+            smooth: int = 50,
             label: str = "",
             confidence = 0,
             linewidth: float = 1.0,
@@ -1435,7 +1439,7 @@ class MetageneFiles(BismarkFilesBase):
 class LinePlotFiles(BismarkFilesBase):
     def draw(
         self,
-        smooth: int = 10,
+        smooth: int = 50,
         linewidth: float = 1.0,
         linestyle: str = '-',
         confidence=0
