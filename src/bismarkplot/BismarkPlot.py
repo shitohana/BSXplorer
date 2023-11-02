@@ -542,7 +542,7 @@ class ChrLevels:
                          'count_m', 'count_um', 'context'],
             columns=[0, 1, 2, 3, 4, 5],
             batch_size=batch_size,
-            n_threads=cpu
+            n_threads=cpu if cpu is not None else cpu_count
         )
         read_approx = approx_batch_num(file, batch_size)
         read_batches = 0
@@ -776,7 +776,7 @@ class Metagene(BismarkBase):
                          'count_m', 'count_um', 'context'],
             columns=[0, 1, 2, 3, 4, 5],
             batch_size=batch_size,
-            n_threads=cpu
+            n_threads=cpu if cpu is not None else cpu_count
         )
         batches = bismark.next_batches(cpu)
 

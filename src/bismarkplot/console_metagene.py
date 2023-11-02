@@ -70,7 +70,7 @@ def main():
             for strand in ["+", "-"]:
 
                 filtered = bismark.filter(context=context, strand=strand)
-                base_name = args.out + "_" + context + strand + "_{type}." + args.format
+                base_name = args.out + "_" + context + strand + "_{type}." + args.file_format
 
                 if args.line_plot:
                     filtered.line_plot().draw(smooth=args.smooth, confidence=args.confidence).savefig(base_name.format(type="line-plot"), dpi = args.dpi)

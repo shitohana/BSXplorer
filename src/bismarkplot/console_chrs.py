@@ -16,7 +16,7 @@ parser.add_argument('-c', '--cores', help='number of cores to use', type=int, de
 parser.add_argument('-w', '--wlength', help='number of windows for chromosome', type=int, default=10**5, metavar='N')
 parser.add_argument('-m', '--mlength', help='minimum chromosome length', type=int, default=10**6, metavar='N')
 parser.add_argument('-S', '--smooth', help='windows for smoothing (0 - no smoothing, 1 - straight line', type=float, default=50, metavar='FLOAT')
-parser.add_argument('-F', '--format', help='format of output plots', choices=['png', 'pdf', 'svg'], default='pdf', dest='file_format')
+parser.add_argument('-F', '--fmt', help='format of output plots', choices=['png', 'pdf', 'svg'], default='pdf', dest='file_format')
 
 
 def main():
@@ -40,7 +40,7 @@ def main():
             for context in ["CG", "CHG", "CHH"]:
                 chr.filter(strand=strand, context=context).draw((fig, axes), smooth=args.smooth, label=context)
 
-            fig.savefig(f"{args.out}_{strand}.{args.format}", dpi=args.dpi)
+            fig.savefig(f"{args.out}_{strand}.{args.file_format}", dpi=args.dpi)
 
     except Exception:
         filename = f'error{datetime.now().strftime("%m_%d_%H:%M")}.txt'
