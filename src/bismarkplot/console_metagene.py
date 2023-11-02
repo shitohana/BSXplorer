@@ -11,7 +11,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument('filename', help='path to bismark methylation_extractor files', nargs='+')
 parser.add_argument('-o', '--out', help='output base name', default=os.path.abspath(os.getcwd()))
 parser.add_argument('-g', '--genome', help='path to GFF genome file')
-parser.add_argument('-r', '--region', help='path to GFF genome file', default = "gene", choices=["gene", "exon", "tss", "tes"])
+parser.add_argument('-r', '--region', help='path to GFF genome file', default="gene", choices=["gene", "exon", "tss", "tes"])
 parser.add_argument('-b', '--batch', help='number of rows to be read from bismark file by batch', type=int, default=10**6)
 parser.add_argument('-c', '--cores', help='number of cores to use', type=int, default=None)
 parser.add_argument('-f', '--flength', help='length in bp of flank regions', type=int, default=2000)
@@ -37,6 +37,9 @@ parser.add_argument('-F', '--format', help='format of output plots', choices=['p
 
 def main():
     args = parser.parse_args()
+    if args.genome is None:
+        print("You need to specify genome path")
+        exit()
 
     try:
         from .BismarkPlot import MetageneFiles, Genome
