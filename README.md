@@ -164,10 +164,7 @@ lp.draw()
 
 Output for _Brachypodium distachyon_:
 
-<p align="middle">
-    <img src="https://user-images.githubusercontent.com/43905117/280023042-849599c1-4b36-47e2-8b8f-6c9b9389b48e.png" width="300">
-</p>
-
+<img src="https://user-images.githubusercontent.com/43905117/280023042-849599c1-4b36-47e2-8b8f-6c9b9389b48e.png">
 
 **Confidence bands** can be visualized via setting the `confidence` parameter in `LinePlot.draw()`
 
@@ -177,21 +174,13 @@ lp.draw(confidence=.95)
 
 Output for _Brachypodium distachyon_: 
 
-<p align="middle">
-    <img src="https://user-images.githubusercontent.com/43905117/280023017-e1167a90-83d7-46d5-aa45-545d6bdbc033.png" width="300">
-</p>
+<img src="https://user-images.githubusercontent.com/43905117/280023017-e1167a90-83d7-46d5-aa45-545d6bdbc033.png">
 
 ### Heat-map clusterisation
 
 Genes can be clustered to minimize distances between them before plotting heat-map. This can be useful for capturing 
 overall methylation patterns in sample. _This operation is very time consuming. It is advised to set small number of
 windows (< 50)_.
-
-Output for _Brachypodium distachyon_
-
-<p align="middle">
-    <img src="https://user-images.githubusercontent.com/43905117/280022981-d6d4ffff-7f3d-4e33-8e42-05b98ca28161.png" width="300">
-</p>
 
 ```python
 metagene = bismarkplot.Metagene.from_file(
@@ -208,9 +197,9 @@ clustered = metagene.clustering(
 # Heatmap with optimized distances between genes will be drawn
 clustered.draw().savefig("path/to/clustered_hm.pdf")
 ```
+Output for _Brachypodium distachyon_
 
-Output:
-
+<img src="https://user-images.githubusercontent.com/43905117/280022981-d6d4ffff-7f3d-4e33-8e42-05b98ca28161.png">
 
 ### Smoothing the line plot
 
