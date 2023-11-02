@@ -164,7 +164,10 @@ lp.draw()
 
 Output for _Brachypodium distachyon_:
 
-<img src="https://user-images.githubusercontent.com/43905117/280023042-849599c1-4b36-47e2-8b8f-6c9b9389b48e.png">
+<p align="middle">
+    <img src="https://user-images.githubusercontent.com/43905117/280023042-849599c1-4b36-47e2-8b8f-6c9b9389b48e.png" width="300">
+</p>
+
 
 **Confidence bands** can be visualized via setting the `confidence` parameter in `LinePlot.draw()`
 
@@ -174,7 +177,9 @@ lp.draw(confidence=.95)
 
 Output for _Brachypodium distachyon_: 
 
-<img src="https://user-images.githubusercontent.com/43905117/280023017-e1167a90-83d7-46d5-aa45-545d6bdbc033.png">
+<p align="middle">
+    <img src="https://user-images.githubusercontent.com/43905117/280023017-e1167a90-83d7-46d5-aa45-545d6bdbc033.png" width="300">
+</p>
 
 ### Heat-map clusterisation
 
@@ -184,7 +189,9 @@ windows (< 50)_.
 
 Output for _Brachypodium distachyon_
 
-<img src="https://user-images.githubusercontent.com/43905117/280022981-d6d4ffff-7f3d-4e33-8e42-05b98ca28161.png">
+<p align="middle">
+    <img src="https://user-images.githubusercontent.com/43905117/280022981-d6d4ffff-7f3d-4e33-8e42-05b98ca28161.png" width="300">
+</p>
 
 ```python
 metagene = bismarkplot.Metagene.from_file(
