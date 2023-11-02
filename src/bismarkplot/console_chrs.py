@@ -10,7 +10,8 @@ parser = argparse.ArgumentParser(
 )
 
 parser.add_argument('filename', help='path to bismark methylation_extractor file', metavar='path/to/txt')
-parser.add_argument('-o', '--out', help='output base name', default=os.path.abspath(os.getcwd()), metavar='DIR')
+parser.add_argument('-o', '--out', help='output base name', default="plot", metavar='NAME')
+parser.add_argument('-d', '--dir', help='output dir', default=os.path.abspath(os.getcwd()), metavar='DIR')
 parser.add_argument('-b', '--batch', help='number of rows to be read from bismark file by batch', type=int, default=10**6, metavar='N')
 parser.add_argument('-c', '--cores', help='number of cores to use', type=int, default=None)
 parser.add_argument('-w', '--wlength', help='number of windows for chromosome', type=int, default=10**5, metavar='N')
@@ -42,11 +43,15 @@ def main():
             for context in ["CG", "CHG", "CHH"]:
                 chr.filter(strand=strand, context=context).draw((fig, axes), smooth=args.smooth, label=context)
 
-            fig.savefig(f"{args.out}_{strand}.{args.file_format}", dpi=args.dpi)
+            save_path = f"{args.dir}/{args.out}_{strand}.{args.file_format}"
+
+            print(f"Saving to: {save_path}")
+
+            fig.savefig(save_path, dpi=args.dpi)
 
     except Exception:
         filename = f'error{datetime.now().strftime("%m_%d_%H:%M")}.txt'
-        file_dir = args.out + '/' + filename
+        file_dir = args.dir + '/' + filename
         with open(file_dir, 'w') as f:
             f.write(traceback.format_exc())
         print(f'Error happened. Please open an issue at GitHub with Traceback from file: {file_dir}')

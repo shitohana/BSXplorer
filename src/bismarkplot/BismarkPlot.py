@@ -535,6 +535,8 @@ class ChrLevels:
         :param cpu: How many cores to use. Uses every physical core by default
         :param batch_size: Number of rows to read by one CPU core
         """
+        cpu = cpu if cpu is not None else cpu_count()
+
         bismark = pl.read_csv_batched(
             file,
             separator='\t', has_header=False,
@@ -542,7 +544,7 @@ class ChrLevels:
                          'count_m', 'count_um', 'context'],
             columns=[0, 1, 2, 3, 4, 5],
             batch_size=batch_size,
-            n_threads=cpu if cpu is not None else cpu_count()
+            n_threads=cpu
         )
         read_approx = approx_batch_num(file, batch_size)
         read_batches = 0
@@ -722,6 +724,8 @@ class Metagene(BismarkBase):
             batch_size: int = 10 ** 7,
             cpu: int = cpu_count()
     ) -> pl.DataFrame:
+        cpu = cpu if cpu is not None else cpu_count()
+
         # enable string cache for categorical comparison
         pl.enable_string_cache(True)
 
@@ -776,7 +780,7 @@ class Metagene(BismarkBase):
                          'count_m', 'count_um', 'context'],
             columns=[0, 1, 2, 3, 4, 5],
             batch_size=batch_size,
-            n_threads=cpu if cpu is not None else cpu_count()
+            n_threads=cpu
         )
         batches = bismark.next_batches(cpu)
 
@@ -1469,7 +1473,11 @@ class HeatMapFiles(BismarkFilesBase):
         else:
             subplots_y = 1
 
-        subplots_x = (len(self.samples) + len(self.samples) % 2) // subplots_y
+        if len(self.samples) > 1:
+            subplots_x = (len(self.samples) + len(self.samples) % 2) // subplots_y
+        else:
+            subplots_x = 1
+
         fig, axes = plt.subplots(subplots_y, subplots_x)
 
         if not isinstance(axes, np.ndarray):

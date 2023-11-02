@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bismarkplot"
-version = "1.3.0a1"
+version = "1.3.0b0"
 authors = [
   { name="shitohana", email="kyudytskiy@gmail.com" },
 ]
