@@ -9,11 +9,11 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter
 )
 
-parser.add_argument('filename', help='path to bismark methylation_extractor file', nargs='+', metavar='path/to/txt')
+parser.add_argument('filename', help='path to bismark methylation_extractor file', metavar='path/to/txt')
 parser.add_argument('-o', '--out', help='output base name', default=os.path.abspath(os.getcwd()), metavar='DIR')
 parser.add_argument('-b', '--batch', help='number of rows to be read from bismark file by batch', type=int, default=10**6, metavar='N')
 parser.add_argument('-c', '--cores', help='number of cores to use', type=int, default=None)
-parser.add_argument('-w', '--wlength', help='number of windows for genes', type=int, default=10**5, metavar='N')
+parser.add_argument('-w', '--wlength', help='number of windows for chromosome', type=int, default=10**5, metavar='N')
 parser.add_argument('-m', '--mlength', help='minimum chromosome length', type=int, default=10**6, metavar='N')
 parser.add_argument('-S', '--smooth', help='windows for smoothing (0 - no smoothing, 1 - straight line', type=float, default=50, metavar='FLOAT')
 parser.add_argument('-F', '--format', help='format of output plots', choices=['png', 'pdf', 'svg'], default='pdf', dest='file_format')
@@ -44,9 +44,10 @@ def main():
 
     except Exception:
         filename = f'error{datetime.now().strftime("%m_%d_%H:%M")}.txt'
-        with open(args.out + '/' + filename, 'w') as f:
+        file_dir = args.out + '/' + filename
+        with open(file_dir, 'w') as f:
             f.write(traceback.format_exc())
-        print(f'Error happened. Please open an issue at GitHub with Traceback from file: {f}')
+        print(f'Error happened. Please open an issue at GitHub with Traceback from file: {file_dir}')
 
 
 if __name__ == "__main__":

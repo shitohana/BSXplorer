@@ -239,7 +239,9 @@ class Genome:
         # calculates length to next gene on same chr_strand
         length_after = (pl.col('start').shift(-1) - pl.col('end')).fill_null(flank_length)
 
-        upstream_length = (
+        # decided not to use this conditions
+        '''
+        upstream_length_conditioned = (
             # when before length is enough
             # we set upstream length to specified
             pl.when(pl.col('upstream') >= flank_length).then(flank_length)
@@ -251,7 +253,7 @@ class Genome:
             .otherwise((pl.col('upstream') - (pl.col('upstream') % 2)) // 2)
         )
 
-        downstream_length = (
+        downstream_length_conditioned = (
             # when before length is enough
             # we set upstream length to specified
             pl.when(pl.col('downstream') >= flank_length).then(flank_length)
@@ -262,6 +264,7 @@ class Genome:
             # we divide it into half
             .otherwise((pl.col('downstream') - pl.col('downstream') % 2) // 2)
         )
+        '''
 
         return (
             genes
@@ -274,9 +277,9 @@ class Genome:
             .explode(['start', 'end', 'upstream', 'downstream'])
             .with_columns([
                 # calculates length of region
-                (pl.col('start') - upstream_length).alias('upstream'),
+                (pl.col('start') - flank_length).alias('upstream'),
                 # calculates length of region
-                (pl.col('end') + downstream_length).alias('downstream')
+                (pl.col('end') + flank_length).alias('downstream')
             ])
         )
 
@@ -962,7 +965,7 @@ class LinePlot(BismarkBase):
         """
         super().__init__(bismark_df, **kwargs)
 
-        self.plot_data = self.bismark.group_by("fragment").agg([
+        self.plot_data = self.bismark.group_by(["context", "fragment"]).agg([
             pl.col("sum"), pl.col("count"),
             (pl.sum("sum") / pl.sum("count")).alias("density")
         ]).sort("fragment")
@@ -1014,7 +1017,7 @@ class LinePlot(BismarkBase):
             self,
             fig_axes: tuple = None,
             smooth: int = 10,
-            label: str = None,
+            label: str = "",
             confidence = 0,
             linewidth: float = 1.0,
             linestyle: str = '-',
@@ -1035,48 +1038,50 @@ class LinePlot(BismarkBase):
         else:
             fig, axes = fig_axes
 
-        if 0 < confidence < 1:
-            df = (
-                self.plot_data
-                .with_columns(
-                    pl.struct(["sum", "count"]).map_elements(
-                        lambda x: self.__interval(x["sum"], x["count"], confidence)
-                    ).alias("interval")
+        contexts = self.plot_data["context"].unique().to_list()
+
+        for context in self.plot_data["context"].unique().to_list():
+            df = self.plot_data.filter(pl.col("context") == context)
+
+            if 0 < confidence < 1:
+                df = (
+                    df
+                    .with_columns(
+                        pl.struct(["sum", "count"]).map_elements(
+                            lambda x: self.__interval(x["sum"], x["count"], confidence)
+                        ).alias("interval")
+                    )
+                    .unnest("interval")
+                    .select(["fragment", "lower", "density", "upper"])
                 )
-                .unnest("interval")
-                .select(["fragment", "lower", "density", "upper"])
-            )
-        else:
-            df = self.plot_data
 
-        data = df["density"]
+            data = df["density"]
 
-        polyorder = 3
-        window = smooth if smooth > polyorder else polyorder + 1
+            polyorder = 3
+            window = smooth if smooth > polyorder else polyorder + 1
 
-        if smooth:
-            data = savgol_filter(data, window, 3, mode='nearest')
+            if smooth:
+                data = savgol_filter(data, window, 3, mode='nearest')
 
-        x = np.arange(len(data))
-        data = data * 100  # convert to percents
+            x = np.arange(len(data))
+            data = data * 100  # convert to percents
 
-        axes.plot(x, data,
-                  label=label if label is not None else "_",
-                  linestyle=linestyle, linewidth=linewidth)
+            axes.plot(x, data,
+                      label=f"{context}" if not label else f"{label}_{context}",
+                      linestyle=linestyle, linewidth=linewidth)
 
-        if 0 < confidence < 1:
-            upper = df["upper"].to_numpy() * 100  # convert to percents
-            lower = df["lower"].to_numpy() * 100  # convert to percents
+            if 0 < confidence < 1:
+                upper = df["upper"].to_numpy() * 100  # convert to percents
+                lower = df["lower"].to_numpy() * 100  # convert to percents
 
-            upper = savgol_filter(upper, window, 3, mode="nearest") if smooth else upper
-            lower = savgol_filter(lower, window, 3, mode="nearest") if smooth else lower
+                upper = savgol_filter(upper, window, 3, mode="nearest") if smooth else upper
+                lower = savgol_filter(lower, window, 3, mode="nearest") if smooth else lower
 
-            axes.fill_between(x, lower, upper, alpha=.2)
+                axes.fill_between(x, lower, upper, alpha=.2)
 
         self.__add_flank_lines(axes)
 
-        if label is not None:
-            axes.legend()
+        axes.legend()
 
         axes.set_ylabel('Methylation density, %')
         axes.set_xlabel('Position')
