@@ -20,10 +20,10 @@ parser.add_argument('-d', '--dwindows', help='number of windows for downstream',
 parser.add_argument('-m', '--mlength', help='minimal length in bp of gene', type=int, default=4000)
 parser.add_argument('-w', '--gwindows', help='number of windows for genes', type=int, default=100)
 
-parser.add_argument('--line', help='line-plot enabled', action='store_true')
-parser.add_argument('--heatmap', help='heat-map enabled', action='store_true')
-parser.add_argument('--box', help='box-plot enabled', action='store_true')
-parser.add_argument('--violin', help='violin-plot enabled', action='store_true')
+parser.add_argument('--line', help='line-plot enabled', action='store_true', default=False)
+parser.add_argument('--heatmap', help='heat-map enabled', action='store_true', default=False)
+parser.add_argument('--box', help='box-plot enabled', action='store_true', default=False)
+parser.add_argument('--violin', help='violin-plot enabled', action='store_true', default=False)
 
 parser.add_argument('-S', '--smooth', help='windows for smoothing', type=float, default=10)
 parser.add_argument('-L', '--labels', help='labels for plots', nargs='+')

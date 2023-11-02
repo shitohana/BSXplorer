@@ -17,6 +17,8 @@ parser.add_argument('-w', '--wlength', help='number of windows for chromosome', 
 parser.add_argument('-m', '--mlength', help='minimum chromosome length', type=int, default=10**6, metavar='N')
 parser.add_argument('-S', '--smooth', help='windows for smoothing (0 - no smoothing, 1 - straight line', type=float, default=50, metavar='FLOAT')
 parser.add_argument('-F', '--fmt', help='format of output plots', choices=['png', 'pdf', 'svg'], default='pdf', dest='file_format')
+parser.add_argument("--dpi", help="dpi of output plot", type=int, default=200)
+
 
 
 def main():
