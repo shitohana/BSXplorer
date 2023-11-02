@@ -182,10 +182,6 @@ Genes can be clustered to minimize distances between them before plotting heat-m
 overall methylation patterns in sample. _This operation is very time consuming. It is advised to set small number of
 windows (< 50)_.
 
-Output for _Brachypodium distachyon_
-
-<img src="https://user-images.githubusercontent.com/43905117/280022981-d6d4ffff-7f3d-4e33-8e42-05b98ca28161.png">
-
 ```python
 metagene = bismarkplot.Metagene.from_file(
     file = "path/to/CX_report.txt",
@@ -201,9 +197,9 @@ clustered = metagene.clustering(
 # Heatmap with optimized distances between genes will be drawn
 clustered.draw().savefig("path/to/clustered_hm.pdf")
 ```
+Output for _Brachypodium distachyon_
 
-Output:
-
+<img src="https://user-images.githubusercontent.com/43905117/280022981-d6d4ffff-7f3d-4e33-8e42-05b98ca28161.png">
 
 ### Smoothing the line plot
 
