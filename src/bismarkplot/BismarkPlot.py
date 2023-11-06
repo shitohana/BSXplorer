@@ -1,6 +1,7 @@
 import gzip
 import re
 from functools import cache
+from collections import Counter
 from multiprocessing import cpu_count
 from os.path import getsize
 
@@ -28,7 +29,7 @@ def remove_extension(path):
     re.sub("\.[^./]+$", "", path)
 
 
-def approx_batch_num(path, batch_size, check_lines=10000):
+def approx_batch_num(path, batch_size, check_lines=1000):
     size = getsize(path)
 
     length = 0
@@ -37,6 +38,26 @@ def approx_batch_num(path, batch_size, check_lines=10000):
             length += len(file.readline())
 
     return round(np.ceil(size / (length / check_lines * batch_size)))
+
+
+def hm_flank_lines(axes: Axes, upstream_windows: int, gene_windows: int, downstream_windows: int):
+    """
+    Add flank lines to the given axis (for line plot)
+    """
+    x_ticks = []
+    x_labels = []
+    if upstream_windows > 0:
+        x_ticks.append(upstream_windows - .5)
+        x_labels.append('TSS')
+    if downstream_windows > 0:
+        x_ticks.append(gene_windows + downstream_windows - .5)
+        x_labels.append('TES')
+
+    if x_ticks and x_labels:
+        axes.set_xticks(x_ticks)
+        axes.set_xticklabels(x_labels)
+        for tick in x_ticks:
+            axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
 
 
 class Genome:
@@ -66,15 +87,23 @@ class Genome:
         comment_char = '#'
         has_header = False
 
-        genes = pl.scan_csv(
-            file,
-            comment_char=comment_char,
-            has_header=has_header,
-            separator='\t',
-            new_columns=['chr', 'source', 'type', 'start',
-                         'end', 'score', 'strand', 'frame', 'attribute'],
-            dtypes={'start': pl.Int32, 'end': pl.Int32, 'chr': pl.Utf8}
-        ).select(['chr', 'type', 'start', 'end', 'strand'])
+        id_regex = "^ID=([^;]+)"
+
+        genes = (
+            pl.scan_csv(
+                file,
+                comment_char=comment_char,
+                has_header=has_header,
+                separator='\t',
+                new_columns=['chr', 'source', 'type', 'start',
+                             'end', 'score', 'strand', 'frame', 'attribute'],
+                dtypes={'start': pl.Int32, 'end': pl.Int32, 'chr': pl.Utf8}
+            )
+            .with_columns(
+                pl.col("attribute").str.extract(id_regex).alias("id")
+            )
+            .select(['chr', 'type', 'start', 'end', 'strand', "id"])
+        )
 
         print(f"Genome read from {file}")
         return cls(genes)
@@ -126,6 +155,9 @@ class Genome:
         :param flank_length: length of the flanking region.
         :return: :class:`pl.LazyFrame` with genes and their flanking regions.
         """
+
+        # decided not to use this
+        '''
         upstream_length = (
             # when before length is enough
             # we set upstream length to specified
@@ -137,6 +169,8 @@ class Genome:
             # we divide it into half
             .otherwise((pl.col('upstream') - (pl.col('upstream') % 2)) // 2)
         )
+        '''
+        upstream_length = flank_length
 
         gene_type = "gene"
         genes = self.__filter_genes(
@@ -148,9 +182,10 @@ class Genome:
                 # upstream shift
                 (pl.col('start').shift(-1) - pl.col('end')).shift(1)
                 .fill_null(flank_length)
-                .alias('upstream')
+                .alias('upstream'),
+                pl.col('id')
             ])
-            .explode(['start', 'upstream'])
+            .explode(['start', 'upstream', 'id'])
             .with_columns([
                 (pl.col('start') - upstream_length).alias('upstream'),
                 (pl.col("start") + flank_length).alias("end")
@@ -169,6 +204,8 @@ class Genome:
         :return: :class:`pl.LazyFrame` with genes and their flanking regions.
         """
 
+        # decided not to use this
+        '''
         downstream_length = (
             # when before length is enough
             # we set upstream length to specified
@@ -180,6 +217,8 @@ class Genome:
             # we divide it into half
             .otherwise((pl.col('downstream') - pl.col('downstream') % 2) // 2)
         )
+        '''
+        downstream_length = flank_length
 
         gene_type = "gene"
         genes = self.__filter_genes(
@@ -191,9 +230,10 @@ class Genome:
                 # downstream shift
                 (pl.col('start').shift(-1) - pl.col('end'))
                 .fill_null(flank_length)
-                .alias('downstream')
+                .alias('downstream'),
+                pl.col('id')
             ])
-            .explode(['end', 'downstream'])
+            .explode(['end', 'downstream', 'id'])
             .with_columns([
                 (pl.col('end') + downstream_length).alias('downstream'),
                 (pl.col("end") - flank_length).alias("start")
@@ -272,9 +312,10 @@ class Genome:
                 pl.col('start'),
                 pl.col('end'),
                 length_before.alias('upstream'),
-                length_after.alias('downstream')
+                length_after.alias('downstream'),
+                pl.col('id')
             ])
-            .explode(['start', 'end', 'upstream', 'downstream'])
+            .explode(['start', 'end', 'upstream', 'downstream', pl.col('id')])
             .with_columns([
                 # calculates length of region
                 (pl.col('start') - flank_length).alias('upstream'),
@@ -390,7 +431,7 @@ class Clustering(BismarkBase):
         super().__init__(bismark_df, **kwargs)
 
         if self.bismark["fragment"].max() > 50:
-            print(f"WARNING: too many fragments ({self.bismark['fragment'].max() + 1}), clusterisation may take very long time")
+            print(f"WARNING: too many windows ({self.bismark['fragment'].max() + 1}), clusterisation may take very long time")
 
         grouped = (
             self.bismark.lazy()
@@ -411,6 +452,10 @@ class Clustering(BismarkBase):
         by_count = by_count.filter(pl.col("count") == self.total_windows)
 
         print(f"Left after empty windows filtration:\t{len(by_count)}")
+
+        if len(by_count) == 0:
+            print("All genes have empty windows, exiting")
+            raise ValueError("All genes have empty windows")
 
         by_count = by_count.explode(["density", "fragment"]).drop(["gene_count", "count"]).fill_nan(0)
 
@@ -438,19 +483,14 @@ class Clustering(BismarkBase):
 
         self.order = leaves_list(self.linkage)
 
-        self.tree = None
+    def modules(self, **kwargs):
+        return Modules(self.gene_labels, self.matrix, self.linkage, self.dist,
+                       windows={
+                           key: self.metadata[key] for key in ["upstream_windows", "gene_windows", "downstream_windows"]
+                       },
+                       **kwargs)
 
-    @cache
-    def dynamicTreeCut(self, **kwargs) -> dict:
-        """
-        Method for asigning genes into modules with dynamic tree cut algorithm.
-
-        :param kwargs: all arguements for dynamicTreeCut
-
-        :return: tree dictionary
-        """
-        print("WARNING: dynamicTreeCut can take very long time to run")
-        return cutreeHybrid(self.linkage, self.dist, **kwargs)
+    # TODO: rewrite save_rds, save_tsv
 
     def draw(
             self,
@@ -482,30 +522,151 @@ class Clustering(BismarkBase):
         axes.set_title(title)
         axes.set_xlabel('Position')
         axes.set_ylabel('')
-        self.__add_flank_lines(axes)
+
+        hm_flank_lines(axes, self.upstream_windows, self.gene_windows, self.downstream_windows)
+
         axes.set_yticks([])
         plt.colorbar(image, ax=axes, label='Methylation density')
 
         return fig
 
-    def __add_flank_lines(self, axes: plt.Axes):
-        """
-        Add flank lines to the given axis (for line plot)
-        """
-        x_ticks = []
-        x_labels = []
-        if self.upstream_windows > 0:
-            x_ticks.append(self.upstream_windows - .5)
-            x_labels.append('TSS')
-        if self.downstream_windows > 0:
-            x_ticks.append(self.gene_windows + self.upstream_windows - .5)
-            x_labels.append('TES')
 
-        if x_ticks and x_labels:
-            axes.set_xticks(x_ticks)
-            axes.set_xticklabels(x_labels)
-            for tick in x_ticks:
-                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
+class Modules:
+    """
+    Class for module construction and visualization of clustered genes
+    """
+    def __init__(self, labels: list, matrix: np.ndarray, linkage, distance, windows, **kwargs):
+        if not len(labels) == len(matrix):
+            raise ValueError("Length of labels and methylation matrix labels don't match")
+
+        self.labels, self.matrix = labels, matrix
+        self.linkage, self.distance = linkage, distance
+
+        self.__windows = windows
+
+        self.tree = self.__dynamic_tree_cut(**kwargs)
+
+    def recalculate(self, **kwargs):
+        """
+        Recalculate tree with another params
+
+        :param kwargs: any kwargs to cutreeHybrid from dynamicTreeCut
+        """
+        self.tree = self.__dynamic_tree_cut(**kwargs)
+
+    @cache
+    def __dynamic_tree_cut(self, **kwargs):
+        return cutreeHybrid(self.linkage, self.distance, **kwargs)
+
+    @property
+    def __format__table(self) -> pl.DataFrame:
+        return pl.DataFrame(
+            {"gene_labels": list(self.labels)} |
+            {key: list(self.tree[key]) for key in ["labels", "cores", "smallLabels", "onBranch"]}
+        )
+
+    def save_rds(self, filename, compress: bool = False):
+        """
+        Save module data in Rds.
+
+        :param filename: Path for file.
+        :param compress: Whether to compress to gzip or not.
+        """
+        write_rds(filename, self.__format__table.to_pandas(),
+                  compress="gzip" if compress else None)
+
+    def save_tsv(self, filename, compress=False):
+        """
+        Save module data in TSV.
+
+        :param filename: Path for file.
+        :param compress: Whether to compress to gzip or not.
+        """
+        if compress:
+            with gzip.open(filename + ".gz", "wb") as file:
+                # noinspection PyTypeChecker
+                self.__format__table.write_csv(file, separator="\t")
+        else:
+            self.__format__table.write_csv(filename, separator="\t")
+
+    def draw(
+            self,
+            fig_axes: tuple = None,
+            title: str = None,
+            show_labels=True,
+            show_size=False
+    ) -> Figure:
+        """
+        Method for visualiztion of moduled genes. Every row of heat-map represents an average methylation
+        profile of genes of the module.
+
+        :param fig_axes: tuple(Fig, Axes) to plot
+        :param title: Title of the plot
+        :param show_labels: Enable/disable module number labels
+        :param show_size: Enable/disable module size labels (in brackets)
+        """
+
+        me_matrix, me_labels = [], []
+        label_stats = Counter(self.tree["labels"])
+
+        # iterate every label
+        for label in label_stats.keys():
+            # select genes from module
+            module_genes = self.tree["labels"] == label
+            # append mean module pattern
+            me_matrix.append(self.matrix[module_genes, :].mean(axis=0))
+
+            me_labels.append(f"{label} ({label_stats[label]})" if show_size else str(label))
+
+        me_matrix, me_labels = np.stack(me_matrix), np.stack(me_labels)
+        # sort matrix to minimize distances between modules
+        order = leaves_list(linkage(
+            y=pdist(me_matrix, metric="euclidean"),
+            method="average",
+            optimal_ordering=True
+        ))
+
+        me_matrix, me_labels = me_matrix[order, :], me_labels[order]
+
+        if fig_axes is None:
+            plt.clf()
+            fig, axes = plt.subplots()
+        else:
+            fig, axes = fig_axes
+
+        vmin = 0
+        vmax = np.max(np.array(me_matrix))
+
+        image = axes.imshow(
+            me_matrix,
+            interpolation="nearest", aspect='auto',
+            cmap=colormaps['cividis'],
+            vmin=vmin, vmax=vmax
+        )
+
+        if show_labels:
+            axes.set_yticks(np.arange(.5, len(me_labels), 1))
+            axes.set_yticklabels(me_labels)
+        else:
+            axes.set_yticks([])
+
+        axes.set_title(title)
+        axes.set_xlabel('Position')
+        axes.set_ylabel('Module')
+        axes.yaxis.tick_right()
+
+        hm_flank_lines(
+            axes,
+            self.__windows["upstream_windows"],
+            self.__windows["gene_windows"],
+            self.__windows["downstream_windows"],
+        )
+
+        plt.colorbar(image, ax=axes, label='Methylation density', orientation="horizontal", location="top")
+
+        return fig
+
+
 
 
 class ChrLevels:
@@ -745,7 +906,7 @@ class Metagene(BismarkBase):
             pl.col('strand').cast(pl.Categorical),
             pl.col('context').cast(pl.Categorical),
             # density for CURRENT cytosine
-            ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density')
+            ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32)
         ]
 
         # upstream region position check
@@ -816,10 +977,11 @@ class Metagene(BismarkBase):
                     pl.concat_str(
                         pl.col("chr"),
                         (pl.concat_str(pl.col("start"), pl.col("end"), separator="-")),
-                        separator=":").alias("gene").cast(pl.Categorical)
+                        separator=":").alias("gene").cast(pl.Categorical),
+                    pl.col('id').cast(pl.Categorical)
                 ])
                 # gather fragment stats
-                .groupby(by=['chr', 'strand', 'gene', 'context', 'fragment'])
+                .groupby(by=['chr', 'strand', 'gene', 'context', 'id', 'fragment'])
                 .agg([
                     pl.sum('density').alias('sum'),
                     pl.count('density').alias('count')
@@ -1219,7 +1381,7 @@ class HeatMap(BismarkBase):
         axes.set_title(title)
         axes.set_xlabel('Position')
         axes.set_ylabel('')
-        self.__add_flank_lines(axes)
+        hm_flank_lines(axes, self.upstream_windows, self.gene_windows, self.downstream_windows)
         axes.set_yticks([])
         plt.colorbar(image, ax=axes, label='Methylation density')
 
@@ -1231,25 +1393,6 @@ class HeatMap(BismarkBase):
         """
         write_rds(path, pdDataFrame(self.plot_data),
                   compress="gzip" if compress else None)
-
-    def __add_flank_lines(self, axes: plt.Axes):
-        """
-        Add flank lines to the given axis (for line plot)
-        """
-        x_ticks = []
-        x_labels = []
-        if self.upstream_windows > 0:
-            x_ticks.append(self.upstream_windows - .5)
-            x_labels.append('TSS')
-        if self.downstream_windows > 0:
-            x_ticks.append(self.gene_windows + self.upstream_windows - .5)
-            x_labels.append('TES')
-
-        if x_ticks and x_labels:
-            axes.set_xticks(x_ticks)
-            axes.set_xticklabels(x_labels)
-            for tick in x_ticks:
-                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
 
 
 class BismarkFilesBase:
