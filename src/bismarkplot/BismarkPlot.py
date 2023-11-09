@@ -315,7 +315,7 @@ class Genome:
                 length_after.alias('downstream'),
                 pl.col('id')
             ])
-            .explode(['start', 'end', 'upstream', 'downstream', pl.col('id')])
+            .explode(['start', 'end', 'upstream', 'downstream', 'id'])
             .with_columns([
                 # calculates length of region
                 (pl.col('start') - flank_length).alias('upstream'),
@@ -653,7 +653,7 @@ class Modules:
         axes.set_title(title)
         axes.set_xlabel('Position')
         axes.set_ylabel('Module')
-        axes.yaxis.tick_right()
+        # axes.yaxis.tick_right()
 
         hm_flank_lines(
             axes,
@@ -662,7 +662,9 @@ class Modules:
             self.__windows["downstream_windows"],
         )
 
-        plt.colorbar(image, ax=axes, label='Methylation density', orientation="horizontal", location="top")
+        plt.colorbar(image, ax=axes, label='Methylation density',
+                     # orientation="horizontal", location="top"
+                     )
 
         return fig
 
