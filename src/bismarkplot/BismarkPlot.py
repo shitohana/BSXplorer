@@ -472,6 +472,8 @@ class Clustering(BismarkBase):
 
         self.gene_labels = unpivot.with_columns(pl.col("label").cast(pl.Utf8))["label"].to_numpy()
         self.matrix = unpivot[list(map(str, range(self.total_windows)))].to_numpy()
+
+        self.gene_labels = self.gene_labels[~np.isnan(self.matrix).any(axis=1)]
         self.matrix = self.matrix[~np.isnan(self.matrix).any(axis=1), :]
 
         # dist matrix
@@ -597,7 +599,7 @@ class Modules:
             show_size=False
     ) -> Figure:
         """
-        Method for visualiztion of moduled genes. Every row of heat-map represents an average methylation
+        Method for visualization of moduled genes. Every row of heat-map represents an average methylation
         profile of genes of the module.
 
         :param fig_axes: tuple(Fig, Axes) to plot
@@ -1622,8 +1624,10 @@ class HeatMapFiles(BismarkFilesBase):
         else:
             subplots_y = 1
 
-        if len(self.samples) > 1:
+        if len(self.samples) > 1 and subplots_y > 1:
             subplots_x = (len(self.samples) + len(self.samples) % 2) // subplots_y
+        elif len(self.samples) > 1:
+            subplots_x = len(self.samples)
         else:
             subplots_x = 1
 

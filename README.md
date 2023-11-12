@@ -201,10 +201,29 @@ clustered = metagene.clustering(
 # Heatmap with optimized distances between genes will be drawn
 clustered.draw().savefig("path/to/clustered_hm.pdf")
 ```
-Output for _Brachypodium distachyon_
+Output for _Brachypodium distachyon_ - CHG
 
 <p align="middle">
-    <img width="300" src="https://user-images.githubusercontent.com/43905117/280022981-d6d4ffff-7f3d-4e33-8e42-05b98ca28161.png">
+    <img width="300" src="https://user-images.githubusercontent.com/43905117/282321746-baf97da1-6a35-4a17-9772-5a2f4d67e6a4.png">
+</p>
+
+### Genes dynamicTreeCut
+
+To shrink clustered heat-map and capture main patterns genes can be split into modules using 
+[dynamicTreeCut algorithm](https://github.com/kylessmith/dynamicTreeCut/tree/master) by Peter Langfelder and Bin Zhang.
+Then genes can be plotted as heat-map as previous example:
+
+```python
+# Parameters are the same as for cutreeHybrid (see dynamicTreeCut)
+modules = clustered.modules(deepSplit = 1)
+
+modules.draw().savefig("path/to/modules_hm.pdf")
+```
+
+Output for _Brachypodium distachyon_ - CHG
+
+<p align="middle">
+    <img width="300" src="https://user-images.githubusercontent.com/43905117/282321739-df4486f6-9b1f-467e-87ea-cfd441f80e0a.png">
 </p>
 
 ### Smoothing the line plot
