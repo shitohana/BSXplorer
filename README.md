@@ -1,5 +1,6 @@
 # BismarkPlot
-Comprehensive tool for visualizing genome-wide cytosine data.
+
+Analytical framework for BS-seq data comparison and visualization.
 
 See the docs: https://shitohana.github.io/BismarkPlot
 
