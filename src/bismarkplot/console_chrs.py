@@ -26,7 +26,7 @@ def main():
     args = parser.parse_args()
 
     try:
-        from .BismarkPlot import ChrLevels
+        from src.bismarkplot import ChrLevels
         import matplotlib.pyplot as plt
 
         chr = ChrLevels.from_file(

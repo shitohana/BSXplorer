@@ -44,7 +44,8 @@ def main():
         exit()
 
     try:
-        from .BismarkPlot import MetageneFiles, Genome
+        from .BismarkPlot import MetageneFiles
+        from src.bismarkplot import Genome
         genome = Genome.from_gff(
             file=args.genome
         )

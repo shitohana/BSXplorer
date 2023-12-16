@@ -123,30 +123,32 @@ Below we will show the basic BismarkPlot workflow.
 ### Single sample
 
 ```python
+import src.bismarkplot.genome
 import bismarkplot
+
 # Firstly, we need to read the regions annotation (e.g. reference genome .gff)
-genome = bismarkplot.Genome.from_gff("path/to/genome.gff")  
+genome = src.bismarkplot.genome.Genome.from_gff("path/to/genome.gff")
 # Next we need to filter regions of interest from the genome
 genes = genome.gene_body(min_length=4000, flank_length=2000)
 
 # Now we need to calculate metagene data
 metagene = bismarkplot.Metagene.from_file(
-    file = "path/to/CX_report.txt",
-    genome=genes,                         # filtered regions
-    upstream_windows = 500,               
-    gene_windows = 1000,
-    downstream_windows = 500,
-    batch_size= 10**7                     # number of lines to be read simultaneously
+    file="path/to/CX_report.txt",
+    genome=genes,  # filtered regions
+    upstream_windows=500,
+    gene_windows=1000,
+    downstream_windows=500,
+    batch_size=10 ** 7  # number of lines to be read simultaneously
 )
 
 # Our metagene contains all methylation contexts and both strands, so we need to filter it (as in dplyr)
-filtered = metagene.filter(context = "CG", strand = "+")
+filtered = metagene.filter(context="CG", strand="+")
 # We are ready to plot
-lp = filtered.line_plot()                 # line plot data
-lp.draw().savefig("path/to/lp.pdf")       # matplotlib.Figure
+lp = filtered.line_plot()  # line plot data
+lp.draw().savefig("path/to/lp.pdf")  # matplotlib.Figure
 
 hm = filtered.heat_map(ncol=200, nrow=200)
-hm.draw().savefig("path/to/hm.pdf")       # matplotlib.Figure
+hm.draw().savefig("path/to/hm.pdf")  # matplotlib.Figure
 ```
 Output for _Brachypodium distachyon_:
 
@@ -280,17 +282,19 @@ Output for _Brachypodium distachyon_:
 
 ```python
 # For analyzing samples with different reference genomes, we need to initialize several genomes instances
+import src.bismarkplot.genome
+
 genome_filenames = ["arabidopsis.gff", "brachypodium.gff", "cucumis.gff", "mus.gff"]
 reports_filenames = ["arabidopsis.txt", "brachypodium.txt", "cucumis.txt", "mus.txt"]
 
 genomes = [
-    bismarkplot.Genome.from_gff(file).gene_body(...) for file in genome_filenames
+    src.bismarkplot.genome.Genome.from_gff(file).gene_body(...) for file in genome_filenames
 ]
 
 # Now we read reports
 metagenes = []
 for report, genome in zip(reports_filenames, genomes):
-    metagene = bismarkplot.Metagene(report, genome = genome, ...)
+    metagene = bismarkplot.Metagene(report, genome=genome, ...)
     metagenes.append(metagene)
 
 # Initialize MetageneFiles
@@ -315,26 +319,29 @@ Output:
 Other genomic regions from .gff can be analyzed too with ```.exon``` or ```.near_tss/.near_tes``` option for ```bismarkplot.Genome```
 
 ```python
+import src.bismarkplot.genome
+
 exons = [
-    bismarkplot.Genome.from_gff(file).exon(min_length=100) for file in genome_filenames
+    src.bismarkplot.genome.Genome.from_gff(file).exon(min_length=100) for file in genome_filenames
 ]
 metagenes = []
 for report, exon in zip(reports_filenames, exons):
-    metagene = bismarkplot.Metagene(report, genome = exon, 
-                                    upstream_windows = 0,   # !!!
-                                    downstream_windows = 0, # !!!
+    metagene = bismarkplot.Metagene(report, genome=exon,
+                                    upstream_windows=0,  # !!!
+                                    downstream_windows=0,  # !!!
                                     ...)
     metagenes.append(metagene)
 # OR
 tss = [
-    bismarkplot.Genome.from_gff(file).near_tss(min_length = 2000, flank_length = 2000) for file in genome_filenames
+    src.bismarkplot.genome.Genome.from_gff(file).near_tss(min_length=2000, flank_length=2000) for file in
+    genome_filenames
 ]
 metagenes = []
 for report, t in zip(reports_filenames, tss):
-    metagene = bismarkplot.Metagene(report, genome = t, 
-                                    upstream_windows = 1000,# same number of windows
-                                    gene_windows = 1000,    # same number of windows
-                                    downstream_windows = 0, # !!!
+    metagene = bismarkplot.Metagene(report, genome=t,
+                                    upstream_windows=1000,  # same number of windows
+                                    gene_windows=1000,  # same number of windows
+                                    downstream_windows=0,  # !!!
                                     ...)
     metagenes.append(metagene)
 ```
@@ -356,23 +363,25 @@ TSS output:
 BismarkPlot allows user to visualize chromosome methylation levels across full genome
 
 ```python
+import src.bismarkplot.levels
 import bismarkplot
-chr = bismarkplot.ChrLevels.from_file(
+
+chr = src.bismarkplot.levels.ChrLevels.from_file(
     "path/to/CX_report.txt",
-    window_length=10**5,                  # window length in bp
-    batch_size=10**7,                     
-    chr_min_length = 10**6,               # minimum chr length in bp
+    window_length=10 ** 5,  # window length in bp
+    batch_size=10 ** 7,
+    chr_min_length=10 ** 6,  # minimum chr length in bp
 )
 fig, axes = plt.subplots()
 
 for context in ["CG", "CHG", "CHH"]:
-     chr.filter(strand="+", context=context).draw(
-         (fig, axes),                     # to plot contexts on same axes
-         smooth=10,                       # window number for smoothing
-         label=context                    # labels for lines
-     )
+    chr.filter(strand="+", context=context).draw(
+        (fig, axes),  # to plot contexts on same axes
+        smooth=10,  # window number for smoothing
+        label=context  # labels for lines
+    )
 
-fig.savefig(f"chrom.pdf", dpi = 200)
+fig.savefig(f"chrom.pdf", dpi=200)
 ```
 
 Output for _Arabidopsis thaliana_:
