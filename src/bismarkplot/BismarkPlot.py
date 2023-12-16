@@ -399,22 +399,6 @@ class LinePlot(BismarkBase):
 
         return {"lower": i[0], "upper": i[1]}
 
-    def save_plot_rds(self, path, compress: bool = False):
-        """
-        Saves plot data in a rds DataFrame with columns:
-
-        +----------+---------+
-        | fragment | density |
-        +==========+=========+
-        | Int      | Float   |
-        +----------+---------+
-        """
-        df = self.bismark.group_by("fragment").agg(
-            (pl.sum("sum") / pl.sum("count")).alias("density")
-        )
-        write_rds(path, df.to_pandas(),
-                  compress="gzip" if compress else None)
-
     def __get_x_y(self, df, smooth, confidence):
         if 0 < confidence < 1:
             df = (
@@ -448,6 +432,65 @@ class LinePlot(BismarkBase):
 
         return lower, data, upper
 
+    def __add_flank_lines(self, axes: plt.Axes, major_labels: list, minor_labels: list, show_border=True):
+        """
+        Add flank lines to the given axis (for line plot)
+        """
+        x_ticks_major = [self.upstream_windows, self.gene_windows + self.upstream_windows]
+        x_labels_major = ["TSS", "TES"]
+
+        x_ticks_minor = [self.upstream_windows / 2, self.total_windows / 2, self.total_windows - (self.downstream_windows / 2)]
+        x_labels_minor = ["Upstream", "Body", "Downstream"]
+
+        if major_labels is not None and len(major_labels) == len(x_ticks_major):
+            x_labels_major = major_labels
+        elif major_labels is not None and len(major_labels) != len(x_ticks_major):
+            print("Length of major tick labels != 2. Using default.")
+
+        if minor_labels is not None and len(minor_labels) == len(x_ticks_minor):
+            x_labels_minor = minor_labels
+        elif minor_labels is not None and len(minor_labels) != len(x_ticks_minor):
+            print("Length of minor tick labels != 3. Using default.")
+
+        if self.downstream_windows < 1:
+            x_ticks_minor.pop(2)
+            x_labels_minor.pop(2)
+            x_ticks_major.pop(1)
+            x_labels_major.pop(1)
+
+        if self.upstream_windows < 1:
+            x_ticks_minor.pop(0)
+            x_labels_minor.pop(0)
+            x_ticks_major.pop(0)
+            x_labels_major.pop(0)
+
+        if major_labels is not None:
+            axes.set_xticks(x_ticks_major, labels=x_labels_major, minor=False)
+        else:
+            axes.set_xticks(x_ticks_major, labels=["", ""], minor=False)
+
+        if minor_labels is not None:
+            axes.set_xticks(x_ticks_minor, labels=x_labels_minor,  minor=True)
+
+        if show_border:
+            for tick in x_ticks_major:
+                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
+
+    def save_plot_rds(self, path, compress: bool = False):
+        """
+        Saves plot data in a rds DataFrame with columns:
+
+        +----------+---------+
+        | fragment | density |
+        +==========+=========+
+        | Int      | Float   |
+        +----------+---------+
+        """
+        df = self.bismark.group_by("fragment").agg(
+            (pl.sum("sum") / pl.sum("count")).alias("density")
+        )
+        write_rds(path, df.to_pandas(),
+                  compress="gzip" if compress else None)
 
     def draw(
             self,
@@ -457,6 +500,9 @@ class LinePlot(BismarkBase):
             confidence: int = 0,
             linewidth: float = 1.0,
             linestyle: str = '-',
+            major_labels = ["TSS", "TES"],
+            minor_labels = ["Upstream", "Body", "Downstream"],
+            show_border = True
     ) -> Figure:
         """
         Draws line-plot on given :class:`matplotlib.Axes` or makes them itself.
@@ -490,7 +536,7 @@ class LinePlot(BismarkBase):
             if 0 < confidence < 1:
                 axes.fill_between(x, lower, upper, alpha=.2)
 
-        self.__add_flank_lines(axes)
+        self.__add_flank_lines(axes, major_labels, minor_labels, show_border)
 
         axes.legend()
 
@@ -498,24 +544,6 @@ class LinePlot(BismarkBase):
         axes.set_xlabel('Position')
 
         return fig
-
-    def __add_flank_lines(self, axes: plt.Axes):
-        """
-        Add flank lines to the given axis (for line plot)
-        """
-        x_ticks = []
-        x_labels = []
-        if self.upstream_windows > 0:
-            x_ticks.append(self.upstream_windows - 1)
-            x_labels.append('TSS')
-        if self.downstream_windows > 0:
-            x_ticks.append(self.gene_windows + self.upstream_windows)
-            x_labels.append('TES')
-
-        axes.set_xticks(x_ticks)
-        axes.set_xticklabels(x_labels)
-        for tick in x_ticks:
-            axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
 
 
 class HeatMap(BismarkBase):
@@ -785,7 +813,7 @@ class MetageneFiles(BismarkFilesBase):
 
         return fig
 
-    def __dendrogram(self, groups, stat="mean"):
+    def __dendrogram(self, stat="mean"):
         # get intersecting regions
         gene_sets = [set(sample.bismark["gene"].to_list()) for sample in self.samples]
         intersecting = list(set.intersection(*gene_sets))
@@ -826,12 +854,6 @@ class MetageneFiles(BismarkFilesBase):
 
         # get intersected
         matrix = matrix[np.isin(genes, intersecting), :]
-
-        constant = .1
-        log2matrix = np.log2(matrix + constant)
-
-        groups = np.array(groups)
-        logFC = np.mean(log2matrix[:, groups == 1], axis=1) - np.mean(log2matrix[:, groups == 2], axis=1)
 
         return
 
