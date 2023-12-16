@@ -20,8 +20,6 @@ from src.bismarkplot.base import BismarkBase, BismarkFilesBase
 from src.bismarkplot.clusters import Clustering
 from src.bismarkplot.utils import remove_extension, approx_batch_num, hm_flank_lines
 
-import plotly.graph_objects as go
-
 
 class Metagene(BismarkBase):
     """
@@ -501,78 +499,6 @@ class LinePlot(BismarkBase):
 
         return fig
 
-    def draw_plotly(
-            self,
-            figure: go.Figure = None,
-            smooth: int = 50,
-            label: str = "",
-            confidence: int = 0
-    ):
-        if figure is None:
-            figure = go.Figure()
-
-        contexts = self.plot_data["context"].unique().to_list()
-
-        for context in contexts:
-            df = self.plot_data.filter(pl.col("context") == context)
-
-            lower, data, upper = self.__get_x_y(df, smooth, confidence)
-
-            x = np.arange(len(data))
-
-            traces = [go.Scatter(x=x, y=data, name=f"{context}" if not label else f"{label}_{context}", mode="lines")]
-
-            if 0 < confidence < 1:
-                traces += [
-                    go.Scatter(x=x, y=upper, mode="lines", line_color = 'rgba(0,0,0,0)', showlegend=False,
-                               name=f"{context}_{confidence}CI" if not label else f"{label}_{context}_{confidence}CI"),
-                    go.Scatter(x=x, y=lower, mode="lines", line_color = 'rgba(0,0,0,0)', showlegend=True,
-                               fill="tonexty", fillcolor='rgba(0, 0, 0, 0.2)',
-                               name=f"{context}_{confidence}CI" if not label else f"{label}_{context}_{confidence}CI"),
-                ]
-
-            figure.add_traces(traces)
-
-        # self.__add_flank_lines(axes)
-        #
-        # axes.legend()
-        #
-        # axes.set_ylabel('Methylation density, %')
-        # axes.set_xlabel('Position')
-
-        figure.update_layout(
-            xaxis_title="Position",
-            yaxis_title="Methylation density, %"
-        )
-
-        self.__add_flank_lines_plotly(figure)
-
-        return figure
-
-    def __add_flank_lines_plotly(self, figure: go.Figure):
-        """
-        Add flank lines to the given axis (for line plot)
-        """
-        x_ticks = []
-        x_labels = []
-        if self.upstream_windows > 0:
-            x_ticks.append(self.upstream_windows - 1)
-            x_labels.append('TSS')
-        if self.downstream_windows > 0:
-            x_ticks.append(self.gene_windows + self.upstream_windows)
-            x_labels.append('TES')
-
-        figure.update_layout(
-            xaxis=dict(
-                tickmode='array',
-                tickvals=x_ticks,
-                ticktext=x_labels
-            )
-        )
-
-        for tick in x_ticks:
-            figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
-
     def __add_flank_lines(self, axes: plt.Axes):
         """
         Add flank lines to the given axis (for line plot)
@@ -925,14 +851,6 @@ class LinePlotFiles(BismarkFilesBase):
             lp.draw((fig, axes), smooth, label, confidence, linewidth, linestyle)
 
         return fig
-
-    def draw_plotly(self, smooth: int = 50, confidence: int = 0):
-        figure = go.Figure()
-        for lp, label in zip(self.samples, self.labels):
-            assert isinstance(lp, LinePlot)
-            lp.draw_plotly(figure, smooth, label, confidence)
-
-        return figure
 
     def save_plot_rds(self, base_filename, compress: bool = False, merge: bool = False):
         if merge:
