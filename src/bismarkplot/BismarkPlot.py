@@ -946,6 +946,7 @@ class Metagene(BismarkBase):
             separator='\t', has_header=False,
             new_columns=['chr', 'position', 'strand',
                          'count_m', 'count_um', 'context'],
+            dtypes=[pl.Utf8, pl.Int64, pl.Utf8, pl.Int64, pl.Int64, pl.Utf8],
             columns=[0, 1, 2, 3, 4, 5],
             batch_size=batch_size,
             n_threads=cpu
