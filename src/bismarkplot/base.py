@@ -85,6 +85,16 @@ class BismarkBase:
     def total_windows(self):
         return self.upstream_windows + self.downstream_windows + self.gene_windows
 
+    @property
+    def tick_positions(self):
+        return dict(
+            up_mid=self.upstream_windows / 2,
+            body_start=self.upstream_windows,
+            body_mid=self.total_windows / 2,
+            body_end=self.gene_windows + self.upstream_windows,
+            down_mid=self.total_windows - (self.downstream_windows / 2)
+        )
+
     def __len__(self):
         return len(self.bismark)
 

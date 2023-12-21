@@ -1,6 +1,7 @@
 import re
 from multiprocessing import cpu_count
 
+import plotly.subplots
 import polars as pl
 
 import numpy as np
@@ -18,7 +19,12 @@ from pyreadr import write_rds
 
 from src.bismarkplot.base import BismarkBase, BismarkFilesBase
 from src.bismarkplot.clusters import Clustering
-from src.bismarkplot.utils import remove_extension, approx_batch_num, hm_flank_lines
+from src.bismarkplot.utils import remove_extension, approx_batch_num, prepare_labels, interval
+
+import plotly.graph_objects as go
+import plotly.express as px
+
+from collections import OrderedDict
 
 
 class Metagene(BismarkBase):
@@ -362,7 +368,7 @@ class LinePlot(BismarkBase):
         res = (
             df
             .group_by(["context", "fragment"]).agg([
-                pl.col("sum"), pl.col("count"),
+                pl.col("sum"), pl.col("count").cast(pl.Int32),
                 (stat_expr).alias("density")
             ])
             .sort("fragment")
@@ -377,35 +383,13 @@ class LinePlot(BismarkBase):
         else:
             return df
 
-    @staticmethod
-    def __interval(sum_density: list[int], sum_counts: list[int], alpha=.95):
-        """
-        Evaluate confidence interval for point
-
-        :param sum_density: Sums of methylated counts in fragment
-        :param sum_counts: Sums of all read cytosines in fragment
-        :param alpha: Probability for confidence band
-        """
-        sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
-        average = sum_density.sum() / sum_counts.sum()
-
-        normalized = np.divide(sum_density, sum_counts)
-
-        variance = np.average((normalized - average) ** 2, weights=sum_counts)
-
-        n = sum(sum_counts) - 1
-
-        i = stats.t.interval(alpha, df=n, loc=average, scale=np.sqrt(variance / n))
-
-        return {"lower": i[0], "upper": i[1]}
-
     def __get_x_y(self, df, smooth, confidence):
         if 0 < confidence < 1:
             df = (
                 df
                 .with_columns(
                     pl.struct(["sum", "count"]).map_elements(
-                        lambda x: self.__interval(x["sum"], x["count"], confidence)
+                        lambda x: interval(x["sum"], x["count"], confidence)
                     ).alias("interval")
                 )
                 .unnest("interval")
@@ -432,49 +416,54 @@ class LinePlot(BismarkBase):
 
         return lower, data, upper
 
-    def __add_flank_lines(self, axes: plt.Axes, major_labels: list, minor_labels: list, show_border=True):
+    def __add_flank_lines(self, axes: Axes, major_labels: list, minor_labels: list, show_border=True):
+        labels = prepare_labels(major_labels, minor_labels)
+
+        if self.downstream_windows < 1:
+            labels["down_mid"], labels["body_end"] = [""] * 2
+
+        if self.upstream_windows < 1:
+            labels["up_mid"], labels["body_start"] = [""] * 2
+
+        x_ticks = self.tick_positions
+        x_labels = [labels[key] for key in x_ticks.keys()]
+
+        axes.set_xticks(x_ticks, labels=x_labels)
+
+        if show_border:
+            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
+                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
+
+        return axes
+
+    def __add_flank_lines_plotly(self, figure: go.Figure, major_labels: list, minor_labels: list, show_border=True):
         """
         Add flank lines to the given axis (for line plot)
         """
-        x_ticks_major = [self.upstream_windows, self.gene_windows + self.upstream_windows]
-        x_labels_major = ["TSS", "TES"]
-
-        x_ticks_minor = [self.upstream_windows / 2, self.total_windows / 2, self.total_windows - (self.downstream_windows / 2)]
-        x_labels_minor = ["Upstream", "Body", "Downstream"]
-
-        if major_labels is not None and len(major_labels) == len(x_ticks_major):
-            x_labels_major = major_labels
-        elif major_labels is not None and len(major_labels) != len(x_ticks_major):
-            print("Length of major tick labels != 2. Using default.")
-
-        if minor_labels is not None and len(minor_labels) == len(x_ticks_minor):
-            x_labels_minor = minor_labels
-        elif minor_labels is not None and len(minor_labels) != len(x_ticks_minor):
-            print("Length of minor tick labels != 3. Using default.")
+        labels = prepare_labels(major_labels, minor_labels)
 
         if self.downstream_windows < 1:
-            x_ticks_minor.pop(2)
-            x_labels_minor.pop(2)
-            x_ticks_major.pop(1)
-            x_labels_major.pop(1)
+            labels["down_mid"], labels["body_end"] = [""] * 2
 
         if self.upstream_windows < 1:
-            x_ticks_minor.pop(0)
-            x_labels_minor.pop(0)
-            x_ticks_major.pop(0)
-            x_labels_major.pop(0)
+            labels["up_mid"], labels["body_start"] = [""] * 2
 
-        if major_labels is not None:
-            axes.set_xticks(x_ticks_major, labels=x_labels_major, minor=False)
-        else:
-            axes.set_xticks(x_ticks_major, labels=["", ""], minor=False)
+        ticks = self.tick_positions
+        x_ticks = list(ticks.keys())
+        x_labels = [labels[key] for key in x_ticks]
 
-        if minor_labels is not None:
-            axes.set_xticks(x_ticks_minor, labels=x_labels_minor,  minor=True)
+        figure.update_layout(
+            xaxis=dict(
+                tickmode='array',
+                tickvals=x_ticks,
+                ticktext=x_labels)
+        )
 
         if show_border:
-            for tick in x_ticks_major:
-                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
+            for tick in [ticks["body_start"], ticks["body_end"]]:
+                figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
+
+        return figure
 
     def save_plot_rds(self, path, compress: bool = False):
         """
@@ -500,9 +489,9 @@ class LinePlot(BismarkBase):
             confidence: int = 0,
             linewidth: float = 1.0,
             linestyle: str = '-',
-            major_labels = ["TSS", "TES"],
-            minor_labels = ["Upstream", "Body", "Downstream"],
-            show_border = True
+            major_labels=["TSS", "TES"],
+            minor_labels=["Upstream", "Body", "Downstream"],
+            show_border=True
     ) -> Figure:
         """
         Draws line-plot on given :class:`matplotlib.Axes` or makes them itself.
@@ -544,6 +533,50 @@ class LinePlot(BismarkBase):
         axes.set_xlabel('Position')
 
         return fig
+
+    def draw_plotly(
+            self,
+            figure: go.Figure = None,
+            smooth: int = 50,
+            label: str = "",
+            confidence: int = 0,
+            major_labels=["TSS", "TES"],
+            minor_labels=["Upstream", "Body", "Downstream"],
+            show_border=True
+    ):
+        if figure is None:
+            figure = go.Figure()
+
+        contexts = self.plot_data["context"].unique().to_list()
+
+        for context in contexts:
+            df = self.plot_data.filter(pl.col("context") == context)
+
+            lower, data, upper = self.__get_x_y(df, smooth, confidence)
+
+            x = np.arange(len(data))
+
+            traces = [go.Scatter(x=x, y=data, name=f"{context}" if not label else f"{label}_{context}", mode="lines")]
+
+            if 0 < confidence < 1:
+                traces += [
+                    go.Scatter(x=x, y=upper, mode="lines", line_color = 'rgba(0,0,0,0)', showlegend=False,
+                               name=f"{context}_{confidence}CI" if not label else f"{label}_{context}_{confidence}CI"),
+                    go.Scatter(x=x, y=lower, mode="lines", line_color = 'rgba(0,0,0,0)', showlegend=True,
+                               fill="tonexty", fillcolor='rgba(0, 0, 0, 0.2)',
+                               name=f"{context}_{confidence}CI" if not label else f"{label}_{context}_{confidence}CI"),
+                ]
+
+            figure.add_traces(traces)
+
+        figure.update_layout(
+            xaxis_title="Position",
+            yaxis_title="Methylation density, %"
+        )
+
+        figure = self.__add_flank_lines_plotly(figure, major_labels, minor_labels, show_border)
+
+        return figure
 
 
 class HeatMap(BismarkBase):
@@ -642,11 +675,63 @@ class HeatMap(BismarkBase):
             return np.fliplr(df)
         return df
 
+    def __add_flank_lines(self, axes: Axes, major_labels: list, minor_labels: list, show_border=True):
+        labels = prepare_labels(major_labels, minor_labels)
+
+        if self.downstream_windows < 1:
+            labels["down_mid"], labels["body_end"] = [""] * 2
+
+        if self.upstream_windows < 1:
+            labels["up_mid"], labels["body_start"] = [""] * 2
+
+        x_ticks = self.tick_positions
+        x_labels = [labels[key] for key in x_ticks.keys()]
+
+        axes.set_xticks(x_ticks, labels=x_labels)
+
+        if show_border:
+            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
+                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
+
+        return axes
+
+    def __add_flank_lines_plotly(self, figure: go.Figure, major_labels: list, minor_labels: list, show_border=True):
+        """
+        Add flank lines to the given axis (for line plot)
+        """
+        labels = prepare_labels(major_labels, minor_labels)
+
+        if self.downstream_windows < 1:
+            labels["down_mid"], labels["body_end"] = [""] * 2
+
+        if self.upstream_windows < 1:
+            labels["up_mid"], labels["body_start"] = [""] * 2
+
+        x_ticks = self.tick_positions
+        x_labels = [labels[key] for key in x_ticks.keys()]
+
+        figure.update_layout(
+            xaxis=dict(
+                tickmode='array',
+                tickvals=x_ticks,
+                ticktext=x_labels)
+        )
+
+        if show_border:
+            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
+                figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
+
+        return figure
+
     def draw(
             self,
             fig_axes: tuple = None,
             title: str = None,
-            vmin: float = None, vmax: float = None
+            vmin: float = None, vmax: float = None,
+            color_scale="Viridis",
+            major_labels=["TSS", "TES"],
+            minor_labels=["Upstream", "Body", "Downstream"],
+            show_border=True
     ) -> Figure:
         """
         Draws heat-map on given :class:`matplotlib.Axes` or makes them itself.
@@ -667,16 +752,57 @@ class HeatMap(BismarkBase):
         vmax = np.max(np.array(self.plot_data)) if vmax is None else vmax
 
         image = axes.imshow(
-            self.plot_data, interpolation="nearest", aspect='auto', cmap=colormaps['cividis'], vmin=vmin, vmax=vmax
+            self.plot_data,
+            interpolation="nearest", aspect='auto',
+            cmap=colormaps[color_scale.lower()],
+            vmin=vmin, vmax=vmax
         )
+
         axes.set_title(title)
         axes.set_xlabel('Position')
         axes.set_ylabel('')
-        hm_flank_lines(axes, self.upstream_windows, self.gene_windows, self.downstream_windows)
+
+        self.__add_flank_lines(axes, major_labels, minor_labels, show_border)
         axes.set_yticks([])
+
         plt.colorbar(image, ax=axes, label='Methylation density')
 
         return fig
+
+    def draw_plotly(self,
+                    title: str = None,
+                    vmin: float = None, vmax: float = None,
+                    color_scale="Viridis",
+                    major_labels=["TSS", "TES"],
+                    minor_labels=["Upstream", "Body", "Downstream"],
+                    show_border=True
+                    ):
+        labels = dict(
+            x="Position",
+            y="Rank",
+            color="Methylation density"
+        )
+
+        figure = px.imshow(
+            self.plot_data,
+            zmin=vmin, zmax=vmax,
+            labels=labels,
+            title=title,
+            aspect="auto",
+            color_continuous_scale=color_scale
+        )
+
+        # disable y ticks
+        figure.update_layout(
+            yaxis=dict(
+                showticklabels=False
+            )
+        )
+
+        figure = self.__add_flank_lines_plotly(figure, major_labels, minor_labels, show_border)
+
+        return figure
+
 
     def save_plot_rds(self, path, compress: bool = False):
         """
@@ -791,6 +917,33 @@ class MetageneFiles(BismarkFilesBase):
 
         return fig
 
+    def violin_plot_plotly(self, title="", points=None):
+        def sample_convert(sample, label):
+            return (
+                sample
+                .line_plot()
+                .plot_data
+                .with_columns([
+                    pl.col("density") * 100,  # convert to %
+                    pl.lit(label).alias("label")
+                ])
+            )
+
+        data = pl.concat([sample_convert(sample, label) for sample, label in zip(self.samples, self.labels)])
+        data = data.to_pandas()
+
+        labels = dict(
+            context="Context",
+            label="",
+            density="Methylation density, %"
+        )
+
+        figure = px.violin(data, x="label", y="density",
+                        color="context", points=points,
+                        labels=labels, title=title)
+
+        return figure
+
     def box_plot(self, fig_axes: tuple = None, showfliers=False):
         """
         Draws box plot for Bismark DataFrames.
@@ -812,6 +965,33 @@ class MetageneFiles(BismarkFilesBase):
         axes.set_ylabel('Methylation density')
 
         return fig
+
+    def box_plot_plotly(self, title="", points=None):
+        def sample_convert(sample, label):
+            return (
+                sample
+                .line_plot()
+                .plot_data
+                .with_columns([
+                    pl.col("density") * 100,  # convert to %
+                    pl.lit(label).alias("label")
+                ])
+            )
+
+        data = pl.concat([sample_convert(sample, label) for sample, label in zip(self.samples, self.labels)])
+        data = data.to_pandas()
+
+        labels = dict(
+            context="Context",
+            label="",
+            density="Methylation density, %"
+        )
+
+        figure = px.box(data, x="label", y="density",
+                        color="context", points=points,
+                        labels=labels, title=title)
+
+        return figure
 
     def __dendrogram(self, stat="mean"):
         # get intersecting regions
@@ -874,6 +1054,20 @@ class LinePlotFiles(BismarkFilesBase):
 
         return fig
 
+    def draw_plotly(self,
+                    smooth: int = 50,
+                    confidence: int = 0,
+                    major_labels=["TSS", "TES"],
+                    minor_labels=["Upstream", "Body", "Downstream"],
+                    show_border=True
+                    ):
+        figure = go.Figure()
+        for lp, label in zip(self.samples, self.labels):
+            assert isinstance(lp, LinePlot)
+            lp.draw_plotly(figure, smooth, label, confidence, major_labels, minor_labels, show_border)
+
+        return figure
+
     def save_plot_rds(self, base_filename, compress: bool = False, merge: bool = False):
         if merge:
             merged = pl.concat(
@@ -889,6 +1083,33 @@ class LinePlotFiles(BismarkFilesBase):
 
 
 class HeatMapFiles(BismarkFilesBase):
+    def __add_flank_lines_plotly(self, figure: go.Figure, major_labels: list, minor_labels: list, show_border=True):
+        """
+        Add flank lines to the given axis (for line plot)
+        """
+        labels = prepare_labels(major_labels, minor_labels)
+
+        if self.samples[0].downstream_windows < 1:
+            labels["down_mid"], labels["body_end"] = [""] * 2
+
+        if self.samples[0].upstream_windows < 1:
+            labels["up_mid"], labels["body_start"] = [""] * 2
+
+        x_ticks = self.samples[0].tick_positions
+        x_labels = [labels[key] for key in x_ticks.keys()]
+
+        figure.for_each_xaxis(lambda x: x.update(
+            tickmode='array',
+            tickvals=list(x_ticks.values()),
+            ticktext=x_labels)
+        )
+
+        if show_border:
+            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
+                figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
+
+        return figure
+
     def draw(
             self,
             title: str = None
@@ -933,6 +1154,49 @@ class HeatMapFiles(BismarkFilesBase):
         fig.suptitle(title, fontstyle='italic')
         fig.set_size_inches(6 * subplots_x, 5 * subplots_y)
         return fig
+
+
+    def draw_plotly(
+            self,
+            title: str = None,
+            color_scale: str = "Viridis",
+            major_labels: list = ["TSS", "TES"],
+            minor_labels: list = ["Upstream", "Body", "Downstream"],
+            show_border: bool =True,
+            facet_cols: int = 3,
+    ):
+        samples_matrix = np.stack([sample.plot_data for sample in self.samples])
+
+        labels = dict(
+            x="Position",
+            y="Rank",
+            color="Methylation density"
+        )
+
+        figure = px.imshow(
+            samples_matrix,
+            labels=labels,
+            title=title,
+            aspect="auto",
+            color_continuous_scale=color_scale,
+            facet_col=0,
+            facet_col_wrap=facet_cols
+        )
+
+        # set facet annotations
+        figure.for_each_annotation(lambda l: l.update(text=self.labels[int(l.text.split("=")[1])]))
+
+        # disable y ticks
+        figure.update_layout(
+            yaxis=dict(
+                showticklabels=False
+            )
+        )
+
+        figure = self.__add_flank_lines_plotly(figure, major_labels, minor_labels, show_border)
+
+        return figure
+
 
     def save_plot_rds(self, base_filename, compress: bool = False):
         for sample, label in zip(self.samples, self.labels):

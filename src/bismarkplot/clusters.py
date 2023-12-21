@@ -12,7 +12,7 @@ from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist
 
 from .base import BismarkBase
-from .utils import hm_flank_lines
+from .utils import prepare_labels, hm_flank_lines
 
 
 class Clustering(BismarkBase):
@@ -93,10 +93,34 @@ class Clustering(BismarkBase):
 
     # TODO: rewrite save_rds, save_tsv
 
+    def __add_flank_lines(self, axes, major_labels: list, minor_labels: list, show_border=True):
+        labels = prepare_labels(major_labels, minor_labels)
+
+        if self.downstream_windows < 1:
+            labels["down_mid"], labels["body_end"] = [""] * 2
+
+        if self.upstream_windows < 1:
+            labels["up_mid"], labels["body_start"] = [""] * 2
+
+        x_ticks = self.tick_positions
+        x_labels = [labels[key] for key in x_ticks.keys()]
+
+        axes.set_xticks(x_ticks, labels=x_labels)
+
+        if show_border:
+            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
+                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
+
+        return axes
+
     def draw(
             self,
             fig_axes: tuple = None,
-            title: str = None
+            title: str = None,
+            color_scale="Viridis",
+            major_labels=["TSS", "TES"],
+            minor_labels=["Upstream", "Body", "Downstream"],
+            show_border=True
     ) -> Figure:
         """
         Draws heat-map on given :class:`matplotlib.Axes` or makes them itself.
@@ -117,14 +141,14 @@ class Clustering(BismarkBase):
         image = axes.imshow(
             self.matrix[self.order, :],
             interpolation="nearest", aspect='auto',
-            cmap=colormaps['cividis'],
+            cmap=colormaps[color_scale.lower()],
             vmin=vmin, vmax=vmax
         )
         axes.set_title(title)
         axes.set_xlabel('Position')
         axes.set_ylabel('')
 
-        hm_flank_lines(axes, self.upstream_windows, self.gene_windows, self.downstream_windows)
+        self.__add_flank_lines(axes, major_labels, minor_labels, show_border)
 
         axes.set_yticks([])
         plt.colorbar(image, ax=axes, label='Methylation density')
