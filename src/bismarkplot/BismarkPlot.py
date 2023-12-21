@@ -901,12 +901,12 @@ class Metagene(BismarkBase):
         # cast genome columns to type to join
         gene_columns = [
             pl.col('strand').cast(pl.Categorical),
-            pl.col('chr').cast(pl.Categorical)
+            pl.col('chr').cast(pl.Utf8).cast(pl.Categorical)
         ]
         # cast report columns to optimized type
         df_columns = [
             pl.col('position').cast(pl.Int32),
-            pl.col('chr').cast(pl.Categorical),
+            pl.col('chr').cast(pl.Utf8).cast(pl.Categorical),
             pl.col('strand').cast(pl.Categorical),
             pl.col('context').cast(pl.Categorical),
             # density for CURRENT cytosine
