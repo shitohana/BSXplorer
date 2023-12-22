@@ -25,6 +25,19 @@ from pyreadr import write_rds
 from dynamicTreeCut import cutreeHybrid
 
 
+GENOME_SCHEMA = {
+    'chr': pl.Utf8,
+    'source': pl.Utf8,
+    'type': pl.Utf8,
+    'start': pl.Int64,
+    'end': pl.Int64,
+    'score': pl.Utf8,
+    'strand': pl.Utf8,
+    'frame': pl.Utf8,
+    'attribute': pl.Utf8
+}
+
+
 def remove_extension(path):
     re.sub("\.[^./]+$", "", path)
 
@@ -97,7 +110,7 @@ class Genome:
                 separator='\t',
                 new_columns=['chr', 'source', 'type', 'start',
                              'end', 'score', 'strand', 'frame', 'attribute'],
-                dtypes={'start': pl.Int32, 'end': pl.Int32, 'chr': pl.Utf8}
+                dtypes=GENOME_SCHEMA
             )
             .with_columns(
                 pl.col("attribute").str.extract(id_regex).alias("id")
@@ -729,7 +742,7 @@ class ChrLevels:
                     .group_by(["strand", "chr"])
                     .agg([
                         pl.col("context"),
-                        (pl.col("position") / window_length).floor().alias("window").cast(pl.Int32),
+                        (pl.col("position") / window_length).floor().alias("window").cast(pl.Int64),
                         ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32),
                         (pl.max("position") - pl.min("position")).alias("length")
                     ])
@@ -901,12 +914,12 @@ class Metagene(BismarkBase):
         # cast genome columns to type to join
         gene_columns = [
             pl.col('strand').cast(pl.Categorical),
-            pl.col('chr').cast(pl.Utf8).cast(pl.Categorical)
+            pl.col('chr').cast(pl.Categorical)
         ]
         # cast report columns to optimized type
         df_columns = [
-            pl.col('position').cast(pl.Int32),
-            pl.col('chr').cast(pl.Utf8).cast(pl.Categorical),
+            pl.col('position').cast(pl.Int64),
+            pl.col('chr').cast(pl.Categorical),
             pl.col('strand').cast(pl.Categorical),
             pl.col('context').cast(pl.Categorical),
             # density for CURRENT cytosine
@@ -1054,7 +1067,7 @@ class Metagene(BismarkBase):
             self.bismark.lazy()
             .with_columns(
                 ((pl.col("fragment") / from_fragments)
-                 * to_fragments).floor().cast(pl.Int32)
+                 * to_fragments).floor().cast(self.bismark.schema["fragment"])
             )
             .group_by(
                 by=['chr', 'strand', 'gene', 'context', 'fragment']
@@ -1310,7 +1323,7 @@ class HeatMap(BismarkBase):
             # round row count
             .with_columns(
                 (pl.col('row') / (pl.col('row').max() + 1)
-                 * nrow).floor().alias('row').cast(pl.Int16)
+                 * nrow).floor().alias('row').cast(self.bismark.schema["fragment"])
             )
             .explode(['fragment', 'sum', 'count'])
             # calc sum count for row|fragment
@@ -1328,8 +1341,8 @@ class HeatMap(BismarkBase):
             )
             .explode("fragment")
             .with_columns(
-                pl.col("fragment").cast(pl.Int32),
-                pl.col("row").cast(pl.Int16)
+                pl.col("fragment").cast(self.bismark.schema["fragment"]),
+                pl.col("row").cast(self.bismark.schema["fragment"])
             )
         )
         # join template with actual data
