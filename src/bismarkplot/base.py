@@ -3,7 +3,7 @@ import gzip
 import polars as pl
 from pyreadr import write_rds
 
-from src.bismarkplot.utils import remove_extension
+from .utils import remove_extension
 
 
 class BismarkBase:

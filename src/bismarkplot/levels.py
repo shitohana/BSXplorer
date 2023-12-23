@@ -9,7 +9,7 @@ from scipy.signal import savgol_filter
 
 import plotly.graph_objects as go
 
-from src.bismarkplot.utils import approx_batch_num, interval
+from .utils import approx_batch_num, interval
 
 
 class ChrLevels:

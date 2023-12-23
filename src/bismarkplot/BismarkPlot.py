@@ -17,13 +17,14 @@ from scipy import stats
 from pandas import DataFrame as pdDataFrame
 from pyreadr import write_rds
 
-from src.bismarkplot.base import BismarkBase, BismarkFilesBase
-from src.bismarkplot.clusters import Clustering
-from src.bismarkplot.utils import remove_extension, approx_batch_num, prepare_labels, interval
+from .base import BismarkBase, BismarkFilesBase
+from .clusters import Clustering
+from .utils import remove_extension, approx_batch_num, prepare_labels, interval
 
 import plotly.graph_objects as go
 import plotly.express as px
-
+from pathlib import Path
+import pyarrow.parquet as pq
 from collections import OrderedDict
 
 
@@ -70,38 +71,50 @@ class Metagene(BismarkBase):
                    gene_windows=gene_windows,
                    downstream_windows=downstream_windows)
 
-    @staticmethod
-    def __read_bismark_batches(
+    @classmethod
+    def from_parquet(
+            cls,
             file: str,
             genome: pl.DataFrame,
-            upstream_windows: int = 500,
+            upstream_windows: int = 0,
             gene_windows: int = 2000,
-            downstream_windows: int = 500,
-            batch_size: int = 10 ** 7,
-            cpu: int = cpu_count(),
+            downstream_windows: int = 0,
             sumfunc: str = "mean"
-    ) -> pl.DataFrame:
-        cpu = cpu if cpu is not None else cpu_count()
+    ):
+        """
+        Constructor from Bismark coverage2cytosine output.
 
-        # enable string cache for categorical comparison
-        pl.enable_string_cache(True)
+        :param cpu: How many cores to use. Uses every physical core by default
+        :param file: Path to bismark genomeWide report
+        :param genome: polars.Dataframe with gene ranges
+        :param upstream_windows: Number of windows flank regions to split
+        :param downstream_windows: Number of windows flank regions to split
+        :param gene_windows: Number of windows gene regions to split
+        :param batch_size: Number of rows to read by one CPU core
+        """
+        if upstream_windows < 1:
+            upstream_windows = 0
+        if downstream_windows < 1:
+            downstream_windows = 0
+        if gene_windows < 1:
+            gene_windows = 0
 
+        bismark_df = cls.__read_parquet_batches(file, genome,
+                                                upstream_windows, gene_windows, downstream_windows, sumfunc)
+
+        return cls(bismark_df,
+                   upstream_windows=upstream_windows,
+                   gene_windows=gene_windows,
+                   downstream_windows=downstream_windows)
+
+    @staticmethod
+    def __process_batch(df: pl.DataFrame, genome: pl.DataFrame, df_columns, up_win, gene_win, down_win, sumfunc):
         # *** POLARS EXPRESSIONS ***
         # cast genome columns to type to join
         GENE_COLUMNS = [
             pl.col('strand').cast(pl.Categorical),
             pl.col('chr').cast(pl.Categorical)
         ]
-        # cast report columns to optimized type
-        DF_COLUMNS = [
-            pl.col('position').cast(pl.Int32),
-            pl.col('chr').cast(pl.Categorical),
-            pl.col('strand').cast(pl.Categorical),
-            pl.col('context').cast(pl.Categorical),
-            # density for CURRENT cytosine
-            ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32)
-        ]
-
         # upstream region position check
         UP_REGION = pl.col('position') < pl.col('start')
         # body region position check
@@ -109,23 +122,16 @@ class Metagene(BismarkBase):
         # downstream region position check
         DOWN_REGION = (pl.col('position') > pl.col('end'))
 
-        UP_FRAGMENT = ((
-            (pl.col('position') - pl.col('upstream')) / (pl.col('start') - pl.col('upstream'))
-        ) * upstream_windows).floor()
+        UP_FRAGMENT = (((pl.col('position') - pl.col('upstream')) / (pl.col('start') - pl.col('upstream'))
+                       ) * up_win).floor()
 
         # fragment even for position == end needs to be rounded by floor
         # so 1e-10 is added (position is always < end)
-        BODY_FRAGMENT = ((
-            (pl.col('position') - pl.col('start')) / (pl.col('end') - pl.col('start') + 1e-10)
-         ) * gene_windows).floor() + upstream_windows
+        BODY_FRAGMENT = (((pl.col('position') - pl.col('start')) / (pl.col('end') - pl.col('start') + 1e-10)
+                         ) * gene_win).floor() + up_win
 
-        DOWN_FRAGMENT = ((
-            (pl.col('position') - pl.col('end')) / (pl.col('downstream') - pl.col('end') + 1e-10)
-        ) * downstream_windows).floor() + upstream_windows + gene_windows
-
-        # batch approximation
-        read_approx = approx_batch_num(file, batch_size)
-        read_batches = 0
+        DOWN_FRAGMENT = (((pl.col('position') - pl.col('end')) / (pl.col('downstream') - pl.col('end') + 1e-10)
+                         ) * down_win).floor() + up_win + gene_win
 
         # Firstly BismarkPlot was written so there were only one sum statistic - mean.
         # Sum and count of densities was calculated for further weighted mean analysis in respect to fragment size
@@ -146,6 +152,64 @@ class Metagene(BismarkBase):
         else:
             AGG_EXPR = [pl.sum('density').alias('sum'), pl.count('density').alias('count')]
 
+        return (
+            df.lazy()
+            # assign types
+            # calculate density for each cytosine
+            .with_columns(df_columns)
+            # drop redundant columns, because individual cytosine density has already been calculated
+            # individual counts do not matter because every cytosine is equal
+
+            # .drop(['count_m', 'count_um'])
+
+            # sort by position for joining
+            .sort(['chr', 'strand', 'position'])
+            # join with nearest
+            .join_asof(
+                genome.lazy().with_columns(GENE_COLUMNS),
+                left_on='position', right_on='upstream', by=['chr', 'strand']
+            )
+            # limit by end of region
+            .filter(pl.col('position') <= pl.col('downstream'))
+            # calculate fragment ids
+            .with_columns([
+                pl.when(UP_REGION).then(UP_FRAGMENT)
+                .when(BODY_REGION).then(BODY_FRAGMENT)
+                .when(DOWN_REGION).then(DOWN_FRAGMENT)
+                .cast(pl.Int32).alias('fragment'),
+                pl.concat_str(
+                    pl.col("chr"),
+                    (pl.concat_str(pl.col("start"), pl.col("end"), separator="-")),
+                    separator=":").alias("gene").cast(pl.Categorical),
+                pl.col('id').cast(pl.Categorical)
+            ])
+            # gather fragment stats
+            .groupby(by=['chr', 'strand', 'gene', 'context', 'id', 'fragment'])
+            .agg(AGG_EXPR)
+            .drop_nulls(subset=['sum'])
+        ).collect()
+
+    @classmethod
+    def __read_bismark_batches(
+            cls,
+            file: str,
+            genome: pl.DataFrame,
+            up_win: int = 500,
+            gene_win: int = 2000,
+            down_win: int = 500,
+            batch_size: int = 10 ** 7,
+            cpu: int = cpu_count(),
+            sumfunc: str = "mean"
+    ) -> pl.DataFrame:
+        cpu = cpu if cpu is not None else cpu_count()
+
+        # enable string cache for categorical comparison
+        pl.enable_string_cache(True)
+
+        # batch approximation
+        read_approx = approx_batch_num(file, batch_size)
+        read_batches = 0
+
         # *** READING START ***
         # output dataframe
         total = None
@@ -161,51 +225,23 @@ class Metagene(BismarkBase):
         )
         batches = bismark.next_batches(cpu)
 
-        def process_batch(df: pl.DataFrame):
-            return (
-                df.lazy()
-                # filter empty rows
-                .filter((pl.col('count_m') + pl.col('count_um') != 0))
-                # assign types
-                # calculate density for each cytosine
-                .with_columns(DF_COLUMNS)
-                # drop redundant columns, because individual cytosine density has already been calculated
-                # individual counts do not matter because every cytosine is equal
-                .drop(['count_m', 'count_um'])
-                # sort by position for joining
-                .sort(['chr', 'strand', 'position'])
-                # join with nearest
-                .join_asof(
-                    genome.lazy().with_columns(GENE_COLUMNS),
-                    left_on='position', right_on='upstream', by=['chr', 'strand']
-                )
-                # limit by end of region
-                .filter(pl.col('position') <= pl.col('downstream'))
-                # calculate fragment ids
-                .with_columns([
-                    pl.when(UP_REGION).then(UP_FRAGMENT)
-                    .when(BODY_REGION).then(BODY_FRAGMENT)
-                    .when(DOWN_REGION).then(DOWN_FRAGMENT)
-                    .cast(pl.Int32).alias('fragment'),
-                    pl.concat_str(
-                        pl.col("chr"),
-                        (pl.concat_str(pl.col("start"), pl.col("end"), separator="-")),
-                        separator=":").alias("gene").cast(pl.Categorical),
-                    pl.col('id').cast(pl.Categorical)
-                ])
-                # gather fragment stats
-                .groupby(by=['chr', 'strand', 'gene', 'context', 'id', 'fragment'])
-                .agg(AGG_EXPR)
-                .drop_nulls(subset=['sum'])
-            ).collect()
+        df_columns = [
+            pl.col('position').cast(pl.Int32),
+            pl.col('chr').cast(pl.Categorical),
+            pl.col('strand').cast(pl.Categorical),
+            pl.col('context').cast(pl.Categorical),
+            # density for CURRENT cytosine
+            ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32)
+        ]
 
         print(f"Reading from {file}")
         while batches:
             for df in batches:
-                df = process_batch(df)
+                df = df.filter((pl.col('count_m') + pl.col('count_um') != 0))
+                df = cls.__process_batch(df, genome, df_columns, up_win, gene_win, down_win, sumfunc)
                 if total is None and len(df) == 0:
                     raise Exception(
-                        "Error reading Bismark file. Check format or genome. No joins on first batch.")
+                        "Error reading cytosine file. Check format or genome. No joins on first batch.")
                 elif total is None:
                     total = df
                 else:
@@ -216,6 +252,61 @@ class Metagene(BismarkBase):
                     f"\tRead {read_batches}/{read_approx} batch | Total size - {round(total.estimated_size('mb'), 1)}Mb RAM",
                     end="\r")
             batches = bismark.next_batches(cpu)
+        print("DONE")
+        return total
+
+    @classmethod
+    def __read_parquet_batches(
+            cls,
+            file: str,
+            genome: pl.DataFrame,
+            up_win: int = 500,
+            gene_win: int = 2000,
+            down_win: int = 500,
+            sumfunc: str = "mean"
+    ) -> pl.DataFrame:
+        file = Path(file)
+
+        # enable string cache for categorical comparison
+        pl.enable_string_cache(True)
+
+        # *** READING START ***
+        # output dataframe
+        total = None
+        # initialize batched reader
+        pq_file = pq.ParquetFile(file.absolute())
+
+        # batch approximation
+        num_row_groups = pq_file.metadata.num_row_groups
+
+        df_columns = [
+            pl.col('position').cast(pl.Int32),
+            pl.col('chr').cast(pl.Categorical),
+            pl.col('strand').cast(pl.Categorical),
+            pl.col('context').cast(pl.Categorical),
+            # density for CURRENT cytosine
+            (pl.col('count_m') / pl.col('count_total')).alias('density').cast(pl.Float32)
+        ]
+
+        print(f"Reading from {file}")
+
+        for i in range(num_row_groups):
+            df = pl.from_arrow(pq_file.read_row_group(i))
+            df = df.filter(pl.col("count_total") != 0)
+
+            df = cls.__process_batch(df, genome, df_columns, up_win, gene_win, down_win, sumfunc)
+            if total is None and len(df) == 0:
+                raise Exception(
+                    "Error reading cytosine file. Check format or genome. No joins on first batch.")
+            elif total is None:
+                total = df
+            else:
+                total = total.extend(df)
+
+            print(
+                f"\tRead {i}/{num_row_groups} batch | Total size - {round(total.estimated_size('mb'), 1)}Mb RAM",
+                end="\r")
+
         print("DONE")
         return total
 
@@ -378,7 +469,7 @@ class LinePlot(BismarkBase):
 
     def __strand_reverse(self, df: pl.DataFrame):
         if self.strand == '-':
-            max_fragment = self.plot_data["fragment"].max()
+            max_fragment = df["fragment"].max()
             return df.with_columns((max_fragment - pl.col("fragment")).alias("fragment"))
         else:
             return df
@@ -425,13 +516,16 @@ class LinePlot(BismarkBase):
         if self.upstream_windows < 1:
             labels["up_mid"], labels["body_start"] = [""] * 2
 
-        x_ticks = self.tick_positions
-        x_labels = [labels[key] for key in x_ticks.keys()]
+        ticks = self.tick_positions
+
+        names = list(ticks.keys())
+        x_ticks = [ticks[key] for key in names]
+        x_labels = [labels[key] for key in names]
 
         axes.set_xticks(x_ticks, labels=x_labels)
 
         if show_border:
-            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
+            for tick in [ticks["body_start"], ticks["body_end"]]:
                 axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
 
         return axes
@@ -449,8 +543,10 @@ class LinePlot(BismarkBase):
             labels["up_mid"], labels["body_start"] = [""] * 2
 
         ticks = self.tick_positions
-        x_ticks = list(ticks.keys())
-        x_labels = [labels[key] for key in x_ticks]
+
+        names = list(ticks.keys())
+        x_ticks = [ticks[key] for key in names]
+        x_labels = [labels[key] for key in names]
 
         figure.update_layout(
             xaxis=dict(
@@ -684,13 +780,16 @@ class HeatMap(BismarkBase):
         if self.upstream_windows < 1:
             labels["up_mid"], labels["body_start"] = [""] * 2
 
-        x_ticks = self.tick_positions
-        x_labels = [labels[key] for key in x_ticks.keys()]
+        ticks = self.tick_positions
+
+        names = list(ticks.keys())
+        x_ticks = [ticks[key] for key in names]
+        x_labels = [labels[key] for key in names]
 
         axes.set_xticks(x_ticks, labels=x_labels)
 
         if show_border:
-            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
+            for tick in [ticks["body_start"], ticks["body_end"]]:
                 axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
 
         return axes
@@ -707,8 +806,11 @@ class HeatMap(BismarkBase):
         if self.upstream_windows < 1:
             labels["up_mid"], labels["body_start"] = [""] * 2
 
-        x_ticks = self.tick_positions
-        x_labels = [labels[key] for key in x_ticks.keys()]
+        ticks = self.tick_positions
+
+        names = list(ticks.keys())
+        x_ticks = [ticks[key] for key in names]
+        x_labels = [labels[key] for key in names]
 
         figure.update_layout(
             xaxis=dict(
@@ -718,7 +820,7 @@ class HeatMap(BismarkBase):
         )
 
         if show_border:
-            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
+            for tick in [ticks["body_start"], ticks["body_end"]]:
                 figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
 
         return figure
@@ -1095,17 +1197,20 @@ class HeatMapFiles(BismarkFilesBase):
         if self.samples[0].upstream_windows < 1:
             labels["up_mid"], labels["body_start"] = [""] * 2
 
-        x_ticks = self.samples[0].tick_positions
-        x_labels = [labels[key] for key in x_ticks.keys()]
+        ticks = self.samples[0].tick_positions
+
+        names = list(ticks.keys())
+        x_ticks = [ticks[key] for key in names]
+        x_labels = [labels[key] for key in names]
 
         figure.for_each_xaxis(lambda x: x.update(
             tickmode='array',
-            tickvals=list(x_ticks.values()),
+            tickvals=x_ticks,
             ticktext=x_labels)
         )
 
         if show_border:
-            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
+            for tick in [ticks["body_start"], ticks["body_end"]]:
                 figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
 
         return figure
@@ -1173,14 +1278,15 @@ class HeatMapFiles(BismarkFilesBase):
             color="Methylation density"
         )
 
+        facet_col = 0
         figure = px.imshow(
             samples_matrix,
             labels=labels,
             title=title,
             aspect="auto",
             color_continuous_scale=color_scale,
-            facet_col=0,
-            facet_col_wrap=facet_cols
+            facet_col=facet_col,
+            facet_col_wrap=facet_cols if len(self.samples) > facet_cols else len(self.samples)
         )
 
         # set facet annotations

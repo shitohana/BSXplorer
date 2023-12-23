@@ -1,5 +1,7 @@
-import polars as pl
+from __future__ import annotations
 
+import polars as pl
+from pathlib import Path
 
 class Genome:
     def __init__(self, genome: pl.LazyFrame):
@@ -20,7 +22,7 @@ class Genome:
 
     @classmethod
     def from_custom(cls,
-                    file: str,
+                    file: str | Path,
                     chr_col: int = 0,
                     start_col: int = 1,
                     end_col: int = 2,

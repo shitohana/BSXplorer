@@ -22,14 +22,14 @@ parser.add_argument('-d', '--dwindows', help='number of windows for downstream',
 parser.add_argument('-m', '--mlength', help='minimal length in bp of gene', type=int, default=4000)
 parser.add_argument('-w', '--gwindows', help='number of windows for genes', type=int, default=100)
 
-parser.add_argument('--line', help='line-plot enabled', action='store_true', default=False)
-parser.add_argument('--heatmap', help='heat-map enabled', action='store_true', default=False)
-parser.add_argument('--box', help='box-plot enabled', action='store_true', default=False)
-parser.add_argument('--violin', help='violin-plot enabled', action='store_true', default=False)
+parser.add_argument('--line', help='line-plot enabled', action='store_true', default=True)
+parser.add_argument('--heatmap', help='heat-map enabled', action='store_true', default=True)
+parser.add_argument('--box', help='box-plot enabled', action='store_true', default=True)
+parser.add_argument('--violin', help='violin-plot enabled', action='store_true', default=True)
 
 parser.add_argument('-S', '--smooth', help='windows for smoothing', type=float, default=10)
 parser.add_argument('-L', '--labels', help='labels for plots', nargs='+')
-parser.add_argument('-C', '--confidence', help='probability for confidence bands for line-plot. 0 if disabled', type=float, default=0)
+parser.add_argument('-C', '--confidence', help='probability for confidence bands for line-plot. 0 if disabled', type=float, default=.95)
 parser.add_argument('-H', help='vertical resolution for heat-map', type=int, default=100, dest="vresolution")
 parser.add_argument('-V', help='vertical resolution for heat-map', type=int, default=100, dest="hresolution")
 parser.add_argument("--dpi", help="dpi of output plot", type=int, default=200)
@@ -50,13 +50,13 @@ def main():
             file=args.genome
         )
         if args.region == "tss":
-            genome = genome.near_TSS(min_length = args.mlength, flank_length= args.flength)
+            genome = genome.near_TSS(min_length=args.mlength, flank_length=args.flength)
         elif args.region == "tes":
-            genome = genome.near_TES(min_length = args.mlength, flank_length= args.flength)
+            genome = genome.near_TES(min_length=args.mlength, flank_length=args.flength)
         elif args.region == "exon":
-            genome = genome.exon(min_length = args.mlength)
+            genome = genome.exon(min_length=args.mlength)
         else:
-            genome = genome.gene_body(min_length = args.mlength, flank_length= args.flength)
+            genome = genome.gene_body(min_length=args.mlength, flank_length=args.flength)
 
         bismark = MetageneFiles.from_list(
             filenames=args.filename,
