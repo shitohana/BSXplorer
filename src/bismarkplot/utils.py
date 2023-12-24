@@ -34,9 +34,9 @@ def prepare_labels(major_labels: list, minor_labels: list):
     else:
         labels["body_start"], labels["body_end"] = [""] * 2
 
-    if minor_labels is not None and len(major_labels) != 3:
+    if minor_labels and len(minor_labels) == 3:
         labels["up_mid"], labels["body_mid"], labels["down_mid"] = minor_labels
-    elif minor_labels is not None:
+    elif minor_labels:
         print("Length of minor tick labels != 3. Using default.")
     else:
         labels["up_mid"], labels["body_mid"], labels["down_mid"] = [""] * 3

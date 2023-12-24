@@ -775,7 +775,7 @@ class LinePlot(PlotBase):
         """
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["TSS", "TES"] if minor_labels is None else minor_labels
+        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
 
         contexts = self.plot_data["context"].unique().to_list()
 
@@ -812,9 +812,9 @@ class LinePlot(PlotBase):
             minor_labels: list[str] = None,
             show_border: bool = True
     ):
-        figure = go.Figure if figure is None else figure
+        figure = go.Figure() if figure is None else figure
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["TSS", "TES"] if minor_labels is None else minor_labels
+        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
 
         contexts = self.plot_data["context"].unique().to_list()
 
@@ -836,7 +836,7 @@ class LinePlot(PlotBase):
                                name=f"{context}_{confidence}CI" if not label else f"{label}_{context}_{confidence}CI"),
                 ]
 
-            figure.add_traces(traces)
+            figure.add_traces(data=traces)
 
         figure.update_layout(
             xaxis_title="Position",
@@ -860,7 +860,7 @@ class LinePlotFiles(BismarkFilesBase):
         show_border: bool = True
     ):
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["TSS", "TES"] if minor_labels is None else minor_labels
+        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
 
         plt.clf()
         fig, axes = plt.subplots()
@@ -879,7 +879,7 @@ class LinePlotFiles(BismarkFilesBase):
                     ):
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["TSS", "TES"] if minor_labels is None else minor_labels
+        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
 
         figure = go.Figure()
 
@@ -1001,7 +1001,7 @@ class HeatMap(PlotBase):
             show_border: bool = True
     ):
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["TSS", "TES"] if minor_labels is None else minor_labels
+        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
 
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
 
@@ -1037,7 +1037,7 @@ class HeatMap(PlotBase):
     ):
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["TSS", "TES"] if minor_labels is None else minor_labels
+        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
 
         labels = dict(
             x="Position",
@@ -1159,7 +1159,7 @@ class HeatMapFiles(BismarkFilesBase):
             facet_cols: int = 3,
     ):
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["TSS", "TES"] if minor_labels is None else minor_labels
+        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
         samples_matrix = np.stack([sample.plot_data for sample in self.samples])
 
         labels = dict(
