@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import polars as pl
 from pathlib import Path
+from .utils import MetageneSchema
 
 class Genome:
     def __init__(self, genome: pl.LazyFrame):
@@ -47,8 +48,8 @@ class Genome:
         select_cols = [
             pl.col(cols[chr_col]).alias("chr").cast(pl.Utf8),
             pl.col(cols[type_col]).alias("type") if type_col is not None else pl.lit(None).alias("type"),
-            pl.col(cols[start_col]).alias("start").cast(pl.Int32),
-            pl.col(cols[end_col]).alias("end").cast(pl.Int32),
+            pl.col(cols[start_col]).alias("start").cast(MetageneSchema.position),
+            pl.col(cols[end_col]).alias("end").cast(MetageneSchema.position),
             pl.col(cols[strand_col]).alias("strand"),
             pl.col(cols[id_col]).alias("id") if id_col is not None else pl.lit("").alias("id"),
         ]

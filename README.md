@@ -123,7 +123,7 @@ Below we will show the basic BismarkPlot workflow.
 ### Single sample
 
 ```python
-import src.bismarkplot.genome
+import src.bismarkplot.Genome
 import bismarkplot
 
 # Firstly, we need to read the regions annotation (e.g. reference genome .gff)
@@ -132,12 +132,12 @@ genome = src.bismarkplot.genome.Genome.from_gff("path/to/genome.gff")
 genes = genome.gene_body(min_length=4000, flank_length=2000)
 
 # Now we need to calculate metagene data
-metagene = bismarkplot.Metagene.from_file(
+metagene = bismarkplot.Metagene.from_bismark(
     file="path/to/CX_report.txt",
     genome=genes,  # filtered regions
-    upstream_windows=500,
-    gene_windows=1000,
-    downstream_windows=500,
+    up_windows=500,
+    body_windows=1000,
+    down_windows=500,
     batch_size=10 ** 7  # number of lines to be read simultaneously
 )
 
@@ -190,15 +190,15 @@ overall methylation patterns in sample. _This operation is very time consuming. 
 windows (< 50)_.
 
 ```python
-metagene = bismarkplot.Metagene.from_file(
-    file = "path/to/CX_report.txt",
-    genome=genes,                         # filtered regions
-    upstream_windows = 5, gene_windows = 10, downstream_windows = 5,
+metagene = bismarkplot.Metagene.from_bismark(
+    file="path/to/CX_report.txt",
+    genome=genes,  # filtered regions
+    up_windows=5, body_windows=10, down_windows=5,
 )
 clustered = metagene.clustering(
-    count_threshold=5,                    # Minimum counts per window
-    dist_method="euclidean",              # See scipy.spatial.distance.pdist
-    clust_method="average"                # See scipy.cluster.hierarchy.linkage
+    count_threshold=5,  # Minimum counts per window
+    dist_method="euclidean",  # See scipy.spatial.distance.pdist
+    clust_method="average"  # See scipy.cluster.hierarchy.linkage
 )
 
 # Heatmap with optimized distances between genes will be drawn
@@ -282,7 +282,7 @@ Output for _Brachypodium distachyon_:
 
 ```python
 # For analyzing samples with different reference genomes, we need to initialize several genomes instances
-import src.bismarkplot.genome
+import src.bismarkplot.Genome
 
 genome_filenames = ["arabidopsis.gff", "brachypodium.gff", "cucumis.gff", "mus.gff"]
 reports_filenames = ["arabidopsis.txt", "brachypodium.txt", "cucumis.txt", "mus.txt"]
@@ -319,7 +319,7 @@ Output:
 Other genomic regions from .gff can be analyzed too with ```.exon``` or ```.near_tss/.near_tes``` option for ```bismarkplot.Genome```
 
 ```python
-import src.bismarkplot.genome
+import src.bismarkplot.Genome
 
 exons = [
     src.bismarkplot.genome.Genome.from_gff(file).exon(min_length=100) for file in genome_filenames
@@ -363,7 +363,7 @@ TSS output:
 BismarkPlot allows user to visualize chromosome methylation levels across full genome
 
 ```python
-import src.bismarkplot.levels
+import src.bismarkplot.ChrLevels
 import bismarkplot
 
 chr = src.bismarkplot.levels.ChrLevels.from_file(

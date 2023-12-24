@@ -1,9 +1,12 @@
 import gzip
+from collections import OrderedDict
 
 import polars as pl
 from pyreadr import write_rds
 
-from .utils import remove_extension
+from .utils import remove_extension, prepare_labels
+from matplotlib.axes import Axes
+import plotly.graph_objects as go
 
 
 class BismarkBase:
@@ -14,17 +17,6 @@ class BismarkBase:
     def __init__(self, bismark_df: pl.DataFrame, **kwargs):
         """
         Base class for Bismark data.
-
-        DataFrame Structure:
-
-        +-----------------+-------------+---------------------+----------------------+------------------+----------------+-----------------------------------------+
-        | chr             | strand      | context             | gene                 | fragment         | sum            | count                                   |
-        +=================+=============+=====================+======================+==================+================+=========================================+
-        | Categorical     | Categorical | Categorical         | Categorical          | Int32            | Int32          | Int32                                   |
-        +-----------------+-------------+---------------------+----------------------+------------------+----------------+-----------------------------------------+
-        | chromosome name | strand      | methylation context | position of cytosine | fragment in gene | sum methylated | count of all cytosines in this position |
-        +-----------------+-------------+---------------------+----------------------+------------------+----------------+-----------------------------------------+
-
 
         :param bismark_df: pl.DataFrame with cytosine methylation status.
         :param upstream_windows: Number of upstream windows. Required.
@@ -153,3 +145,59 @@ class BismarkFilesBase:
             return samples
         else:
             return None
+
+
+class PlotBase(BismarkBase):
+    def flank_lines(self, axes: Axes, major_labels: list, minor_labels: list, show_border=True):
+        labels = prepare_labels(major_labels, minor_labels)
+
+        if self.downstream_windows < 1:
+            labels["down_mid"], labels["body_end"] = [""] * 2
+
+        if self.upstream_windows < 1:
+            labels["up_mid"], labels["body_start"] = [""] * 2
+
+        ticks = self.tick_positions
+
+        names = list(ticks.keys())
+        x_ticks = [ticks[key] for key in names]
+        x_labels = [labels[key] for key in names]
+
+        axes.set_xticks(x_ticks, labels=x_labels)
+
+        if show_border:
+            for tick in [ticks["body_start"], ticks["body_end"]]:
+                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
+
+        return axes
+
+    def flank_lines_plotly(self, figure: go.Figure, major_labels: list, minor_labels: list, show_border=True):
+        """
+        Add flank lines to the given axis (for line plot)
+        """
+        labels = prepare_labels(major_labels, minor_labels)
+
+        if self.downstream_windows < 1:
+            labels["down_mid"], labels["body_end"] = [""] * 2
+
+        if self.upstream_windows < 1:
+            labels["up_mid"], labels["body_start"] = [""] * 2
+
+        ticks = self.tick_positions
+
+        names = list(ticks.keys())
+        x_ticks = [ticks[key] for key in names]
+        x_labels = [labels[key] for key in names]
+
+        figure.update_layout(
+            xaxis=dict(
+                tickmode='array',
+                tickvals=x_ticks,
+                ticktext=x_labels)
+        )
+
+        if show_border:
+            for tick in [ticks["body_start"], ticks["body_end"]]:
+                figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
+
+        return figure

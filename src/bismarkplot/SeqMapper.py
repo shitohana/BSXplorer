@@ -365,6 +365,7 @@ class Mapper:
         else:
             return path
 
+    # TODO migrate on Arrow reader
     @classmethod
     def bedGraph(
             cls,
@@ -403,6 +404,7 @@ class Mapper:
 
         return mapper
 
+    # TODO migrate on Arrow reader
     @classmethod
     def coverage(
             cls,

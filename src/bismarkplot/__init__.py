@@ -1,5 +1,5 @@
 from .BismarkPlot import Metagene, MetageneFiles
-from .genome import Genome
-from .levels import ChrLevels
+from .Genome import Genome
+from .ChrLevels import ChrLevels
 
 __version__ = 1.3

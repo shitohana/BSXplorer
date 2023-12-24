@@ -11,7 +11,7 @@ from pyreadr import write_rds
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist
 
-from .base import BismarkBase
+from .Base import BismarkBase
 from .utils import prepare_labels, hm_flank_lines
 
 

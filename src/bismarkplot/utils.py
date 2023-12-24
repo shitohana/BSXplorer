@@ -4,6 +4,7 @@ from os.path import getsize
 import numpy as np
 from matplotlib.axes import Axes
 from scipy import stats
+import polars as pl
 
 
 class dotdict(dict):
@@ -94,3 +95,16 @@ def interval(sum_density: list[int], sum_counts: list[int], alpha=.95):
     i = stats.t.interval(alpha, df=n, loc=average, scale=np.sqrt(variance / n))
 
     return {"lower": i[0], "upper": i[1]}
+
+
+MetageneSchema = dotdict(dict(
+    chr=pl.Categorical,
+    strand=pl.Categorical,
+    position=pl.UInt64,
+    gene=pl.Categorical,
+    context=pl.Categorical,
+    id=pl.Categorical,
+    fragment=pl.UInt32,
+    sum=pl.Float32,
+    count=pl.UInt32,
+))
