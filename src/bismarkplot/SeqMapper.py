@@ -26,19 +26,13 @@ def convert_trinuc(trinuc, reverse=False):
     :return: trinucleotide context
     """
     if reverse:
-        if trinuc[1] == "C":
-            return "CG"
-        elif trinuc[0] == "C":
-            return "CHG"
-        else:
-            return "CHH"
+        if   trinuc[1] == "C": return "CG"
+        elif trinuc[0] == "C": return "CHG"
+        else:                  return "CHH"
     else:
-        if trinuc[1] == "G":
-            return "CG"
-        elif trinuc[2] == "G":
-            return "CHG"
-        else:
-            return "CHH"
+        if   trinuc[1] == "G": return "CG"
+        elif trinuc[2] == "G": return "CHG"
+        else:                  return "CHH"
 
 
 @njit
@@ -117,6 +111,9 @@ class Sequence:
 
     @classmethod
     def from_preprocessed(cls, path: str | Path):
+        """
+        :param path: path to parquet preprocessed sequence
+        """
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError("Parquet file not found")
@@ -378,6 +375,16 @@ class Mapper:
             cpu=multiprocessing.cpu_count(),
             skip_rows: int = 1
     ):
+        """
+        :param path: path to .bedGraph file
+        :param sequence: initialized Sequence object
+        :param temp_dir: directory for temporary files
+        :param name: temporary file basename
+        :param delete: save or delete temporary file
+        :param batch_size: how many rows to process simultaneously
+        :param cpu: how many cores to use
+        :param skip_rows: how many rows to keep
+        """
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError()
@@ -417,6 +424,16 @@ class Mapper:
             cpu=multiprocessing.cpu_count(),
             skip_rows: int = 1
     ):
+        """
+        :param path: path to .cov file
+        :param sequence: initialized Sequence object
+        :param temp_dir: directory for temporary files
+        :param name: temporary file basename
+        :param delete: save or delete temporary file
+        :param batch_size: how many rows to process simultaneously
+        :param cpu: how many cores to use
+        :param skip_rows: how many rows to keep
+        """
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError()

@@ -51,7 +51,7 @@ class BismarkBase:
 
     def save_rds(self, filename, compress: bool = False):
         """
-        Save Bismark DataFrame in Rds.
+        Save Metagene in Rds.
 
         :param filename: Path for file.
         :param compress: Whether to compress to gzip or not.
@@ -61,7 +61,7 @@ class BismarkBase:
 
     def save_tsv(self, filename, compress=False):
         """
-        Save Bismark DataFrame in TSV.
+        Save Metagene in TSV.
 
         :param filename: Path for file.
         :param compress: Whether to compress to gzip or not.
@@ -103,6 +103,18 @@ class BismarkFilesBase:
             raise Exception("Labels length doesn't match samples number")
 
     def save_rds(self, base_filename, compress: bool = False, merge: bool = False):
+        """
+        Save Metagene in Rds.
+
+        Parameters
+        ----------
+        base_filename
+            Base path for file (final path will be ``base_filename+label.rds``).
+        compress
+            Whether to compress to gzip or not.
+        merge
+            Do samples need to be merged into single :class:`Metagene` before saving.
+        """
         if merge:
             merged = pl.concat(
                 [sample.bismark.lazy().with_columns(pl.lit(label))
@@ -116,6 +128,18 @@ class BismarkFilesBase:
                     f"{remove_extension(base_filename)}_{label}.rds", compress="gzip" if compress else None)
 
     def save_tsv(self, base_filename, compress: bool = False, merge: bool = False):
+        """
+        Save Metagenes in TSV.
+
+        Parameters
+        ----------
+        base_filename
+            Base path for file (final path will be ``base_filename+label.tsv``).
+        compress
+            Whether to compress to gzip or not.
+        merge
+            Do samples need to be merged into single :class:`Metagene` before saving.
+        """
         if merge:
             merged = pl.concat(
                 [sample.bismark.lazy().with_columns(pl.lit(label))
@@ -130,7 +154,7 @@ class BismarkFilesBase:
         if not merge:
             for sample, label in zip(self.samples, self.labels):
                 sample.save_tsv(
-                    f"{remove_extension(base_filename)}_{label}.rds", compress=compress)
+                    f"{remove_extension(base_filename)}_{label}.tsv", compress=compress)
 
     @staticmethod
     def __check_metadata(samples: list[BismarkBase]):

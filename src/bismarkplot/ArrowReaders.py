@@ -21,6 +21,12 @@ class CsvReader(object):
 
         self.__current_batch = self.reader.read_next_batch()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.reader.close()
+
     def __iter__(self):
         return self
 
@@ -53,12 +59,21 @@ class ParquetReader(object):
     def __next__(self) -> pa.Table:
         return self.next()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.pq_file.close()
+
     def next(self) -> pa.Table:
         old_group = self.__current_group
         if old_group < self.pq_file.num_row_groups:
             self.__current_group += 1
             return self.pq_file.read_row_group(old_group, columns=self.__use_cols, use_threads=self.__use_threads)
         raise StopIteration()
+
+    def __len__(self):
+        return self.pq_file.num_row_groups
 
 
 class CsvOptions:

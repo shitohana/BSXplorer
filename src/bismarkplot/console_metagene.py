@@ -60,11 +60,11 @@ def main():
 
         bismark = MetageneFiles.from_list(
             filenames=args.filename,
-            genome=genome,
+            genomes=genome,
             labels=args.labels,
-            gene_windows=args.gwindows,
-            upstream_windows=args.uwindows,
-            downstream_windows=args.dwindows,
+            body_windows=args.gwindows,
+            up_windows=args.uwindows,
+            down_windows=args.dwindows,
             batch_size=args.batch,
             cpu=args.cores
         )
@@ -79,11 +79,11 @@ def main():
                 base_name = filename + "_" + context + strand + "_{type}." + args.file_format
 
                 if args.line:
-                    fig = filtered.line_plot().draw(smooth=args.smooth, confidence=args.confidence)
+                    fig = filtered.line_plot().draw_mpl(smooth=args.smooth, confidence=args.confidence)
                     fig.savefig(base_name.format(type="line-plot"), dpi = args.dpi)
                     close()
                 if args.heatmap:
-                    fig = filtered.heat_map(args.hresolution, args.vresolution).draw()
+                    fig = filtered.heat_map(args.hresolution, args.vresolution).draw_mpl()
                     fig.savefig(base_name.format(type="heat-map"), dpi=args.dpi)
                     close()
                 if args.box:

@@ -12,7 +12,8 @@ sys.path.append(os.path.abspath('.'))
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
-    'sphinx_autodoc_typehints'
+    'sphinx_autodoc_typehints',
+    'sphinx.ext.napoleon'
 ]
 
 templates_path = ['_templates']

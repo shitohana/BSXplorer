@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import os
 from multiprocessing import cpu_count
 
 import numpy as np
@@ -6,10 +9,12 @@ from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from pyreadr import write_rds
 from scipy.signal import savgol_filter
-
+import pyarrow as pa
 import plotly.graph_objects as go
+from pathlib import Path
 
 from .utils import approx_batch_num, interval
+from .ArrowReaders import CsvReader, BismarkOptions
 
 
 class ChrLevels:
@@ -34,11 +39,11 @@ class ChrLevels:
     @classmethod
     def from_file(
             cls,
-            file: str,
+            file: str | Path,
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
-            batch_size: int = 10 ** 6,
-            cpu: int = cpu_count(),
+            block_size_mb: int = 100,
+            use_threads: bool = True,
             confidence: int = None
     ):
         """
@@ -68,57 +73,90 @@ class ChrLevels:
                 .alias("interval")
             )
 
-        cpu = cpu if cpu is not None else cpu_count()
+        file = Path(file)
 
-        bismark = pl.read_csv_batched(
-            file,
-            separator='\t', has_header=False,
-            new_columns=['chr', 'position', 'strand',
-                         'count_m', 'count_um', 'context'],
-            columns=[0, 1, 2, 3, 4, 5],
-            batch_size=batch_size,
-            n_threads=cpu
-        )
-        read_approx = approx_batch_num(file, batch_size)
+        pool = pa.default_memory_pool()
+        block_size = (1024 ** 2) * block_size_mb
+        reader = CsvReader(file, BismarkOptions(use_threads=use_threads, block_size=block_size), memory_pool=pool)
+        pool.release_unused()
+        print("Reading Bismark report from", file.absolute())
+
+        file_size = os.stat(file).st_size
         read_batches = 0
 
-        total = None
+        bismark_df = None
 
-        batches = bismark.next_batches(cpu)
         print(f"Reading from {file}")
-        while batches:
-            for df in batches:
-                df = (
-                    df.lazy()
-                    .filter((pl.col('count_m') + pl.col('count_um') != 0))
-                    .group_by(["strand", "chr"])
-                    .agg(PREPROCESS_COLS)
-                    .filter(pl.col("length") > chr_min_length)
-                    .explode(["context", "window", "density"])
-                    .group_by(by=['chr', 'strand', 'context', 'window'])
-                    .agg(DATA_COLS)
-                    .drop_nulls(subset=['sum'])
-                ).collect()
 
-                if confidence is not None:
-                    df = df.unnest("interval")
+        pl.enable_string_cache()
+        for df in reader:
+            df = pl.from_arrow(df)
+            df = (
+                df.lazy()
+                .filter((pl.col('count_m') + pl.col('count_um') != 0))
+                .group_by(["strand", "chr"])
+                .agg(PREPROCESS_COLS)
+                .filter(pl.col("length") > chr_min_length)
+                .explode(["context", "window", "density"])
+                .group_by(by=['chr', 'strand', 'context', 'window'])
+                .agg(DATA_COLS)
+                .drop_nulls(subset=['sum'])
+            ).collect()
 
-                if total is None and len(df) == 0:
-                    raise Exception(
-                        "Error reading Bismark file. Check format or genome. No joins on first batch.")
-                elif total is None:
-                    total = df
-                else:
-                    total = total.extend(df)
+            if confidence is not None:
+                df = df.unnest("interval")
 
-                read_batches += 1
-                print(
-                    f"\tRead {read_batches}/{read_approx} batch | Total size - {round(total.estimated_size('mb'), 1)}Mb RAM",
-                    end="\r")
-            batches = bismark.next_batches(cpu)
-        print("DONE")
+            if bismark_df is None:
+                bismark_df = df
+            else:
+                bismark_df = bismark_df.extend(df)
 
-        return cls(total)
+            read_batches += 1
+            print(
+                "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
+                    read_mb=round(read_batches * block_size / 1024 ** 2, 1),
+                    total_mb=round(file_size / 1024 ** 2, 1),
+                    ram_usage=round(bismark_df.estimated_size('mb'), 1)
+                ),
+                end="\r"
+            )
+
+        print(
+            "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
+                read_mb=round(file_size / 1024 ** 2, 1),
+                total_mb=round(file_size / 1024 ** 2, 1),
+                ram_usage=round(bismark_df.estimated_size('mb'), 1)
+            ),
+            end="\r"
+        )
+        print("\nDONE")
+
+        return cls(bismark_df)
+
+    @staticmethod
+    def __process_batch(
+            chr_min_length=10 ** 6,
+            window_length: int = 10 ** 6,
+            confidence: int = None
+
+    ):
+        PREPROCESS_COLS = [
+            pl.col("context"),
+            (pl.col("position") / window_length).floor().alias("window").cast(pl.Int32),
+            ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32),
+            (pl.max("position") - pl.min("position")).alias("length")
+        ]
+
+        DATA_COLS = [
+            pl.sum('density').alias('sum'),
+            pl.count('density').alias('count')
+        ]
+        if confidence is not None:
+            DATA_COLS.append(
+                pl.struct(["sum", "count"])
+                .map_elements(lambda x: interval(x["sum"], x["count"], confidence))
+                .alias("interval")
+            )
 
     def save_plot_rds(self, path, compress: bool = False):
         """

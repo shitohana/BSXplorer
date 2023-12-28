@@ -39,7 +39,7 @@ Documentation = "https://shitohana.github.io/BismarkPlot/"
 "Bug Tracker" = "https://github.com/shitohana/BismarkPlot/issues"
 
 [tool.hatch.build]
-exclude = ["/venv", "/dist", "/test"]
+exclude = ["/venv", "/dist", "/test", "/docs"]
 
 [project.scripts]
 bismarkplot-metagene = "bismarkplot.console_metagene:main"

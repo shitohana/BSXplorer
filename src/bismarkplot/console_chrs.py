@@ -41,7 +41,7 @@ def main():
             fig, axes = plt.subplots()
 
             for context in ["CG", "CHG", "CHH"]:
-                chr.filter(strand=strand, context=context).draw((fig, axes), smooth=args.smooth, label=context)
+                chr.filter(strand=strand, context=context).draw_mpl((fig, axes), smooth=args.smooth, label=context)
 
             save_path = f"{args.dir}/{args.out}_{strand}.{args.file_format}"
 

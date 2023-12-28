@@ -145,10 +145,10 @@ metagene = bismarkplot.Metagene.from_bismark(
 filtered = metagene.filter(context="CG", strand="+")
 # We are ready to plot
 lp = filtered.line_plot()  # line plot data
-lp.draw().savefig("path/to/lp.pdf")  # matplotlib.Figure
+lp.draw_mpl().savefig("path/to/lp.pdf")  # matplotlib.Figure
 
 hm = filtered.heat_map(ncol=200, nrow=200)
-hm.draw().savefig("path/to/hm.pdf")  # matplotlib.Figure
+hm.draw_mpl().savefig("path/to/hm.pdf")  # matplotlib.Figure
 ```
 Output for _Brachypodium distachyon_:
 
@@ -162,7 +162,7 @@ If metagene is not filtered by context, **all available contexts will be plotted
 ```python
 filtered_by_strand = metagene.filter(strand == "+")
 lp = filtered_by_strand.line_plot()
-lp.draw()
+lp.draw_mpl()
 ```
 
 Output for _Brachypodium distachyon_:
@@ -174,7 +174,7 @@ Output for _Brachypodium distachyon_:
 **Confidence bands** can be visualized via setting the `confidence` parameter in `LinePlot.draw()`
 
 ```python
-lp.draw(confidence=.95)
+lp.draw_mpl(confidence=.95)
 ```
 
 Output for _Brachypodium distachyon_: 
@@ -202,7 +202,7 @@ clustered = metagene.clustering(
 )
 
 # Heatmap with optimized distances between genes will be drawn
-clustered.draw().savefig("path/to/clustered_hm.pdf")
+clustered.draw_mpl().savefig("path/to/clustered_hm.pdf")
 ```
 Output for _Brachypodium distachyon_ - CHG
 
@@ -218,9 +218,9 @@ Then genes can be plotted as heat-map as previous example:
 
 ```python
 # Parameters are the same as for cutreeHybrid (see dynamicTreeCut)
-modules = clustered.modules(deepSplit = 1)
+modules = clustered.modules(deepSplit=1)
 
-modules.draw().savefig("path/to/modules_hm.pdf")
+modules.draw_mpl().savefig("path/to/modules_hm.pdf")
 ```
 
 Output for _Brachypodium distachyon_ - CHG
@@ -235,9 +235,9 @@ Smoothing is very useful, when input signal is very weak (e.g. mammalian non-CpG
 
 ```python
 # mouse CHG methylation example
-filtered = metagene.filter(context = "CHG", strand = "+")
-lp.draw(smooth = 0).savefig("path/to/lp.pdf")       # no smooth
-lp.draw(smooth = 50).savefig("path/to/lp.pdf")      # smoothed with window length = 50
+filtered = metagene.filter(context="CHG", strand="+")
+lp.draw_mpl(smooth=0).savefig("path/to/lp.pdf")  # no smooth
+lp.draw_mpl(smooth=50).savefig("path/to/lp.pdf")  # smoothed with window length = 50
 ```
 
 Output for _Mus musculus_:
@@ -375,7 +375,7 @@ chr = src.bismarkplot.levels.ChrLevels.from_file(
 fig, axes = plt.subplots()
 
 for context in ["CG", "CHG", "CHH"]:
-    chr.filter(strand="+", context=context).draw(
+    chr.filter(strand="+", context=context).draw_mpl(
         (fig, axes),  # to plot contexts on same axes
         smooth=10,  # window number for smoothing
         label=context  # labels for lines
