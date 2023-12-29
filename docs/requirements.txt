@@ -19,3 +19,5 @@ sphinx_autodoc_typehints==1.23.0
 sphinx_book_theme==1.0.1
 myst-parser==2.0.0
 sphinx-rtd-theme==2.0.0
+progress==1.6
+
