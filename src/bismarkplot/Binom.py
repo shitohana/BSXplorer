@@ -165,7 +165,6 @@ class BinomialData:
         >>> genome = bp.Genome.from_gff(genome_path).gene_body()
         >>> region_stats = c_binom.region_pvalue(genome)
         >>> region_stats
-
         shape: (3, 11)
         ┌─────────┬────────┬─────────┬───────┬───────┬────────┬────────┬────────┬────────┬────────┬────────┐
         │ chr     ┆ strand ┆ id      ┆ start ┆ end   ┆ p_valu ┆ p_valu ┆ p_valu ┆ total  ┆ total  ┆ total  │
@@ -406,8 +405,8 @@ class RegionStat:
 
         Examples
         --------
-        >>> gene_stats = BinomialData("./A_thaliana.parquet").region_pvalue(genome)
-        >>> gene_stats
+        >>> region_stats = BinomialData("./A_thaliana.parquet").region_pvalue(genome)
+        >>> region_stats
         shape: (3, 11)
         ┌─────────┬────────┬─────────┬───────┬───────┬────────┬────────┬────────┬────────┬────────┬────────┐
         │ chr     ┆ strand ┆ id      ┆ start ┆ end   ┆ p_valu ┆ p_valu ┆ p_valu ┆ total_ ┆ total_ ┆ total_ │
@@ -424,7 +423,7 @@ class RegionStat:
         │ NC_0030 ┆ +      ┆ gene-AT ┆ 11101 ┆ 11372 ┆ 1.0    ┆ 1.0    ┆ 1.0    ┆ 1      ┆ 8      ┆ 43     │
         │ 70.9    ┆        ┆ 1G03987 ┆       ┆       ┆        ┆        ┆        ┆        ┆        ┆        │
         └─────────┴────────┴─────────┴───────┴───────┴────────┴────────┴────────┴────────┴────────┴────────┘
-        >>> gene_stats.filter("CG", "<", 0.05, 20)
+        >>> region_stats.filter("CG", "<", 0.05, 20)
         shape: (3, 11)
         ┌────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┐
         │ chr    ┆ strand ┆ id     ┆ start  ┆ end    ┆ p_valu ┆ p_valu ┆ p_valu ┆ total_ ┆ total_ ┆ total_ │

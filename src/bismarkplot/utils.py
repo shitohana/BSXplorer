@@ -27,9 +27,9 @@ def prepare_labels(major_labels: list, minor_labels: list):
         down_mid="Downstream"
     )
 
-    if major_labels is not None and len(major_labels) == 2:
+    if major_labels and len(major_labels) == 2:
         labels["body_start"], labels["body_end"] = major_labels
-    elif major_labels is not None:
+    elif major_labels:
         print("Length of major tick labels != 2. Using default.")
     else:
         labels["body_start"], labels["body_end"] = [""] * 2

@@ -1,5 +1,4 @@
 import gzip
-from collections import OrderedDict
 
 import polars as pl
 from pyreadr import write_rds
