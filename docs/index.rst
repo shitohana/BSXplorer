@@ -2,18 +2,18 @@ Welcome to BismarkPlot's documentation!
 =======================================
 This page gives an overview of all public objects, functions and methods.
 
+
 .. toctree::
+    :caption: Tutorials
 
-.. autosummary::
-    :toctree: _autosummary
-    :template: module.rst
+    markdowns/test
 
-    BismarkPlot.Metagene
-    BismarkPlot.MetageneFiles
-    BismarkPlot.Genome
-    BismarkPlot.ChrLevels
-    BismarkPlot.Clustering
 
-    BismarkPlot.BismarkBase
-    BismarkPlot.LinePlot
-    BismarkPlot.HeatMap
+.. toctree::
+    :caption: Reference
+    :maxdepth: 1
+
+    _metagene
+    _plots
+    _binom
+    _genome

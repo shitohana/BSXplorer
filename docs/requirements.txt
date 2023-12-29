@@ -17,3 +17,5 @@ typing-extensions==4.5.0
 tzdata==2023.3
 sphinx_autodoc_typehints==1.23.0
 sphinx_book_theme==1.0.1
+myst-parser==2.0.0
+

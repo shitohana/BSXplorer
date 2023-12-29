@@ -4,24 +4,28 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bismarkplot"
-version = "1.2.1"
+version = "1.4.1"
 authors = [
   { name="shitohana", email="kyudytskiy@gmail.com" },
 ]
-keywords = ['bismark', 'methylation', 'plot']
+keywords = ['bismark', 'methylation', 'plot', 'bs-seq']
 license = {file = "LICENSE.txt"}
 dependencies = [
     "matplotlib>=3.7.1",
     "numpy>=1.24.2",
     "pandas>=2.0.0",
-    "polars>=0.17.5",
+    "polars>=0.19.9",
     "scipy>=1.10.1",
     "pyarrow>=13.0.0",
-    "pyreadr>=0.4.9"
+    "pyreadr>=0.4.9",
+    "dynamicTreeCut>=0.1.1",
+    "plotly>=5.18.0",
+    "numba==0.58.1",
+    "biopython==1.81"
 ]
-description = "Comprehensive tool for visualizing genome-wide cytosine data."
+description = "Analytical framework for BS-seq data comparison and visualization"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
@@ -35,8 +39,8 @@ Documentation = "https://shitohana.github.io/BismarkPlot/"
 "Bug Tracker" = "https://github.com/shitohana/BismarkPlot/issues"
 
 [tool.hatch.build]
-exclude = ["/venv", "/dist", "/test"]
+exclude = ["/venv", "/dist", "/test", "/docs"]
 
 [project.scripts]
 bismarkplot-metagene = "bismarkplot.console_metagene:main"
-bismarkplot-chrs = "bismarkplot.console_chrlevels:main"
+bismarkplot-chrs = "bismarkplot.console_chrs:main"
