@@ -4,6 +4,7 @@ This page gives an overview of all public objects, functions and methods.
 
 
 .. toctree::
+    :maxdepth: 1
     :caption: Tutorials
 
     markdowns/test
