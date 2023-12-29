@@ -6,7 +6,6 @@ copyright = '2023, shitohana'
 author = 'shitohana'
 release = '1.4.1'
 sys.path.insert(0, os.path.abspath('../src'))
-sys.path.insert(0, os.path.abspath('../src/bismarkplot'))
 sys.path.append(os.path.abspath('.'))
 
 extensions = [
