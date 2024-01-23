@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import re
 
 import numpy as np
@@ -12,7 +13,7 @@ from plotly import graph_objects as go, express as px
 from pyreadr import write_rds
 from scipy.signal import savgol_filter
 
-from .Base import PlotBase, BismarkFilesBase
+from .Base import PlotBase, MetageneFilesBase
 from .utils import MetageneSchema, interval, remove_extension, prepare_labels
 
 
@@ -31,7 +32,7 @@ class LinePlot(PlotBase):
 
         if merge_strands:
             bismark_df = self.__merge_strands(bismark_df)
-        plot_data = self.__calculate_plot_data(bismark_df, stat)
+        plot_data = self.__calculate_plot_data(bismark_df, stat, self.total_windows)
 
         if not merge_strands:
             if self.strand == '-':
@@ -39,7 +40,7 @@ class LinePlot(PlotBase):
         self.plot_data = plot_data
 
     @staticmethod
-    def __calculate_plot_data(df: pl.DataFrame, stat):
+    def __calculate_plot_data(df: pl.DataFrame, stat, total_windows):
         if stat == "log":
             stat_expr = (pl.col("sum") / pl.col("count")).log1p().mean().exp() - 1
         elif stat == "wlog":
@@ -62,8 +63,16 @@ class LinePlot(PlotBase):
             .sort("fragment")
         )
 
-        # TODO add templating
-        return res
+        contexts = res["context"].unique().to_list()
+
+        template = pl.DataFrame({
+            "fragment": list(range(total_windows)) * len(contexts),
+            "context": list(itertools.chain(*[[c] * (total_windows) for c in contexts])),
+        }, schema={"fragment": res.schema["fragment"], "context": res.schema["context"]})
+
+        joined = template.join(res, on=["fragment", "context"], how="left")
+
+        return joined
 
     @staticmethod
     def __strand_reverse(df: pl.DataFrame):
@@ -93,13 +102,13 @@ class LinePlot(PlotBase):
         polyorder = 3
         window = smooth if smooth > polyorder else polyorder + 1
 
-        if smooth:
+        if smooth and data.is_null().sum() == 0:
             data = savgol_filter(data, window, 3, mode='nearest')
 
         lower, upper = None, None
         data = data * 100  # convert to percents
 
-        if 0 < confidence < 1:
+        if (0 < confidence < 1) and data.sum() == 0:
             upper = df["upper"].to_numpy() * 100  # convert to percents
             lower = df["lower"].to_numpy() * 100  # convert to percents
 
@@ -194,7 +203,7 @@ class LinePlot(PlotBase):
                       label=f"{context}" if not label else f"{label}_{context}",
                       linestyle=linestyle, linewidth=linewidth)
 
-            if 0 < confidence < 1:
+            if (0 < confidence < 1) and data.is_null().sum() == 0:
                 axes.fill_between(x, lower, upper, alpha=.2)
 
         self.flank_lines(axes, major_labels, minor_labels, show_border)
@@ -278,7 +287,7 @@ class LinePlot(PlotBase):
         return figure
 
 
-class LinePlotFiles(BismarkFilesBase):
+class LinePlotFiles(MetageneFilesBase):
     """Line-plot multiple metagenes"""
 
     def draw_mpl(
@@ -560,7 +569,7 @@ class HeatMap(PlotBase):
                   compress="gzip" if compress else None)
 
 
-class HeatMapFiles(BismarkFilesBase):
+class HeatMapFiles(MetageneFilesBase):
     """Heat-map multiple metagenes"""
 
     def __add_flank_lines_plotly(self, figure: go.Figure, major_labels: list, minor_labels: list, show_border=True):

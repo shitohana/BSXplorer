@@ -1,14 +1,22 @@
+from __future__ import annotations
+
 import gzip
+import shutil
+import tempfile
+from abc import ABC, abstractmethod
+from pathlib import Path
 
 import polars as pl
+import pyarrow as pa
 from pyreadr import write_rds
 
-from .utils import remove_extension, prepare_labels
+from .ArrowReaders import CsvReader, ParquetReader, BismarkOptions
+from .utils import remove_extension, prepare_labels, MetageneSchema, ReportBar
 from matplotlib.axes import Axes
 import plotly.graph_objects as go
 
 
-class BismarkBase:
+class MetageneBase:
     """
     Base class for :class:`Metagene` and plots.
     """
@@ -90,7 +98,7 @@ class BismarkBase:
         return len(self.bismark)
 
 
-class BismarkFilesBase:
+class MetageneFilesBase:
     def __init__(self, samples, labels: list[str] = None):
         self.samples = self.__check_metadata(
             samples if isinstance(samples, list) else [samples])
@@ -156,7 +164,7 @@ class BismarkFilesBase:
                     f"{remove_extension(base_filename)}_{label}.tsv", compress=compress)
 
     @staticmethod
-    def __check_metadata(samples: list[BismarkBase]):
+    def __check_metadata(samples: list[MetageneBase]):
         upstream_check = set([sample.metadata["upstream_windows"]
                              for sample in samples])
         downstream_check = set(
@@ -170,7 +178,7 @@ class BismarkFilesBase:
             return None
 
 
-class PlotBase(BismarkBase):
+class PlotBase(MetageneBase):
     def flank_lines(self, axes: Axes, major_labels: list, minor_labels: list, show_border=True):
         labels = prepare_labels(major_labels, minor_labels)
 
@@ -224,3 +232,287 @@ class PlotBase(BismarkBase):
                 figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
 
         return figure
+
+
+class ReportReader(ABC):
+    def __init__(
+            self,
+            report_file: str | Path,
+            genome: pl.DataFrame,
+            upstream_windows: int = 0,
+            body_windows: int = 2000,
+            downstream_windows: int = 0,
+            use_threads: bool = True,
+            sumfunc: str = "mean"
+    ):
+        self.report_file        = report_file
+        self.genome             = genome
+        self.upstream_windows   = upstream_windows
+        self.body_windows       = body_windows
+        self.downstream_windows = downstream_windows
+        self.use_threads        = use_threads
+        self.sumfunc            = sumfunc
+        self.temp_file          = None
+
+        self.validate()
+
+
+    def validate(self):
+        # Windows
+        self.upstream_windows   = self.upstream_windows if self.upstream_windows > 0 else 0
+        self.body_windows       = self.body_windows if self.body_windows > 0 else 0
+        self.downstream_windows = self.downstream_windows if self.downstream_windows > 0 else 0
+
+        # Genome
+        if not isinstance(self.genome, pl.DataFrame):
+            raise TypeError("Genome must be converted into DataFrame (e.g. via Genome.gene_body()).")
+
+        # Report file
+        self.report_file = Path(self.report_file).expanduser().absolute()
+
+        if not self.report_file.exists():
+            raise FileNotFoundError(f"Genome file: {self.report_file.absolute()} – not found!")
+
+        self.report_file = self.__decompress(self.report_file)
+
+        # todo add sumfunc validator
+
+    def __decompress(self, path: str | Path) -> Path:
+        if path.suffix == ".gz":
+            temp_file = tempfile.NamedTemporaryFile()
+            print(f"Temporarily unpack {path} to {temp_file.name}")
+
+            with gzip.open(path, mode="rb") as file:
+                shutil.copyfileobj(file, temp_file)
+
+            self.temp_file = temp_file
+            return Path(temp_file.name)
+        else:
+            return path
+
+    @abstractmethod
+    def get_reader(self) -> CsvReader | ParquetReader:
+        ...
+
+    @abstractmethod
+    def mutate_batch(self, batch) -> pl.DataFrame:
+        ...
+
+    @abstractmethod
+    def batch_size(self) -> int:
+        ...
+
+    @staticmethod
+    def __process_batch(df: pl.DataFrame, genome: pl.DataFrame, up_win, body_win, down_win, sumfunc):
+        # *** POLARS EXPRESSIONS ***
+        # cast genome columns to type to join
+        GENE_COLUMNS = [
+            pl.col('strand').cast(MetageneSchema["strand"]),
+            pl.col('chr').cast(MetageneSchema["chr"])
+        ]
+        # upstream region position check
+        UP_REGION = pl.col('position') < pl.col('start')
+        # body region position check
+        BODY_REGION = (pl.col('start') <= pl.col('position')) & (pl.col('position') <= pl.col('end'))
+        # downstream region position check
+        DOWN_REGION = (pl.col('position') > pl.col('end'))
+
+        UP_FRAGMENT = (((pl.col('position') - pl.col('upstream')) / (
+                    pl.col('start') - pl.col('upstream'))) * up_win).floor()
+        # fragment even for position == end needs to be rounded by floor
+        # so 1e-10 is added (position is always < end)
+        BODY_FRAGMENT = (((pl.col('position') - pl.col('start')) / (
+                    pl.col('end') - pl.col('start') + 1e-10)) * body_win).floor() + up_win
+        DOWN_FRAGMENT = (((pl.col('position') - pl.col('end')) / (
+                    pl.col('downstream') - pl.col('end') + 1e-10)) * down_win).floor() + up_win + body_win
+
+        # Firstly BismarkPlot was written so there were only one sum statistic - mean.
+        # Sum and count of densities was calculated for further weighted mean analysis in respect to fragment size
+        # For backwards compatibility, for newly introduces statistics, column names are kept the same.
+        # Count is set to 1 and "sum" to actual statistics (e.g. median, min, e.t.c)
+        if sumfunc == "median":
+            AGG_EXPR = [pl.median("density").alias("sum"), pl.lit(1).alias("count")]
+        elif sumfunc == "min":
+            AGG_EXPR = [pl.min("density").alias("sum"), pl.lit(1).alias("count")]
+        elif sumfunc == "max":
+            AGG_EXPR = [pl.max("density").alias("sum"), pl.lit(1).alias("count")]
+        elif sumfunc == "geometric":
+            AGG_EXPR = [pl.col("density").log().mean().exp().alias("sum"),
+                        pl.lit(1).alias("count")]
+        elif sumfunc == "1pgeometric":
+            AGG_EXPR = [(pl.col("density").log1p().mean().exp() - 1).alias("sum"),
+                        pl.lit(1).alias("count")]
+        else:
+            AGG_EXPR = [pl.sum('density').alias('sum'), pl.count('density').alias('count')]
+
+        return (
+            df.lazy()
+            # assign types
+            # calculate density for each cytosine
+            .with_columns([
+                pl.col('position').cast(MetageneSchema["position"]),
+                pl.col('chr').cast(MetageneSchema["chr"]),
+                pl.col('strand').cast(MetageneSchema["strand"]),
+                pl.col('context').cast(MetageneSchema["context"]),
+            ])
+            # sort by position for joining
+            .sort(['chr', 'strand', 'position'])
+            # join with nearest
+            .join_asof(
+                genome.lazy().with_columns(GENE_COLUMNS),
+                left_on='position', right_on='upstream', by=['chr', 'strand']
+            )
+            # limit by end of region
+            .filter(pl.col('position') <= pl.col('downstream'))
+            # calculate fragment ids
+            .with_columns([
+                pl.when(UP_REGION).then(UP_FRAGMENT)
+                .when(BODY_REGION).then(BODY_FRAGMENT)
+                .when(DOWN_REGION).then(DOWN_FRAGMENT)
+                .alias('fragment'),
+                pl.concat_str([
+                    pl.col("chr"),
+                    (pl.concat_str(pl.col("start"), pl.col("end"), separator="-"))
+                ], separator=":").alias("gene")
+            ])
+            .with_columns([
+                pl.col("fragment").cast(MetageneSchema["fragment"]),
+                pl.col("gene").cast(MetageneSchema["gene"]),
+                pl.col('id').cast(MetageneSchema["id"])
+            ])
+            # gather fragment stats
+            .groupby(by=['chr', 'strand', 'start', 'gene', 'context', 'id', 'fragment'])
+            .agg(AGG_EXPR)
+            .drop_nulls(subset=['sum'])
+        ).collect()
+
+    def read(self):
+        print("Initializing report reader.")
+        reader = self.get_reader()
+
+        file_size = self.report_file.stat().st_size
+
+        bar = ReportBar(max=file_size)
+
+        print("Reading report from", self.report_file)
+        report_df = None
+        pl.enable_string_cache()
+
+        for batch in reader:
+            batch_df = self.mutate_batch(batch)
+            processed = self.__process_batch(
+                batch_df,
+                self.genome,
+                self.upstream_windows, self.body_windows, self.downstream_windows,
+                self.sumfunc
+            )
+
+            if report_df is None:
+                report_df = processed
+            else:
+                report_df.extend(processed)
+
+            bar.next(self.batch_size())
+
+        bar.goto(bar.max)
+        bar.finish()
+        print("\nDONE")
+
+        if self.temp_file is not None:
+            self.temp_file.close()
+
+        return report_df
+
+
+class BismarkReportReader(ReportReader):
+    def __init__(self, block_size_mb: int = 50, **kwargs):
+        self.block_size_mb = block_size_mb
+
+        super().__init__(**kwargs)
+
+    def get_reader(self) -> CsvReader | ParquetReader:
+        pool = pa.default_memory_pool()
+        reader = CsvReader(
+            self.report_file,
+            BismarkOptions(use_threads=self.use_threads,
+                           block_size=self.batch_size()),
+            memory_pool=pool
+        )
+        pool.release_unused()
+
+        return reader
+
+    def mutate_batch(self, batch) -> pl.DataFrame:
+        mutated = (
+            pl
+            .from_arrow(batch)
+            .filter((pl.col('count_m') + pl.col('count_um') != 0))
+            .with_columns(
+                ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density')
+                .cast(MetageneSchema.sum)
+            )
+        )
+
+        return mutated
+
+    def batch_size(self):
+        return self.block_size_mb * 1024**2
+
+
+class ParquetReportReader(ReportReader):
+    def __init__(self, **kwargs):
+
+        super().__init__(**kwargs)
+
+    def get_reader(self) -> CsvReader | ParquetReader:
+        reader = ParquetReader(self.report_file, use_threads=self.use_threads)
+        return reader
+
+    def mutate_batch(self, batch) -> pl.DataFrame:
+        # todo add metadata identifier for suitable file
+
+        mutated = (
+            batch
+            .from_arrow(batch)
+            .filter(pl.col("count_total") != 0)
+            .with_columns(
+                (pl.col('count_m') / pl.col('count_total')).alias('density').cast(MetageneSchema.sum)
+            )
+            .drop("count_total")
+        )
+
+        return mutated
+
+    def batch_size(self):
+        row_groups = self.get_reader().reader.num_row_groups
+        file_size = self.report_file.stat().st_size
+
+        return  int(file_size / row_groups)
+
+
+class BinomReportReader(ReportReader):
+    def __init__(self, p_value: float = .05, **kwargs):
+        self.p_value = p_value
+
+        super().__init__(**kwargs)
+
+    def get_reader(self) -> CsvReader | ParquetReader:
+        reader = ParquetReader(self.report_file, use_threads=self.use_threads)
+        return reader
+
+    def mutate_batch(self, batch) -> pl.DataFrame:
+        # todo add metadata identifier for suitable file
+
+        mutated = (
+            pl.from_arrow(batch)
+            .with_columns((pl.col("p_value") < self.p_value).cast(pl.Float32).alias("density"))
+            .drop("count_total")
+        )
+
+        return mutated
+
+    def batch_size(self):
+        row_groups = self.get_reader().reader.num_row_groups
+        file_size = self.report_file.stat().st_size
+
+        return int(file_size / row_groups)

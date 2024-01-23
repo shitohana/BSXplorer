@@ -16,6 +16,7 @@ from numba import njit
 
 import polars as pl
 
+from .ArrowReaders import CsvReader, ParquetReader, BismarkOptions, CoverageOptions, BedGraphOptions
 
 @njit
 def convert_trinuc(trinuc, reverse=False):
@@ -101,7 +102,9 @@ class Sequence:
         :param name: filename of temporary file
         :param delete: does temporary file need to be deleted after script completion
         """
-        cytosine_file = init_tempfile(temp_dir, name, delete, suffix=".fasta.parquet")
+        path = Path(path).expanduser().absolute()
+
+        cytosine_file = init_tempfile(temp_dir, name, delete, suffix=".parquet")
         sequence = cls(cytosine_file)
 
         # read sequence into cytosine file
@@ -244,7 +247,13 @@ class Mapper:
 
     @staticmethod
     def __read_filter_sequence(sequence: Sequence, filter: list) -> pa.Table:
-        return pq.read_table(sequence.cytosine_file, filters=filter)
+        table = pq.read_table(sequence.cytosine_file, filters=filter)
+
+        modified_schema = table.schema
+        modified_schema = modified_schema.set(1, pa.field("context", pa.utf8()))
+        modified_schema = modified_schema.set(2, pa.field("chr", pa.utf8()))
+
+        return table.cast(modified_schema)
 
     @staticmethod
     def __bedGraph_reader(path, batch_size, cpu, skip_rows):
@@ -273,76 +282,75 @@ class Mapper:
         )
 
     @classmethod
-    def __map(cls, where, sequence, batched_reader, cpu, mutations: list[pl.Expr] = None):
+    def __map(cls, where, sequence, batched_reader, mutations: list[pl.Expr] = None):
         pl.enable_string_cache()
         genome_metadata = sequence.get_metadata()
         genome_rows_read = 0
 
         pq_writer = None
 
-        batches = batched_reader.next_batches(cpu)
+        for df in batched_reader:
+            batch = pl.from_arrow(df)
 
-        while batches:
-            for batch in batches:
-                # get batch stats
-                batch_stats = batch.group_by("chr").agg([
-                    pl.col("position").max().alias("max"),
-                    pl.col("position").min().alias("min")
-                ])
+            # get batch stats
+            batch_stats = batch.group_by("chr").agg([
+                pl.col("position").max().alias("max"),
+                pl.col("position").min().alias("min")
+            ])
 
-                for chrom in batch_stats["chr"]:
-                    chrom_min, chrom_max = [batch_stats.filter(pl.col("chr") == chrom)[stat][0] for stat in
-                                            ["min", "max"]]
+            for chrom in batch_stats["chr"]:
+                chrom_min, chrom_max = [batch_stats.filter(pl.col("chr") == chrom)[stat][0] for stat in
+                                        ["min", "max"]]
 
-                    filters = [
-                        ("chr", "=", chrom),
-                        ("position", ">=", chrom_min),
-                        ("position", "<=", chrom_max)
-                    ]
+                filters = [
+                    ("chr", "=", chrom),
+                    ("position", ">=", chrom_min),
+                    ("position", "<=", chrom_max)
+                ]
 
-                    chrom_genome = (
-                        pl.from_arrow(cls.__read_filter_sequence(sequence, filters))
-                        .with_columns(
-                            pl.when(pl.col("strand") == True).then(pl.lit("+"))
-                            .otherwise(pl.lit("-"))
-                            .cast(pl.Categorical)
-                            .alias("strand")
-                        )
+                chrom_genome = (
+                    pl.from_arrow(cls.__read_filter_sequence(sequence, filters))
+                    .with_columns([
+                        pl.col("context").cast(pl.Categorical),
+                        pl.col("chr").cast(pl.Categorical),
+                        pl.when(pl.col("strand") == True).then(pl.lit("+"))
+                        .otherwise(pl.lit("-"))
+                        .cast(pl.Categorical)
+                        .alias("strand")
+                    ])
+                )
+
+                # arrow table aligned to genome
+                filtered_lazy = batch.lazy().filter(pl.col("chr") == chrom)
+                filtered_aligned = cls.__map_with_sequence(filtered_lazy, chrom_genome)
+                print(len(chrom_genome))
+                if mutations is not None:
+                    filtered_aligned = filtered_aligned.with_columns(mutations)
+
+                missing_cols = set(["chr", "position", "strand", "context", "count_m", "count_total"]) - set(filtered_aligned.columns)
+
+                for column in missing_cols:
+                    filtered_aligned.with_columns(pl.lit(None).alias(column))
+
+                filtered_aligned = filtered_aligned.select(["chr", "position", "strand", "context", "count_m", "count_total"])
+
+                filtered_aligned = filtered_aligned.to_arrow()
+                if pq_writer is None:
+                    pq_writer = pa.parquet.ParquetWriter(
+                        where,
+                        schema=filtered_aligned.schema
                     )
 
+                pq_writer.write(filtered_aligned)
+                genome_rows_read += len(chrom_genome)
 
-                    # arrow table aligned to genome
-                    filtered_lazy = batch.lazy().filter(pl.col("chr") == chrom)
-                    filtered_aligned = cls.__map_with_sequence(filtered_lazy, chrom_genome)
+                print("Mapped {rows_read}/{rows_total} ({percent}%) cytosines".format(
+                    rows_read=genome_rows_read,
+                    rows_total=genome_metadata.num_rows,
+                    percent=round(genome_rows_read / genome_metadata.num_rows * 100, 2)
+                ), end="\r")
 
-                    if mutations is not None:
-                        filtered_aligned = filtered_aligned.with_columns(mutations)
-
-                    missing_cols = set(["chr", "position", "strand", "context", "count_m", "count_total"]) - set(filtered_aligned.columns)
-
-                    for column in missing_cols:
-                        filtered_aligned.with_columns(pl.lit(None).alias(column))
-
-                    filtered_aligned = filtered_aligned.select(["chr", "position", "strand", "context", "count_m", "count_total"])
-
-                    filtered_aligned = filtered_aligned.to_arrow()
-                    if pq_writer is None:
-                        pq_writer = pa.parquet.ParquetWriter(
-                            where,
-                            schema=filtered_aligned.schema
-                        )
-
-                    pq_writer.write(filtered_aligned)
-                    genome_rows_read += len(chrom_genome)
-
-                    print("Mapped {rows_read}/{rows_total} ({percent}%) cytosines".format(
-                        rows_read=genome_rows_read,
-                        rows_total=genome_metadata.num_rows,
-                        percent=round(genome_rows_read / genome_metadata.num_rows * 100, 2)
-                    ), end="\r")
-
-            gc.collect()
-            batches = batched_reader.next_batches(cpu)
+        gc.collect()
 
         pq_writer.close()
 
@@ -362,7 +370,6 @@ class Mapper:
         else:
             return path
 
-    # TODO migrate on Arrow reader
     @classmethod
     def bedGraph(
             cls,
@@ -371,9 +378,8 @@ class Mapper:
             temp_dir: str = "./",
             name: str = None,
             delete: bool = True,
-            batch_size=10 ** 7,
-            cpu=multiprocessing.cpu_count(),
-            skip_rows: int = 1
+            block_size_mb: int = 30,
+            use_threads: bool = True
     ):
         """
         :param path: path to .bedGraph file
@@ -381,11 +387,10 @@ class Mapper:
         :param temp_dir: directory for temporary files
         :param name: temporary file basename
         :param delete: save or delete temporary file
-        :param batch_size: how many rows to process simultaneously
-        :param cpu: how many cores to use
-        :param skip_rows: how many rows to keep
+        :param block_size_mb: Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
+        :param use_threads: Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
         """
-        path = Path(path)
+        path = Path(path).expanduser().absolute()
         if not path.exists():
             raise FileNotFoundError()
 
@@ -398,14 +403,14 @@ class Mapper:
         path = Path(path)
         print(f"Started reading bedGraph file from {path}")
 
-        bedGraph_reader = cls.__bedGraph_reader(path, batch_size, cpu, skip_rows)
+        bedGraph_reader = CsvReader(file.name, BedGraphOptions(use_threads, block_size_mb * 1024**2))
 
         mutations = [
             pl.col("count_m") / 100,
             pl.lit(1).alias("count_total")
         ]
 
-        cls.__map(mapper.report_file, sequence, bedGraph_reader, cpu, mutations)
+        cls.__map(mapper.report_file, sequence, bedGraph_reader, mutations)
 
         print(f"\nDone reading bedGraph sequence\nTable saved to {mapper.report_file}")
 
@@ -420,9 +425,8 @@ class Mapper:
             temp_dir: str = "./",
             name: str = None,
             delete: bool = True,
-            batch_size=10 ** 7,
-            cpu=multiprocessing.cpu_count(),
-            skip_rows: int = 1
+            block_size_mb: int = 30,
+            use_threads: bool = True
     ):
         """
         :param path: path to .cov file
@@ -430,11 +434,10 @@ class Mapper:
         :param temp_dir: directory for temporary files
         :param name: temporary file basename
         :param delete: save or delete temporary file
-        :param batch_size: how many rows to process simultaneously
-        :param cpu: how many cores to use
-        :param skip_rows: how many rows to keep
+        :param block_size_mb: Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
+        :param use_threads: Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
         """
-        path = Path(path)
+        path = Path(path).expanduser().absolute()
         if not path.exists():
             raise FileNotFoundError()
 
@@ -447,13 +450,13 @@ class Mapper:
         path = Path(path)
         print(f"Started reading coverage file from {path}")
 
-        coverage_reader = cls.__coverage_reader(path, batch_size, cpu, skip_rows)
+        coverage_reader = CsvReader(report_file, CoverageOptions(use_threads, block_size_mb * 1024**2))
 
         mutations = [
             (pl.col("count_m") + pl.col("count_um")).alias("count_total")
         ]
 
-        cls.__map(mapper.report_file, sequence, coverage_reader, cpu, mutations)
+        cls.__map(mapper.report_file, sequence, coverage_reader, mutations)
 
         print(f"\nDone reading coverage file\nTable saved to {mapper.report_file}")
 

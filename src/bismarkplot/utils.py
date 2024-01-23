@@ -1,10 +1,22 @@
+from __future__ import annotations
+
+import gzip
 import re
+import shutil
+import tempfile
 from os.path import getsize
+from pathlib import Path
+from typing import Literal
+from gc import collect
 
 import numpy as np
+import pyarrow as pa
 from matplotlib.axes import Axes
+from pyarrow import parquet as pq
 from scipy import stats
 import polars as pl
+from progress.bar import Bar
+import datetime
 
 
 class dotdict(dict):
@@ -108,3 +120,116 @@ MetageneSchema = dotdict(dict(
     sum=pl.Float32,
     count=pl.UInt32,
 ))
+
+
+class ReportBar(Bar):
+    suffix = "%(progress2mb).2f/%(max2mb)d Mb [Elapsed: %(elapsed_fmt)s | ETA: %(eta_fmt)s]"
+    fill = "@"
+
+    @property
+    def progress2mb(self):
+        return int(self.index) / (1024**2)
+
+    @property
+    def max2mb(self):
+        return int(self.max) / (1024**2)
+
+    @property
+    def elapsed_fmt(self):
+        return str(datetime.timedelta(seconds=self.elapsed))
+
+    @property
+    def eta_fmt(self):
+        return str(datetime.timedelta(seconds=self.eta))
+
+
+def decompress(path: str | Path):
+    if path.suffix == ".gz":
+        temp_file = tempfile.NamedTemporaryFile()
+        print(f"Temporarily unpack {path} to {temp_file.name}")
+
+        with gzip.open(path, mode="rb") as file:
+            shutil.copyfileobj(file, temp_file)
+
+        return temp_file
+    else:
+        return path
+
+
+def merge_replicates(
+        paths: list[str | Path],
+        report_type: Literal["bismark"] = "bismark",
+        batch_size: int = 10**6
+):
+    paths = [Path(path).expanduser().absolute() for path in paths]
+    for path in paths:
+        if not path.exists():
+            raise FileNotFoundError(path)
+
+    files = [decompress(path) for path in paths]
+
+    if report_type == "bismark":
+        options = dict(
+            separator="\t",
+            columns=[0,1,2,3,4,5],
+            new_columns=["chr", "position", "strand", "count_m", "count_um", "context"],
+            dtypes=[pl.Utf8, pl.UInt64, pl.Utf8, pl.UInt32, pl.UInt32, pl.Utf8]
+        )
+
+    options |= dict(batch_size=batch_size)
+
+    temp_parquet = tempfile.NamedTemporaryFile()
+
+    pq_schema = pa.schema([
+        ("chr", pa.dictionary(pa.int16(), pa.string())),
+        ("position", pa.uint64()),
+        ("strand", pa.dictionary(pa.int16(), pa.string())),
+        ("count_m", pa.uint32()),
+        ("count_um", pa.uint32()),
+        ("context", pa.dictionary(pa.int16(), pa.string())),
+    ])
+
+    pq_writer = pq.ParquetWriter(temp_parquet.name, pq_schema)
+
+    readers = [
+        pl.read_csv_batched(
+            file if isinstance(file, Path) else file.name,
+            **options
+        )
+        for file in files
+    ]
+
+    print("Reading reports")
+
+    batches = [reader.next_batches(1)[0] for reader in readers]
+    while sum(map(lambda batch: batch is not None, batches)) > 0:
+
+        batches = list(map(lambda group: group[0], filter(lambda group: group is not None, batches)))
+
+        concat = pl.concat(batches)
+
+        grouped = (
+            concat
+            .group_by(["chr", "strand", "position", "context"], maintain_order=True)
+            .agg([pl.sum("count_m"), pl.sum("count_um")])
+            .cast(dict(
+                chr=pl.Categorical,
+                strand=pl.Categorical,
+                position=pl.UInt64,
+                count_m=pl.UInt32,
+                count_um=pl.UInt32,
+                context=pl.Categorical
+            ))
+            .select(pq_schema.names)
+        )
+
+        print(f"Current position: {batches[0].row(0)[0]} {batches[0].row(0)[1]}", end="\r")
+
+        pq_writer.write(
+            grouped.to_arrow().cast(target_schema=pq_schema)
+        )
+        batches = [reader.next_batches(1) for reader in readers]
+        collect()
+
+    print("\nDONE")
+    return temp_parquet

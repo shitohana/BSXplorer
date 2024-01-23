@@ -31,7 +31,7 @@ class Genome:
                     strand_col: int = 5,
                     type_col: int = None,
                     comment_char: str = "#",
-                    has_header: bool = False):
+                    has_header: bool = False) -> Genome:
         """
         Create :class:`Genome` from custom tab separated file with genomic regions.
 
@@ -93,7 +93,7 @@ class Genome:
         return cls(genes)
 
     @classmethod
-    def from_gff(cls, file: str | Path):
+    def from_gff(cls, file: str | Path) -> Genome:
         """
         Constructor for :class:`Genome` class from .gff file.
 
@@ -443,7 +443,7 @@ class Genome:
 
         return self.__check_empty(genes)
 
-    def other(self, gene_type: str, min_length: int = 1000, flank_length: int = 100) -> pl.DataFrame:
+    def other(self, region_type: str, min_length: int = 1000, flank_length: int = 100) -> pl.DataFrame:
         """
         Filter annotation by selected type and calculate positions of nflanking regions.
 
@@ -484,7 +484,7 @@ class Genome:
 
         """
         genes = self.__filter_genes(
-            self.genome, gene_type, min_length, flank_length)
+            self.genome, region_type, min_length, flank_length)
         genes = self.__trim_genes(genes, flank_length).collect()
         return self.__check_empty(genes)
 

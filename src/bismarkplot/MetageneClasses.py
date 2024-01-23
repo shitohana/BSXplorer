@@ -15,15 +15,18 @@ import pyarrow
 from .Plots import LinePlot, LinePlotFiles, HeatMap, HeatMapFiles
 from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader
 from .SeqMapper import Mapper, Sequence
-from .Base import BismarkBase, BismarkFilesBase
+from .Base import (
+    MetageneBase, MetageneFilesBase,
+    BismarkReportReader, ParquetReportReader, BinomReportReader
+)
 from .Clusters import Clustering
-from .utils import MetageneSchema
+from .utils import MetageneSchema, ReportBar
 from .GenomeClass import Genome
 
 pl.enable_string_cache(True)
 
 
-class Metagene(BismarkBase):
+class Metagene(MetageneBase):
     """
     Stores Metagene data.
     """
@@ -77,53 +80,23 @@ class Metagene(BismarkBase):
         >>> metagene = Metagene.from_bismark(path, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
 
-        up_windows, body_windows, down_windows = cls.__check_windows(up_windows, body_windows, down_windows)
+        report_reader = BismarkReportReader(
+            report_file=file,
+            genome=genome,
+            upstream_windows=up_windows,
+            body_windows=body_windows,
+            downstream_windows=down_windows,
+            use_threads=use_threads,
+            sumfunc=sumfunc,
+            block_size_mb=block_size_mb
+        )
 
-        file = Path(file).expanduser().absolute()
-        cls.__check_exists(file)
+        report_df = report_reader.read()
 
-        print("Initializing CSV reader.")
-
-        pool = pyarrow.default_memory_pool()
-        block_size = (1024 ** 2) * block_size_mb
-        reader = CsvReader(file, BismarkOptions(use_threads=use_threads, block_size=block_size), memory_pool=pool)
-        pool.release_unused()
-
-        print("Reading Bismark report from", file.absolute())
-
-        file_size = os.stat(file).st_size
-        read_batches = 0
-
-        if isinstance(genome, Genome): raise TypeError("Genome class need to be converted into DataFrame (e.g. Genome.gene_body()).")
-        def mutate(batch):
-            return (
-                pl
-                .from_arrow(batch)
-                .filter((pl.col('count_m') + pl.col('count_um') != 0))
-                .with_columns(
-                    ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density')
-                    .cast(MetageneSchema.sum)
-                )
-            )
-
-        bismark_df = None
-        pl.enable_string_cache()
-        for batch in reader:
-            df = cls.__process_batch(batch, genome, mutate, up_windows, body_windows, down_windows, sumfunc)
-
-            if bismark_df is None: bismark_df = df
-            else: bismark_df = bismark_df.extend(df)
-
-            read_batches += 1
-            cls.__print_batch_stat(read_batches * block_size, file_size, bismark_df.estimated_size())
-
-        cls.__print_batch_stat(file_size, file_size, bismark_df.estimated_size())
-        print("\nDONE")
-
-        return cls(bismark_df,
-                   upstream_windows=up_windows,
-                   gene_windows=body_windows,
-                   downstream_windows=down_windows)
+        return cls(report_df,
+                   upstream_windows=report_reader.upstream_windows,
+                   gene_windows=report_reader.body_windows,
+                   downstream_windows=report_reader.downstream_windows)
 
     @classmethod
     def from_parquet(
@@ -175,51 +148,23 @@ class Metagene(BismarkBase):
         >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
         >>> metagene = Metagene.from_parquet(save_name, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
-        up_windows, body_windows, down_windows = cls.__check_windows(up_windows, body_windows, down_windows)
 
-        file = Path(file).expanduser().absolute()
-        cls.__check_exists(file)
+        report_reader = ParquetReportReader(
+            report_file=file,
+            genome=genome,
+            upstream_windows=up_windows,
+            body_windows=body_windows,
+            downstream_windows=down_windows,
+            use_threads=use_threads,
+            sumfunc=sumfunc,
+        )
 
-        bismark_df = None
+        report_df = report_reader.read()
 
-        # initialize batched reader
-        reader = ParquetReader(file.absolute(), use_threads=use_threads)
-
-        # batch approximation
-        file_size = os.stat(file).st_size
-        num_row_groups = len(reader)
-        read_row_groups = 0
-
-        if isinstance(genome, Genome): raise TypeError("Genome class need to be converted into DataFrame (e.g. Genome.gene_body()).")
-        print(f"Reading from {file}")
-
-        def mutate(batch):
-            return (
-                batch
-                .from_arrow(df)
-                .filter(pl.col("count_total") != 0)
-                .with_columns(
-                    (pl.col('count_m') / pl.col('count_total')).alias('density').cast(MetageneSchema.sum)
-                )
-                .drop("count_total")
-            )
-
-        for df in reader:
-            df = cls.__process_batch(df, genome, mutate, up_windows, body_windows, down_windows, sumfunc)
-
-            if bismark_df is None: bismark_df = df
-            else: bismark_df = bismark_df.extend(df)
-
-            read_row_groups += 1
-            cls.__print_batch_stat((int(read_row_groups / num_row_groups) * file_size), file_size, bismark_df.estimated_size())
-
-        cls.__print_batch_stat(file_size, file_size, bismark_df.estimated_size())
-        print("DONE")
-
-        return cls(bismark_df,
-                   upstream_windows=up_windows,
-                   gene_windows=body_windows,
-                   downstream_windows=down_windows)
+        return cls(report_df,
+                   upstream_windows=report_reader.upstream_windows,
+                   gene_windows=report_reader.body_windows,
+                   downstream_windows=report_reader.downstream_windows)
 
     @classmethod
     def from_binom(
@@ -266,48 +211,23 @@ class Metagene(BismarkBase):
         >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
         >>> metagene = Metagene.from_binom(save_name, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
-        up_windows, body_windows, down_windows = cls.__check_windows(up_windows, body_windows, down_windows)
+        report_reader = BinomReportReader(
+            report_file=file,
+            genome=genome,
+            upstream_windows=up_windows,
+            body_windows=body_windows,
+            downstream_windows=down_windows,
+            use_threads=use_threads,
+            sumfunc="mean",
+            p_value=p_value
+        )
 
-        file = Path(file).expanduser().absolute()
-        cls.__check_exists(file)
+        report_df = report_reader.read()
 
-        bismark_df = None
-
-        # initialize batched reader
-        reader = ParquetReader(file.absolute(), use_threads=use_threads)
-
-        # batch approximation
-        file_size = file.stat().st_size
-        num_row_groups = len(reader)
-        read_row_groups = 0
-
-        if isinstance(genome, Genome): raise TypeError("Genome class need to be converted into DataFrame (e.g. Genome.gene_body()).")
-        print(f"Reading from {file}")
-
-        def mutate(batch):
-            return (
-                pl.from_arrow(batch)
-                .with_columns((pl.col("p_value") < p_value).cast(pl.Float32).alias("density"))
-                .drop("count_total")
-            )
-
-        for df in reader:
-            df = cls.__process_batch(df, genome, mutate, up_windows, body_windows, down_windows, "mean")
-
-            if bismark_df is None:
-                bismark_df = df
-            else:
-                bismark_df = bismark_df.extend(df)
-
-            read_row_groups += 1
-
-        cls.__print_batch_stat(file_size, file_size, bismark_df.estimated_size())
-        print("DONE")
-
-        return cls(bismark_df,
-                   upstream_windows=up_windows,
-                   gene_windows=body_windows,
-                   downstream_windows=down_windows)
+        return cls(report_df,
+                   upstream_windows=report_reader.upstream_windows,
+                   gene_windows=report_reader.body_windows,
+                   downstream_windows=report_reader.downstream_windows)
 
     @classmethod
     def from_bedGraph(
@@ -319,9 +239,8 @@ class Metagene(BismarkBase):
             body_windows: int = 2000,
             down_windows: int = 0,
             sumfunc: str = "mean",
-            batch_size: int = 10**6,
-            cpu: int = multiprocessing.cpu_count(),
-            skip_rows: int = 1,
+            block_size_mb: int = 30,
+            use_threads: bool = True,
             save_preprocessed: str = None,
             temp_dir: str = "./"
     ):
@@ -366,12 +285,13 @@ class Metagene(BismarkBase):
         >>> path = 'path/to/report.bedGraph'
         >>> metagene = Metagene.from_bedGraph(path, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
-        if isinstance(genome, Genome): raise TypeError("Genome class need to be converted into DataFrame (e.g. Genome.gene_body()).")
+        if isinstance(genome, Genome):
+            raise TypeError("Genome must be converted into DataFrame (e.g. via Genome.gene_body()).")
 
         sequence = Sequence.from_fasta(sequence, temp_dir)
         mapped = Mapper.bedGraph(file, sequence, temp_dir,
                                  save_preprocessed, True if save_preprocessed is None else False,
-                                 batch_size, cpu, skip_rows)
+                                 block_size_mb, use_threads)
 
         return cls.from_parquet(mapped.report_file, genome, up_windows, body_windows, down_windows, sumfunc)
 
@@ -385,9 +305,8 @@ class Metagene(BismarkBase):
             body_windows: int = 2000,
             down_windows: int = 0,
             sumfunc: str = "mean",
-            batch_size: int = 10 ** 6,
-            cpu: int = multiprocessing.cpu_count(),
-            skip_rows: int = 1,
+            block_size_mb: int = 30,
+            use_threads: bool = True,
             save_preprocessed: str = None,
             temp_dir: str = "./"
     ):
@@ -434,113 +353,15 @@ class Metagene(BismarkBase):
         >>>
         >>> metagene = Metagene.from_coverage(path, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
-        if isinstance(genome, Genome): raise TypeError("Genome class need to be converted into DataFrame (e.g. Genome.gene_body()).")
+        if isinstance(genome, Genome):
+            raise TypeError("Genome must be converted into DataFrame (e.g. via Genome.gene_body()).")
 
         sequence = Sequence.from_fasta(sequence, temp_dir)
         mapped = Mapper.coverage(file, sequence, temp_dir,
                                  save_preprocessed, True if save_preprocessed is None else False,
-                                 batch_size, cpu, skip_rows)
+                                 block_size_mb, use_threads)
 
         return cls.from_parquet(mapped.report_file, genome, up_windows, body_windows, down_windows, sumfunc)
-
-    @staticmethod
-    def __check_windows(uw, gw, dw):
-        return uw if uw > 0 else 0, gw if gw > 0 else 0, dw if dw > 0 else 0
-
-    @staticmethod
-    def __check_exists(file: Path):
-        if not file.exists():
-            raise FileNotFoundError(f"Specified file: {file.absolute()} – not found!")
-
-    @staticmethod
-    def __print_batch_stat(read_bytes, total_bytes, ram_bytes):
-        print("Read {read_mb}/{total_mb}Mb | Metagene RAM usage - {ram_usage}Mb".format(
-            read_mb=round(read_bytes / 1024 ** 2, 1),
-            total_mb=round(total_bytes / 1024 ** 2, 1),
-            ram_usage=round(ram_bytes / 1024 ** 2, 1)), end="\r")
-
-    @staticmethod
-    def __process_batch(df: pl.DataFrame, genome: pl.DataFrame, mutate_fun, up_win, gene_win, down_win, sumfunc):
-        # *** POLARS EXPRESSIONS ***
-        # cast genome columns to type to join
-        GENE_COLUMNS = [
-            pl.col('strand').cast(MetageneSchema.strand),
-            pl.col('chr').cast(MetageneSchema.chr)
-        ]
-        # upstream region position check
-        UP_REGION = pl.col('position') < pl.col('start')
-        # body region position check
-        BODY_REGION = (pl.col('start') <= pl.col('position')) & (pl.col('position') <= pl.col('end'))
-        # downstream region position check
-        DOWN_REGION = (pl.col('position') > pl.col('end'))
-
-        UP_FRAGMENT = (((pl.col('position') - pl.col('upstream')) / (pl.col('start') - pl.col('upstream'))) * up_win).floor()
-        # fragment even for position == end needs to be rounded by floor
-        # so 1e-10 is added (position is always < end)
-        BODY_FRAGMENT = (((pl.col('position') - pl.col('start')) / (pl.col('end') - pl.col('start') + 1e-10)) * gene_win).floor() + up_win
-        DOWN_FRAGMENT = (((pl.col('position') - pl.col('end')) / (pl.col('downstream') - pl.col('end') + 1e-10)) * down_win).floor() + up_win + gene_win
-
-        # Firstly BismarkPlot was written so there were only one sum statistic - mean.
-        # Sum and count of densities was calculated for further weighted mean analysis in respect to fragment size
-        # For backwards compatibility, for newly introduces statistics, column names are kept the same.
-        # Count is set to 1 and "sum" to actual statistics (e.g. median, min, e.t.c)
-        if sumfunc == "median":
-            AGG_EXPR = [pl.median("density").alias("sum"), pl.lit(1).alias("count")]
-        elif sumfunc == "min":
-            AGG_EXPR = [pl.min("density").alias("sum"), pl.lit(1).alias("count")]
-        elif sumfunc == "max":
-            AGG_EXPR = [pl.max("density").alias("sum"), pl.lit(1).alias("count")]
-        elif sumfunc == "geometric":
-            AGG_EXPR = [pl.col("density").log().mean().exp().alias("sum"),
-                        pl.lit(1).alias("count")]
-        elif sumfunc == "1pgeometric":
-            AGG_EXPR = [(pl.col("density").log1p().mean().exp() - 1).alias("sum"),
-                        pl.lit(1).alias("count")]
-        else:
-            AGG_EXPR = [pl.sum('density').alias('sum'), pl.count('density').alias('count')]
-
-        df = mutate_fun(df)
-
-        return (
-            df.lazy()
-            # assign types
-            # calculate density for each cytosine
-            .with_columns([
-                pl.col('position').cast(MetageneSchema.position),
-                pl.col('chr').cast(MetageneSchema.chr),
-                pl.col('strand').cast(MetageneSchema.strand),
-                pl.col('context').cast(MetageneSchema.context),
-            ])
-            # sort by position for joining
-            .sort(['chr', 'strand', 'position'])
-            # join with nearest
-            .join_asof(
-                genome.lazy().with_columns(GENE_COLUMNS),
-                left_on='position', right_on='upstream', by=['chr', 'strand']
-            )
-            # limit by end of region
-            .filter(pl.col('position') <= pl.col('downstream'))
-            # calculate fragment ids
-            .with_columns([
-                pl.when(UP_REGION).then(UP_FRAGMENT)
-                .when(BODY_REGION).then(BODY_FRAGMENT)
-                .when(DOWN_REGION).then(DOWN_FRAGMENT)
-                .alias('fragment'),
-                pl.concat_str([
-                    pl.col("chr"),
-                    (pl.concat_str(pl.col("start"), pl.col("end"), separator="-"))
-                ], separator=":").alias("gene")
-            ])
-            .with_columns([
-                pl.col("fragment").cast(MetageneSchema.fragment),
-                pl.col("gene").cast(MetageneSchema.gene),
-                pl.col('id').cast(MetageneSchema.id)
-            ])
-            # gather fragment stats
-            .groupby(by=['chr', 'strand', 'start', 'gene', 'context', 'id', 'fragment'])
-            .agg(AGG_EXPR)
-            .drop_nulls(subset=['sum'])
-        ).collect()
 
     def filter(
             self,
@@ -927,7 +748,7 @@ class Metagene(BismarkBase):
 
 
 # TODO add other type constructors
-class MetageneFiles(BismarkFilesBase):
+class MetageneFiles(MetageneFilesBase):
     """
     Stores and plots multiple data for :class:`Metagene`.
 
@@ -1027,7 +848,7 @@ class MetageneFiles(BismarkFilesBase):
 
         return cls(samples, labels)
 
-    def filter(self, context: str = None, strand: str = None, chr: str = None):
+    def filter(self, context: str = None, strand: str = None, chr: str = None, genome: pl.DataFrame = None):
         """
         :meth:`Metagene.filter` all metagenes.
 
@@ -1050,7 +871,7 @@ class MetageneFiles(BismarkFilesBase):
         --------
         Metagene.filter : For examples.
         """
-        return self.__class__([sample.filter(context, strand, chr) for sample in self.samples], self.labels)
+        return self.__class__([sample.filter(context, strand, chr, genome) for sample in self.samples], self.labels)
 
     def trim_flank(self, upstream=True, downstream=True):
         """
@@ -1113,14 +934,14 @@ class MetageneFiles(BismarkFilesBase):
         metadata = [sample.metadata for sample in self.samples]
         upstream_windows = set([md.get("upstream_windows") for md in metadata])
         gene_windows = set([md.get("gene_windows") for md in metadata])
-        downstream_windows = set(
-            [md.get("downstream_windows") for md in metadata])
+        downstream_windows = set([md.get("downstream_windows") for md in metadata])
 
         if len(upstream_windows) == len(downstream_windows) == len(gene_windows) == 1:
             merged = (
                 pl.concat([sample.bismark for sample in self.samples]).lazy()
-                .group_by(["strand", "context", "chr", "gene", "fragment"])
+                .group_by(["strand", "context", "chr", "gene", "start", "id", "fragment"], maintain_order=True)
                 .agg([pl.sum("sum").alias("sum"), pl.sum("count").alias("count")])
+                .select(self.samples[0].bismark.columns)
             ).collect()
 
             return Metagene(merged,
@@ -1407,14 +1228,13 @@ class MetageneFiles(BismarkFilesBase):
             )
 
         data = pl.concat([sample_convert(sample, label) for sample, label in zip(self.samples, self.labels)])
-        data = data.to_pandas()
+        data = data.to_pandas().dropna()
 
         labels = dict(
             context="Context",
             label="",
             density="Methylation density, %"
         )
-
         figure = px.box(data, x="label", y="density",
                         color="context", points=points,
                         labels=labels, title=title)
