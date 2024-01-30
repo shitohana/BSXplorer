@@ -103,9 +103,10 @@ class Clustering(MetageneBase):
             labels["up_mid"], labels["body_start"] = [""] * 2
 
         x_ticks = self.tick_positions
+        x_pos = list(x_ticks.values())
         x_labels = [labels[key] for key in x_ticks.keys()]
 
-        axes.set_xticks(x_ticks, labels=x_labels)
+        axes.set_xticks(x_pos, labels=x_labels)
 
         if show_border:
             for tick in [x_ticks["body_start"], x_ticks["body_end"]]:

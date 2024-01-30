@@ -11,10 +11,172 @@ from pyreadr import write_rds
 from scipy.signal import savgol_filter
 import pyarrow as pa
 import plotly.graph_objects as go
+import plotly.express as px
 from pathlib import Path
+from abc import ABC, abstractmethod
+import warnings
 
-from .utils import approx_batch_num, interval
-from .ArrowReaders import CsvReader, BismarkOptions
+from .utils import approx_batch_num, interval, decompress, ReportBar
+from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader
+
+
+class ChrBaseReader(ABC):
+    def __init__(self,
+        file: str | Path,
+        chr_min_length=10 ** 6,
+        window_length: int = 10 ** 6,
+        confidence: int = None
+    ):
+        self.report_file    = file
+        self.chr_min_length = chr_min_length
+        self.window_length  = window_length
+        self.confidence     = confidence
+
+        self._validate()
+
+    def _validate(self):
+        self.report_file = Path(self.report_file).expanduser().absolute()
+        if not self.report_file.exists():
+            raise FileNotFoundError(self.report_file)
+
+        if self.chr_min_length < 1:
+            self.chr_min_length = 0
+
+        if self.window_length < 1:
+            raise ValueError(f"Window length must be positive, not {self.window_length}")
+
+        if self.confidence is not None:
+            if not (0 <= self.confidence < 1):
+                warnings.warn("Confidence value needs to be in [0;1) interval, not {}. Disabling confidence bands.")
+                self.confidence = 0
+        else:
+            self.confidence = 0
+
+    @abstractmethod
+    def _get_reader(self) -> CsvReader | ParquetReader:
+        ...
+
+    @abstractmethod
+    def _mutate_batch(self, batch) -> pl.DataFrame:
+        ...
+
+    @abstractmethod
+    def _batch_size(self) -> int:
+        ...
+
+    @staticmethod
+    def __process_batch(df: pl.DataFrame, window_length, chr_min_length, confidence):
+        df = (
+            df
+            .filter((pl.col('count_m') + pl.col('count_um') != 0))
+            .group_by(["strand", "chr"])
+            # Preprocess
+            .agg([
+                pl.col("context"),
+                (pl.col("position") / window_length).floor().alias("window").cast(pl.Int32),
+                ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32),
+                (pl.col('count_m') + pl.col('count_um')).alias('count').cast(pl.UInt32),
+                (pl.max("position") - pl.min("position")).alias("length")
+            ])
+            .filter(pl.col("length") > chr_min_length)
+        )
+
+        if len(df) == 0:
+            return None
+
+        DATA_COLS = [
+            pl.sum('density').alias('sum'),
+            pl.count('density').alias('count'),
+            (pl.first('window') * window_length).alias("chr_pos")
+        ]
+        if confidence is not None and confidence > 0:
+            DATA_COLS.append(
+                pl.struct(["density", "count"])
+                .map_elements(lambda x: interval(x.struct.field("density"), x.struct.field("count"), confidence))
+                .alias("interval")
+            )
+        df = (
+            df
+            .explode(["context", "window", "density", "count"])
+            .group_by(by=['chr', 'strand', 'context', 'window'])
+            .agg(DATA_COLS)
+            .drop_nulls(subset=['sum'])
+        )
+
+        if confidence is not None and confidence > 0:
+            df = df.unnest("interval")
+
+        return df
+
+    def _read(self):
+        decompressed = decompress(self.report_file)
+        if decompressed != self.report_file:
+            self.report_file = decompressed.name
+
+        reader = self._get_reader()
+        print(f"Reading report from {self.report_file}")
+
+        file_size = self.report_file.stat().st_size
+        bar = ReportBar(max=file_size)
+
+        report_df = None
+        pl.enable_string_cache()
+
+        for batch in reader:
+            df = self._mutate_batch(batch)
+
+            processed = self.__process_batch(df, self.window_length, self.chr_min_length, self.confidence)
+
+            if processed is not None:
+                if report_df is None:
+                    report_df = df
+                else:
+                    report_df.extend(df)
+
+            bar.next(self._batch_size())
+
+        bar.goto(bar.max)
+        bar.finish()
+
+        if not isinstance(decompressed, Path):
+            decompressed.close()
+
+        return report_df
+
+
+class ChrBismarkReader(ChrBaseReader):
+    def __init__(self, block_size_mb: int = 100, use_threads: bool = True, **kwargs):
+        super().__init__(**kwargs)
+
+        self._block_size_mb = block_size_mb
+        self._use_threads = use_threads
+
+    def _batch_size(self) -> int:
+        return self._block_size_mb * (1024 ** 2)
+
+    def _get_reader(self) -> CsvReader | ParquetReader:
+        pool = pa.default_memory_pool()
+        block_size = self._batch_size()
+        reader = CsvReader(
+            self.report_file,
+            BismarkOptions(use_threads=self._use_threads, block_size=block_size),
+            memory_pool=pool)
+        pool.release_unused()
+        return reader
+
+    def _mutate_batch(self, batch) -> pl.DataFrame:
+        return pl.from_arrow(batch)
+
+
+class ChrParquetReader(ChrBaseReader):
+    def _batch_size(self) -> int:
+        return int(self.report_file.stat().st_size / self._get_reader().reader.num_row_groups)
+
+    def _get_reader(self) -> CsvReader | ParquetReader:
+        return ParquetReader(self.report_file)
+
+    def _mutate_batch(self, batch) -> pl.DataFrame:
+        return pl.from_arrow(batch)
 
 
 class ChrLevels:
@@ -30,14 +192,58 @@ class ChrLevels:
         return (
             df
             .sort(["chr", "window"])
+            .group_by(["chr", "window"], maintain_order=True)
+            .agg([pl.sum("sum"), pl.sum("count"), pl.first("chr_pos")])
             .with_row_count("fragment")
-            .group_by(["chr", "fragment"], maintain_order=True)
-            .agg([pl.sum("sum"), pl.sum("count")])
             .with_columns((pl.col("sum") / pl.col("count")).alias("density"))
         )
 
+    @staticmethod
+    def __process_batch(df: pl.DataFrame, window_length, chr_min_length, confidence):
+        df = (
+            df
+            .filter((pl.col('count_m') + pl.col('count_um') != 0))
+            .group_by(["strand", "chr"])
+            # Preprocess
+            .agg([
+                pl.col("context"),
+                (pl.col("position") / window_length).floor().alias("window").cast(pl.Int32),
+                ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32),
+                (pl.col('count_m') + pl.col('count_um')).alias('count').cast(pl.UInt32),
+                (pl.max("position") - pl.min("position")).alias("length")
+            ])
+            .filter(pl.col("length") > chr_min_length)
+        )
+
+        if len(df) == 0:
+            return None
+
+        DATA_COLS = [
+            pl.sum('density').alias('sum'),
+            pl.count('density').alias('count'),
+            (pl.first('window') * window_length).alias("chr_pos")
+        ]
+        if confidence is not None and confidence > 0:
+            DATA_COLS.append(
+                pl.struct(["density", "count"])
+                .map_elements(lambda x: interval(x.struct.field("density"), x.struct.field("count"), confidence))
+                .alias("interval")
+            )
+        df = (
+            df
+            .explode(["context", "window", "density", "count"])
+            .group_by(by=['chr', 'strand', 'context', 'window'])
+            .agg(DATA_COLS)
+            .drop_nulls(subset=['sum'])
+        )
+
+        if confidence is not None and confidence > 0:
+            df = df.unnest("interval")
+
+        return df
+
     @classmethod
-    def from_file(
+    def from_bismark(
             cls,
             file: str | Path,
             chr_min_length=10 ** 6,
@@ -52,26 +258,16 @@ class ChrLevels:
         :param file: Path to file
         :param chr_min_length: Minimum length of chromosome to be analyzed
         :param window_length: Length of windows in bp
-        :param cpu: How many cores to use. Uses every physical core by default
-        :param batch_size: Number of rows to read by one CPU core
         """
-        PREPROCESS_COLS = [
-            pl.col("context"),
-            (pl.col("position") / window_length).floor().alias("window").cast(pl.Int32),
-            ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32),
-            (pl.max("position") - pl.min("position")).alias("length")
-        ]
+        # todo convert to base reader
 
-        DATA_COLS = [
-            pl.sum('density').alias('sum'),
-            pl.count('density').alias('count')
-        ]
-        if confidence is not None:
-            DATA_COLS.append(
-                pl.struct(["sum", "count"])
-                .map_elements(lambda x: interval(x["sum"], x["count"], confidence))
-                .alias("interval")
-            )
+        file = Path(file).expanduser().absolute()
+        if not file.exists():
+            raise FileNotFoundError(file)
+
+        decompressed = decompress(file)
+        if decompressed != file:
+            file = decompressed.name
 
         file = Path(file)
 
@@ -91,35 +287,26 @@ class ChrLevels:
         pl.enable_string_cache()
         for df in reader:
             df = pl.from_arrow(df)
-            df = (
-                df.lazy()
-                .filter((pl.col('count_m') + pl.col('count_um') != 0))
-                .group_by(["strand", "chr"])
-                .agg(PREPROCESS_COLS)
-                .filter(pl.col("length") > chr_min_length)
-                .explode(["context", "window", "density"])
-                .group_by(by=['chr', 'strand', 'context', 'window'])
-                .agg(DATA_COLS)
-                .drop_nulls(subset=['sum'])
-            ).collect()
 
-            if confidence is not None:
-                df = df.unnest("interval")
+            preprocessed = cls.__process_batch(df, window_length, chr_min_length, confidence)
 
-            if bismark_df is None:
-                bismark_df = df
+            if preprocessed is not None:
+                if bismark_df is None:
+                    bismark_df = df
+                else:
+                    bismark_df = bismark_df.extend(df)
+
+                read_batches += 1
+                print(
+                    "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
+                        read_mb=round(read_batches * block_size / 1024 ** 2, 1),
+                        total_mb=round(file_size / 1024 ** 2, 1),
+                        ram_usage=round(bismark_df.estimated_size('mb'), 1)
+                    ),
+                    end="\r"
+                )
             else:
-                bismark_df = bismark_df.extend(df)
-
-            read_batches += 1
-            print(
-                "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
-                    read_mb=round(read_batches * block_size / 1024 ** 2, 1),
-                    total_mb=round(file_size / 1024 ** 2, 1),
-                    ram_usage=round(bismark_df.estimated_size('mb'), 1)
-                ),
-                end="\r"
-            )
+                continue
 
         print(
             "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
@@ -131,32 +318,89 @@ class ChrLevels:
         )
         print("\nDONE")
 
+        if not isinstance(decompressed, Path):
+            decompressed.close()
+
         return cls(bismark_df)
 
-    @staticmethod
-    def __process_batch(
+
+    @classmethod
+    def from_parquet(
+            cls,
+            file: str | Path,
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
             confidence: int = None
-
     ):
-        PREPROCESS_COLS = [
-            pl.col("context"),
-            (pl.col("position") / window_length).floor().alias("window").cast(pl.Int32),
-            ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32),
-            (pl.max("position") - pl.min("position")).alias("length")
-        ]
+        """
+        Initialize ChrLevels with CX_report file
 
-        DATA_COLS = [
-            pl.sum('density').alias('sum'),
-            pl.count('density').alias('count')
-        ]
-        if confidence is not None:
-            DATA_COLS.append(
-                pl.struct(["sum", "count"])
-                .map_elements(lambda x: interval(x["sum"], x["count"], confidence))
-                .alias("interval")
-            )
+        :param file: Path to file
+        :param chr_min_length: Minimum length of chromosome to be analyzed
+        :param window_length: Length of windows in bp
+        """
+        # todo convert to base reader
+
+        file = Path(file).expanduser().absolute()
+        if not file.exists():
+            raise FileNotFoundError(file)
+
+        decompressed = decompress(file)
+        if decompressed != file:
+            file = decompressed.name
+
+        file = Path(file)
+
+        reader = ParquetReader(file)
+
+        print("Reading Bismark report from", file.absolute())
+
+        file_size = os.stat(file).st_size
+        block_size = int(file_size / reader.reader.num_row_groups)
+        read_batches = 0
+
+        bismark_df = None
+
+        print(f"Reading from {file}")
+
+        pl.enable_string_cache()
+        for df in reader:
+            df = pl.from_arrow(df)
+
+            preprocessed = cls.__process_batch(df, window_length, chr_min_length, confidence)
+
+            if preprocessed is not None:
+                if bismark_df is None:
+                    bismark_df = df
+                else:
+                    bismark_df = bismark_df.extend(df)
+
+                read_batches += 1
+                print(
+                    "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
+                        read_mb=round(read_batches * block_size / 1024 ** 2, 1),
+                        total_mb=round(file_size / 1024 ** 2, 1),
+                        ram_usage=round(bismark_df.estimated_size('mb'), 1)
+                    ),
+                    end="\r"
+                )
+            else:
+                continue
+
+        print(
+            "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
+                read_mb=round(file_size / 1024 ** 2, 1),
+                total_mb=round(file_size / 1024 ** 2, 1),
+                ram_usage=round(bismark_df.estimated_size('mb'), 1)
+            ),
+            end="\r"
+        )
+        print("\nDONE")
+
+        if not isinstance(decompressed, Path):
+            decompressed.close()
+
+        return cls(bismark_df)
 
     def save_plot_rds(self, path, compress: bool = False):
         """
@@ -223,7 +467,7 @@ class ChrLevels:
         for tick in x_lines:
             figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
 
-    def draw(
+    def draw_mpl(
             self,
             fig_axes: tuple = None,
             smooth: int = 10,
@@ -271,28 +515,46 @@ class ChrLevels:
         if figure is None:
             figure = go.Figure()
 
-        data = self.plot_data["density"].to_numpy()
+        y_data = self.plot_data["density"].to_numpy()
 
         polyorder = 3
         window = smooth if smooth > polyorder else polyorder + 1
 
         if smooth:
             _, _, lines = self.__ticks_data
-            data_ranges = [data[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]
+            lines[-1] = lines[-1] + 1
+            data_ranges = [y_data[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]
             data_ranges = [savgol_filter(r, window, 3, mode='nearest') for r in data_ranges]
 
-            data = np.concatenate(data_ranges)
+            y_data = np.concatenate(data_ranges)
 
-        x = np.arange(len(data))
-        data = data * 100  # convert to percents
+        y_data = y_data * 100  # convert to percents
+        plot_df = (
+            self.plot_data
+            .drop("density")
+            .with_columns(pl.lit(y_data).alias("density"))
+        )
 
-        trace = go.Scatter(x=x, y=data, mode="lines", name=label)
+        # trace = go.Scatter(x=x, y=y_data, mode="lines", name=label)
+        trace_fig = px.line(
+            plot_df.to_pandas(),
+            x="fragment",
+            y="density",
+            hover_data={
+                "fragment": False,
+                "chr": True,
+                "chr_pos": True,
+                "density": ":.4f"
+            },
+            hover_name="chr"
+        )
 
-        figure.add_trace(trace)
+        figure.add_traces(trace_fig.data)
 
         figure.update_layout(
             xaxis_title="Position",
-            yaxis_title="Methylation density, %"
+            yaxis_title="Methylation density, %",
+            hovermode="x unified"
         )
 
         self.__add_flank_lines_plotly(figure)

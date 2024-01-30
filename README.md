@@ -366,7 +366,7 @@ BismarkPlot allows user to visualize chromosome methylation levels across full g
 import src.bismarkplot.ChrLevels
 import bismarkplot
 
-chr = src.bismarkplot.levels.ChrLevels.from_file(
+chr = src.bismarkplot.levels.ChrLevels.from_bismark(
     "path/to/CX_report.txt",
     window_length=10 ** 5,  # window length in bp
     batch_size=10 ** 7,

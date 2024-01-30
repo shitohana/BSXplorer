@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import plotly.express as px
 import polars as pl
-import pyarrow
+import seaborn as sns
 
 from .Plots import LinePlot, LinePlotFiles, HeatMap, HeatMapFiles
 from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader
@@ -368,7 +368,8 @@ class Metagene(MetageneBase):
             context: Literal["CG", "CHG", "CHH", None] = None,
             strand: Literal["+", "-", None] = None,
             chr: str = None,
-            genome: pl.DataFrame = None
+            genome: pl.DataFrame = None,
+            id: list[str] = None
     ):
         """
         Method for filtering metagene.
@@ -435,10 +436,16 @@ class Metagene(MetageneBase):
         else:
             genome_filter = lambda df: df
 
+        if id is not None:
+            def id_filter(df: pl.DataFrame):
+                return df.filter(pl.col("id").is_in(id))
+        else:
+            id_filter = lambda df: df
+
         if context_filter is None and strand_filter is None and chr_filter is None:
             return self
         else:
-            return self.__class__(genome_filter(self.bismark.filter(context_filter & strand_filter & chr_filter)),
+            return self.__class__(id_filter(genome_filter(self.bismark.filter(context_filter & strand_filter & chr_filter))),
                                   **metadata)
 
     def resize(self, to_fragments: int = None):
@@ -748,6 +755,7 @@ class Metagene(MetageneBase):
 
 
 # TODO add other type constructors
+# todo add fastcluster to dependencies
 class MetageneFiles(MetageneFilesBase):
     """
     Stores and plots multiple data for :class:`Metagene`.
@@ -848,7 +856,7 @@ class MetageneFiles(MetageneFilesBase):
 
         return cls(samples, labels)
 
-    def filter(self, context: str = None, strand: str = None, chr: str = None, genome: pl.DataFrame = None):
+    def filter(self, context: str = None, strand: str = None, chr: str = None, genome: pl.DataFrame = None, id: list[str] = None):
         """
         :meth:`Metagene.filter` all metagenes.
 
@@ -871,7 +879,7 @@ class MetageneFiles(MetageneFilesBase):
         --------
         Metagene.filter : For examples.
         """
-        return self.__class__([sample.filter(context, strand, chr, genome) for sample in self.samples], self.labels)
+        return self.__class__([sample.filter(context, strand, chr, genome, id) for sample in self.samples], self.labels)
 
     def trim_flank(self, upstream=True, downstream=True):
         """
@@ -1241,46 +1249,31 @@ class MetageneFiles(MetageneFilesBase):
 
         return figure
 
-    def __dendrogram(self, stat="mean"):
-        # get intersecting regions
-        gene_sets = [set(sample.bismark["gene"].to_list()) for sample in self.samples]
-        intersecting = list(set.intersection(*gene_sets))
-
-        if len(intersecting) < 1:
-            print("No regions with same labels were found. Exiting.")
-            return
-
-        # TODO check options setter for stat (limited set of options)
-        # Lazy
-        def region_levels(bismark: pl.DataFrame, stat="mean"):
-            if stat == "median":
-                expr = pl.median("density")
-            elif stat == "min":
-                expr = pl.min("density")
-            elif stat == "max":
-                expr = pl.max("density")
-            else:
-                expr = pl.mean("density")
-
-            levels = (
-                bismark.lazy()
-                .with_columns((pl.col("sum") / pl.col("count")).alias("density"))
-                .group_by(["gene"])
-                .agg(expr.alias("stat"))
-                .sort("gene")
+    def dendrogram(self, q: float = .75):
+        gene_stats = []
+        for sample, label in zip(self.samples, self.labels):
+            gene_stats.append(
+                sample.bismark
+                .group_by(["chr", "strand", "start", "gene"])
+                .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
+                .with_columns(pl.lit(label).alias("label"))
             )
 
-            return levels
+        gene_set = set.intersection(*[set(stat["gene"].to_list()) for stat in gene_stats])
 
-        levels = [region_levels(sample.bismark, stat).rename({"stat": str(label)})
-                  for sample, label in zip(self.samples, self.labels)]
+        if len(gene_set) < 1:
+            raise ValueError("Region set intersection is empty. Are Metagenes read with same genome?")
 
-        data = pl.concat(levels, how="align").collect()
+        gene_stats = [stat.filter(pl.col("gene").is_in(list(gene_set))) for stat in gene_stats]
 
-        matrix = data.select(pl.exclude("gene")).to_numpy()
-        genes = data["gene"].to_numpy()
+        dendro_data = pl.concat(gene_stats).pivot(values="density", columns="label", index="gene")
 
-        # get intersected
-        matrix = matrix[np.isin(genes, intersecting), :]
+        matrix = dendro_data.select(pl.all().exclude("gene")).to_pandas()
 
-        return
+        # Filter by variance
+        if q > 0:
+            var = matrix.to_numpy().var(1)
+            matrix = matrix[var > np.quantile(var, q)]
+
+        fig = sns.clustermap(matrix)
+        return fig

@@ -100,12 +100,13 @@ class MetageneBase:
 
 class MetageneFilesBase:
     def __init__(self, samples, labels: list[str] = None):
-        self.samples = self.__check_metadata(
-            samples if isinstance(samples, list) else [samples])
+        self.samples = self.__check_metadata(samples if isinstance(samples, list) else [samples])
+
         if samples is None:
             raise Exception("Flank or gene windows number does not match!")
-        self.labels = [str(v) for v in list(
-            range(len(samples)))] if labels is None else labels
+
+        self.labels = list(map(str, range(len(samples)))) if labels is None else labels
+
         if len(self.labels) != len(self.samples):
             raise Exception("Labels length doesn't match samples number")
 
@@ -175,7 +176,7 @@ class MetageneFilesBase:
         if len(upstream_check) == len(gene_check) == len(downstream_check) == 1:
             return samples
         else:
-            return None
+            raise ValueError("Different windows number between samples")
 
 
 class PlotBase(MetageneBase):
@@ -256,7 +257,6 @@ class ReportReader(ABC):
 
         self.validate()
 
-
     def validate(self):
         # Windows
         self.upstream_windows   = self.upstream_windows if self.upstream_windows > 0 else 0
@@ -271,7 +271,7 @@ class ReportReader(ABC):
         self.report_file = Path(self.report_file).expanduser().absolute()
 
         if not self.report_file.exists():
-            raise FileNotFoundError(f"Genome file: {self.report_file.absolute()} – not found!")
+            raise FileNotFoundError(f"Report file: {self.report_file} – not found!")
 
         self.report_file = self.__decompress(self.report_file)
 
@@ -416,7 +416,7 @@ class ReportReader(ABC):
 
         bar.goto(bar.max)
         bar.finish()
-        print("\nDONE")
+        print("DONE\n")
 
         if self.temp_file is not None:
             self.temp_file.close()

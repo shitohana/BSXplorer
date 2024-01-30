@@ -5,7 +5,7 @@ import re
 
 import numpy as np
 import polars as pl
-from matplotlib import pyplot as plt, colormaps
+from matplotlib import pyplot as plt, colormaps, colors as mcolors
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from pandas import DataFrame as pdDataFrame
@@ -699,3 +699,86 @@ class HeatMapFiles(MetageneFilesBase):
         for sample, label in zip(self.samples, self.labels):
             sample.save_plot_rds(f"{remove_extension(base_filename)}_{label}.rds",
                                  compress="gzip" if compress else None)
+
+
+class PCA_data:
+    def __init__(self, metagenes: list, groups: list[str], labels: list[str]):
+        ids = list(map(str, range(len(groups))))
+        mapping = {id: group for id, group in zip(ids, groups)}
+
+        pivoted = pl.concat([
+            metagene.bismark
+            .group_by("gene")
+            .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
+            .with_columns(pl.lit(label).alias("label"))
+            for metagene, label in zip(metagenes, list(mapping.keys()))
+        ]).pivot(values="density", index="gene", columns="label", aggregate_function="mean").drop_nulls()
+
+        col_labels = pivoted.select(pl.all().exclude("gene")).columns
+        matrix = pivoted.select(pl.all().exclude("gene")).to_numpy()
+
+        # 1. Standartize
+        std = matrix.std(1)
+        # Filter same rows
+        matrix = matrix[std != 0, :]
+        std = std[std != 0]
+        mean = matrix.mean(1)
+
+        standartized = (matrix.T - mean).T
+        # standartized = ((matrix.T - mean) / std).T
+
+        # 2. Calculate covariance
+        cov = np.cov(standartized.T)
+
+        # 3. Calculate eigen
+        eigenvalues, eigenvectors = np.linalg.eig(cov)
+
+        # 4. Sort
+        idx = eigenvalues.argsort()[::-1]
+
+        self.groups = np.array(list(map(lambda key: mapping[key], np.array(col_labels)[idx])))
+        self.labels = np.array(labels)[idx]
+        self.eigenvalues = eigenvalues[idx]
+        self.eigenvectors = eigenvectors[:, idx]
+        self.explained_variance = eigenvalues / eigenvalues.sum()
+
+
+def PCA_plotly(metagenes: list, groups: list[str], labels: list[str]):
+    data = PCA_data(metagenes, groups, labels)
+
+    x = data.eigenvectors[:, 0]
+    y = data.eigenvectors[:, 1]
+
+    df = pl.DataFrame({"x": x, "y": y, "group": data.groups, "label": data.labels}).to_pandas()
+    figure = px.scatter(df, x="x", y="y", color="group", text="label")
+
+    figure.update_layout(
+        xaxis_title="PC1: %.2f" % data.explained_variance[0] + "%",
+        yaxis_title="PC2: %.2f" % data.explained_variance[1] + "%"
+    )
+
+    return figure
+
+
+def PCA_mpl(metagenes: list, groups: list[str], labels: list[str]):
+    data = PCA_data(metagenes, groups, labels)
+
+    fig, axes = plt.subplots()
+
+    x = data.eigenvectors[:, 0]
+    y = data.eigenvectors[:, 1]
+
+    color_mapping = {label: list(mcolors.TABLEAU_COLORS.keys())[i] for i, label in zip(range(len(set(data.groups))), set(data.groups))}
+
+    for group in set(data.groups):
+        axes.scatter(x[data.groups == group], y[data.groups == group], c=color_mapping[group], label=group)
+
+    axes.set_xlabel("PC1: %.2f" % data.explained_variance[0] + "%")
+    axes.set_ylabel("PC2: %.2f" % data.explained_variance[1] + "%")
+
+    for x, y, label in zip(x, y, data.labels):
+        axes.text(x, y, label)
+
+    axes.legend()
+
+    return fig

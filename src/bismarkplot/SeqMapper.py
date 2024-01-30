@@ -416,7 +416,6 @@ class Mapper:
 
         return mapper
 
-    # TODO migrate on Arrow reader
     @classmethod
     def coverage(
             cls,

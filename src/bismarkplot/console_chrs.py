@@ -29,7 +29,7 @@ def main():
         from src.bismarkplot import ChrLevels
         import matplotlib.pyplot as plt
 
-        chr = ChrLevels.from_file(
+        chr = ChrLevels.from_bismark(
             args.filename,
             window_length=args.wlength,
             chr_min_length=args.mlength,

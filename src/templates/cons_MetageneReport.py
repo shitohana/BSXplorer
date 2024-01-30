@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import os
 import sys
 import time
 from collections import namedtuple
 from dataclasses import asdict
 from gc import collect
+from io import BytesIO
 from pathlib import Path
 
 import polars as pl
@@ -116,6 +118,12 @@ def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespa
         bp = filtered.box_plot_plotly()
         bp_trimmed = filtered.trim_flank().box_plot_plotly()
 
+        # todo add clustermap
+        cm = filtered.dendrogram()
+        tmpfile = BytesIO()
+        cm.savefig(tmpfile, format='png')
+        encoded = base64.b64encode(tmpfile.getvalue()).decode('utf-8')
+
         context_report.plots += [
             TemplateMetagenePlot(
                 "Line plot",
@@ -132,6 +140,10 @@ def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespa
             TemplateMetagenePlot(
                 "Box plot without flanking regions",
                 bp_trimmed.to_html(full_html=False)
+            ),
+            TemplateMetagenePlot(
+                "Clustermap",
+                "<img src=\'data:image/png;base64,{}\'>".format(encoded)
             )
         ]
 
@@ -148,10 +160,6 @@ def main():
     # args = parser.parse_args("-o F39_metagene --dir /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test -u 50 -d 50 -b 100 -S 5 -C 0 -V 50 /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/F39conf.tsv".split())
 
     report_args = parse_config(args.config)
-
-    for path in report_args["genome_file"].to_list() + report_args["genome_file"].to_list():
-        if not Path(path).expanduser().absolute().exists():
-            raise FileNotFoundError(path)
 
     metagenes = []
     last_genome_path = None
