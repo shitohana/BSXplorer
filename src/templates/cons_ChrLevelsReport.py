@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import time
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ from dataclasses import asdict
 from gc import collect
 
 import polars as pl
+from plotly.express.colors import qualitative as PALETTE
 
 from src.bismarkplot import ChrLevels
 from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
@@ -98,6 +100,13 @@ def render_chr_report(chr_levels: list[ChrLevels], args, labels: list[str]):
 
         for i in range(len(figure.data)):
             figure.data[i]["name"] = labels[i]
+            figure.data[i].showlegend = True
+            figure.data[i].line.color = PALETTE.Dark24[i]
+            figure.data[i].hovertemplate = re.sub(
+                '^<b>.+?</b>',
+                f'<b>{labels[i]}</b>',
+                figure.data[i].hovertemplate
+            )
 
         context_report.plots.append(
             TemplateMetagenePlot(
@@ -115,7 +124,7 @@ def render_chr_report(chr_levels: list[ChrLevels], args, labels: list[str]):
 
 def main():
     parser = get_chr_parser()
-    args = parser.parse_args("-o Fo_smooth200 /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/Fo_conf.tsv -l 100 -w 10000 -C 0 -S 200".split())
+    args = parser.parse_args("-o test /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/new_conf.tsv -l 10000 -w 50000 -C 0 -S 200".split())
     # args = parser.parse_args()
 
     report_args = parse_config(args.config)

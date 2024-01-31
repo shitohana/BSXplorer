@@ -108,7 +108,7 @@ class ChrBaseReader(ABC):
 
         return df
 
-    def _read(self):
+    def read(self):
         decompressed = decompress(self.report_file)
         if decompressed != self.report_file:
             self.report_file = decompressed.name
@@ -116,7 +116,7 @@ class ChrBaseReader(ABC):
         reader = self._get_reader()
         print(f"Reading report from {self.report_file}")
 
-        file_size = self.report_file.stat().st_size
+        file_size = os.stat(self.report_file).st_size
         bar = ReportBar(max=file_size)
 
         report_df = None
@@ -129,9 +129,9 @@ class ChrBaseReader(ABC):
 
             if processed is not None:
                 if report_df is None:
-                    report_df = df
+                    report_df = processed
                 else:
-                    report_df.extend(df)
+                    report_df.extend(processed)
 
             bar.next(self._batch_size())
 
@@ -198,50 +198,6 @@ class ChrLevels:
             .with_columns((pl.col("sum") / pl.col("count")).alias("density"))
         )
 
-    @staticmethod
-    def __process_batch(df: pl.DataFrame, window_length, chr_min_length, confidence):
-        df = (
-            df
-            .filter((pl.col('count_m') + pl.col('count_um') != 0))
-            .group_by(["strand", "chr"])
-            # Preprocess
-            .agg([
-                pl.col("context"),
-                (pl.col("position") / window_length).floor().alias("window").cast(pl.Int32),
-                ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density').cast(pl.Float32),
-                (pl.col('count_m') + pl.col('count_um')).alias('count').cast(pl.UInt32),
-                (pl.max("position") - pl.min("position")).alias("length")
-            ])
-            .filter(pl.col("length") > chr_min_length)
-        )
-
-        if len(df) == 0:
-            return None
-
-        DATA_COLS = [
-            pl.sum('density').alias('sum'),
-            pl.count('density').alias('count'),
-            (pl.first('window') * window_length).alias("chr_pos")
-        ]
-        if confidence is not None and confidence > 0:
-            DATA_COLS.append(
-                pl.struct(["density", "count"])
-                .map_elements(lambda x: interval(x.struct.field("density"), x.struct.field("count"), confidence))
-                .alias("interval")
-            )
-        df = (
-            df
-            .explode(["context", "window", "density", "count"])
-            .group_by(by=['chr', 'strand', 'context', 'window'])
-            .agg(DATA_COLS)
-            .drop_nulls(subset=['sum'])
-        )
-
-        if confidence is not None and confidence > 0:
-            df = df.unnest("interval")
-
-        return df
-
     @classmethod
     def from_bismark(
             cls,
@@ -259,69 +215,17 @@ class ChrLevels:
         :param chr_min_length: Minimum length of chromosome to be analyzed
         :param window_length: Length of windows in bp
         """
-        # todo convert to base reader
-
-        file = Path(file).expanduser().absolute()
-        if not file.exists():
-            raise FileNotFoundError(file)
-
-        decompressed = decompress(file)
-        if decompressed != file:
-            file = decompressed.name
-
-        file = Path(file)
-
-        pool = pa.default_memory_pool()
-        block_size = (1024 ** 2) * block_size_mb
-        reader = CsvReader(file, BismarkOptions(use_threads=use_threads, block_size=block_size), memory_pool=pool)
-        pool.release_unused()
-        print("Reading Bismark report from", file.absolute())
-
-        file_size = os.stat(file).st_size
-        read_batches = 0
-
-        bismark_df = None
-
-        print(f"Reading from {file}")
-
-        pl.enable_string_cache()
-        for df in reader:
-            df = pl.from_arrow(df)
-
-            preprocessed = cls.__process_batch(df, window_length, chr_min_length, confidence)
-
-            if preprocessed is not None:
-                if bismark_df is None:
-                    bismark_df = df
-                else:
-                    bismark_df = bismark_df.extend(df)
-
-                read_batches += 1
-                print(
-                    "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
-                        read_mb=round(read_batches * block_size / 1024 ** 2, 1),
-                        total_mb=round(file_size / 1024 ** 2, 1),
-                        ram_usage=round(bismark_df.estimated_size('mb'), 1)
-                    ),
-                    end="\r"
-                )
-            else:
-                continue
-
-        print(
-            "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
-                read_mb=round(file_size / 1024 ** 2, 1),
-                total_mb=round(file_size / 1024 ** 2, 1),
-                ram_usage=round(bismark_df.estimated_size('mb'), 1)
-            ),
-            end="\r"
+        chr_reader = ChrBismarkReader(
+            file=file,
+            chr_min_length=chr_min_length,
+            window_length=window_length,
+            block_size_mb=block_size_mb,
+            use_threads=use_threads,
+            confidence=confidence
         )
-        print("\nDONE")
+        report_df = chr_reader.read()
 
-        if not isinstance(decompressed, Path):
-            decompressed.close()
-
-        return cls(bismark_df)
+        return cls(report_df)
 
 
     @classmethod
@@ -339,68 +243,16 @@ class ChrLevels:
         :param chr_min_length: Minimum length of chromosome to be analyzed
         :param window_length: Length of windows in bp
         """
-        # todo convert to base reader
-
-        file = Path(file).expanduser().absolute()
-        if not file.exists():
-            raise FileNotFoundError(file)
-
-        decompressed = decompress(file)
-        if decompressed != file:
-            file = decompressed.name
-
-        file = Path(file)
-
-        reader = ParquetReader(file)
-
-        print("Reading Bismark report from", file.absolute())
-
-        file_size = os.stat(file).st_size
-        block_size = int(file_size / reader.reader.num_row_groups)
-        read_batches = 0
-
-        bismark_df = None
-
-        print(f"Reading from {file}")
-
-        pl.enable_string_cache()
-        for df in reader:
-            df = pl.from_arrow(df)
-
-            preprocessed = cls.__process_batch(df, window_length, chr_min_length, confidence)
-
-            if preprocessed is not None:
-                if bismark_df is None:
-                    bismark_df = df
-                else:
-                    bismark_df = bismark_df.extend(df)
-
-                read_batches += 1
-                print(
-                    "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
-                        read_mb=round(read_batches * block_size / 1024 ** 2, 1),
-                        total_mb=round(file_size / 1024 ** 2, 1),
-                        ram_usage=round(bismark_df.estimated_size('mb'), 1)
-                    ),
-                    end="\r"
-                )
-            else:
-                continue
-
-        print(
-            "Read {read_mb}/{total_mb}Mb | Total RAM usage - {ram_usage}Mb".format(
-                read_mb=round(file_size / 1024 ** 2, 1),
-                total_mb=round(file_size / 1024 ** 2, 1),
-                ram_usage=round(bismark_df.estimated_size('mb'), 1)
-            ),
-            end="\r"
+        chr_reader = ChrParquetReader(
+            file=file,
+            chr_min_length=chr_min_length,
+            window_length=window_length,
+            confidence=confidence
         )
-        print("\nDONE")
 
-        if not isinstance(decompressed, Path):
-            decompressed.close()
+        report_df = chr_reader.read()
 
-        return cls(bismark_df)
+        return cls(report_df)
 
     def save_plot_rds(self, path, compress: bool = False):
         """
@@ -546,8 +398,9 @@ class ChrLevels:
                 "chr_pos": True,
                 "density": ":.4f"
             },
-            hover_name="chr"
         )
+
+
 
         figure.add_traces(trace_fig.data)
 

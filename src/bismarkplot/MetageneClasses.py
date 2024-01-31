@@ -1275,5 +1275,5 @@ class MetageneFiles(MetageneFilesBase):
             var = matrix.to_numpy().var(1)
             matrix = matrix[var > np.quantile(var, q)]
 
-        fig = sns.clustermap(matrix)
+        fig = sns.clustermap(matrix, row_cluster=True)
         return fig

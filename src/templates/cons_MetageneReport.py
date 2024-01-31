@@ -15,6 +15,7 @@ import polars as pl
 
 sys.path.insert(0, os.getcwd())
 from src.bismarkplot import Genome, Metagene, MetageneFiles
+from src.bismarkplot.Plots import PCA
 from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
 
 # TODO add plot data export option
@@ -41,6 +42,7 @@ def get_metagene_parser():
     parser.add_argument('-u', '--ubin', help='Number of windows for upstream region', type=int, default=50)
     parser.add_argument('-d', '--dbin', help='Number of windows for downstream downstream', type=int, default=50)
     parser.add_argument('-b', '--bbin', help='Number of windows for body region', type=int, default=100)
+    parser.add_argument('-q', '--quantile', help='Quantile of most varying genes to draw on clustermap', type=float, default=.75)
 
     parser.add_argument('-S', '--smooth', help='Windows for SavGol function.', type=float, default=10)
     parser.add_argument('-C', '--confidence', help='Probability for confidence bands for line-plot. 0 if disabled', type=float, default=.95)
@@ -94,8 +96,19 @@ def parse_config(path: str | Path):
     return report_args
 
 
-def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespace):
+def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespace, pca: PCA):
     body = TemplateMetageneBody("Metagene Report", [])
+
+    body.context_reports.append(
+        TemplateMetageneContext(
+            heading="PCA plot for all replicates",
+            caption="",
+            plots=[TemplateMetagenePlot(
+                title="",
+                data=pca.draw_plotly().to_html(full_html=False)
+            )]
+        )
+    )
 
     if not args.separate_strands:
         filters = [("CG", None), ("CHG", None), ("CHH", None)]
@@ -119,7 +132,7 @@ def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespa
         bp_trimmed = filtered.trim_flank().box_plot_plotly()
 
         # todo add clustermap
-        cm = filtered.dendrogram()
+        cm = filtered.dendrogram(q=args.quantile)
         tmpfile = BytesIO()
         cm.savefig(tmpfile, format='png')
         encoded = base64.b64encode(tmpfile.getvalue()).decode('utf-8')
@@ -142,7 +155,7 @@ def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespa
                 bp_trimmed.to_html(full_html=False)
             ),
             TemplateMetagenePlot(
-                "Clustermap",
+                f"Clustermap for {args.quantile} quantile",
                 "<img src=\'data:image/png;base64,{}\'>".format(encoded)
             )
         ]
@@ -156,12 +169,13 @@ def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespa
 
 def main():
     parser = get_metagene_parser()
-    args = parser.parse_args()
-    # args = parser.parse_args("-o F39_metagene --dir /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test -u 50 -d 50 -b 100 -S 5 -C 0 -V 50 /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/F39conf.tsv".split())
+    # args = parser.parse_args()
+    args = parser.parse_args("-o test_pca -u 50 -d 50 -b 100 -S 5 -C 0 -V 50 /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/new_conf.tsv".split())
 
     report_args = parse_config(args.config)
 
     metagenes = []
+    pca = PCA()
     last_genome_path = None
     last_genome = None
 
@@ -197,6 +211,7 @@ def main():
                     last_genome_path = report.genome_file
                     last_genome = genome
 
+            # Genome filter
             if report.region_type is not None:
                 genome_df = genome.other(region_type=report.region_type, min_length=report.min_length,
                                          flank_length=report.flank_length)
@@ -209,6 +224,9 @@ def main():
                 metagene = Metagene.from_bismark(report.report_file, genome_df, args.ubin, args.bbin, args.dbin,
                                                  args.block_mb, args.threads, args.sumfunc)
 
+            # PCA
+            pca.append_metagene(metagene, Path(report.report_file).stem, sample)
+
             sample_metagenes.append(metagene)
         metagenes.append((MetageneFiles(sample_metagenes, list(map(str, range(len(sample_metagenes))))).merge(), sample))
 
@@ -218,11 +236,11 @@ def main():
     metagene_files = MetageneFiles([m[0] for m in metagenes], [m[1] for m in metagenes])
     collect()
 
-    rendered = render_metagene_report(metagene_files, args)
+    rendered = render_metagene_report(metagene_files, args, pca)
 
     out = Path(args.out).with_suffix(".html")
-    # render_template(Path.cwd() / "html/MetageneTemplate.html", rendered, out)
-    render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
+    render_template(Path.cwd() / "html/MetageneTemplate.html", rendered, out)
+    # render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
 
 
 if __name__ == '__main__':
