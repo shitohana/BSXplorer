@@ -13,14 +13,13 @@ import polars as pl
 import seaborn as sns
 
 from .Plots import LinePlot, LinePlotFiles, HeatMap, HeatMapFiles
-from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader
 from .SeqMapper import Mapper, Sequence
 from .Base import (
     MetageneBase, MetageneFilesBase,
     BismarkReportReader, ParquetReportReader, BinomReportReader
 )
 from .Clusters import ClusterSingle, ClusterMany
-from .utils import MetageneSchema, ReportBar
+from .utils import MetageneSchema
 from .GenomeClass import Genome
 
 pl.enable_string_cache(True)

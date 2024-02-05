@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from abc import ABC, abstractmethod
 
 import pyarrow as pa
 import pyarrow.csv as pcsv

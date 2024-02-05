@@ -16,8 +16,8 @@ import polars as pl
 from matplotlib import pyplot as plt
 
 sys.path.insert(0, os.getcwd())
-from src.bismarkplot import Genome, Metagene, MetageneFiles
-from src.bismarkplot.Plots import PCA
+from src.bsxplorer import Genome, Metagene, MetageneFiles
+from src.bsxplorer.Plots import PCA
 from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
 
 # TODO add plot data export option

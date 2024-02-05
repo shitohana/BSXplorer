@@ -9,11 +9,11 @@ from pathlib import Path
 import polars as pl
 import pyarrow as pa
 from pyreadr import write_rds
+from matplotlib.axes import Axes
+import plotly.graph_objects as go
 
 from .ArrowReaders import CsvReader, ParquetReader, BismarkOptions
 from .utils import remove_extension, prepare_labels, MetageneSchema, ReportBar
-from matplotlib.axes import Axes
-import plotly.graph_objects as go
 
 
 class MetageneBase:

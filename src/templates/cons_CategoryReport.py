@@ -9,8 +9,8 @@ import polars as pl
 from matplotlib import pyplot as plt
 
 from cons_MetageneReport import get_metagene_parser, parse_config, ReportRow, render_metagene_report
-from src.bismarkplot import Genome, Metagene, MetageneFiles, BinomialData
-from src.bismarkplot.utils import merge_replicates, decompress
+from src.bsxplorer import Genome, Metagene, MetageneFiles, BinomialData
+from src.bsxplorer.utils import merge_replicates, decompress
 from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
 
 

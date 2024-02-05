@@ -11,9 +11,9 @@ from gc import collect
 import polars as pl
 from plotly.express.colors import qualitative as PALETTE
 
-from src.bismarkplot import ChrLevels
+from src.bsxplorer import ChrLevels
 from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
-from src.bismarkplot.utils import merge_replicates
+from src.bsxplorer.utils import merge_replicates
 
 
 def get_chr_parser():

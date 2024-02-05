@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from multiprocessing import cpu_count
 
 import numpy as np
 import polars as pl
@@ -16,7 +15,7 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 import warnings
 
-from .utils import approx_batch_num, interval, decompress, ReportBar
+from .utils import interval, decompress, ReportBar
 from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader
 
 

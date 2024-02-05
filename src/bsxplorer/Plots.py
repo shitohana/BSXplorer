@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import itertools
 import re
-from dataclasses import dataclass
 
 import numpy as np
 import polars as pl
@@ -13,7 +12,6 @@ from pandas import DataFrame as pdDataFrame
 from plotly import graph_objects as go, express as px
 from pyreadr import write_rds
 from scipy.signal import savgol_filter
-# todo add to dependencies sklearn
 from sklearn.decomposition import PCA as PCA_sklearn
 
 from .Base import PlotBase, MetageneFilesBase

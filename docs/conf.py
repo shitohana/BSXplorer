@@ -1,10 +1,10 @@
 import os
 import sys
 
-project = 'BismarkPlot'
+project = 'BSXplorer'
 copyright = '2023, shitohana'
 author = 'shitohana'
-release = '1.0.0'
+release = '1.0.0a0'
 sys.path.insert(0, os.path.abspath('../src'))
 sys.path.append(os.path.abspath('.'))
 
@@ -28,7 +28,7 @@ autodoc_default_options = {
 autosummary_generate = True
 autodoc_member_order = 'bysource'
 add_module_names = False
-html_short_title = 'BismarkPlot Documentation'
+html_short_title = 'BSXplorer Documentation'
 
 
 html_theme = 'sphinx_rtd_theme'

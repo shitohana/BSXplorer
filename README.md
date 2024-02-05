@@ -123,7 +123,7 @@ Below we will show the basic BismarkPlot workflow.
 ### Single sample
 
 ```python
-import src.bismarkplot.Genome
+import src.bsxplorer.Genome
 import bismarkplot
 
 # Firstly, we need to read the regions annotation (e.g. reference genome .gff)
@@ -282,7 +282,7 @@ Output for _Brachypodium distachyon_:
 
 ```python
 # For analyzing samples with different reference genomes, we need to initialize several genomes instances
-import src.bismarkplot.Genome
+import src.bsxplorer.Genome
 
 genome_filenames = ["arabidopsis.gff", "brachypodium.gff", "cucumis.gff", "mus.gff"]
 reports_filenames = ["arabidopsis.txt", "brachypodium.txt", "cucumis.txt", "mus.txt"]
@@ -319,7 +319,7 @@ Output:
 Other genomic regions from .gff can be analyzed too with ```.exon``` or ```.near_tss/.near_tes``` option for ```bismarkplot.Genome```
 
 ```python
-import src.bismarkplot.Genome
+import src.bsxplorer.Genome
 
 exons = [
     src.bismarkplot.genome.Genome.from_gff(file).exon(min_length=100) for file in genome_filenames
@@ -363,7 +363,7 @@ TSS output:
 BismarkPlot allows user to visualize chromosome methylation levels across full genome
 
 ```python
-import src.bismarkplot.ChrLevels
+import src.bsxplorer.ChrLevels
 import bismarkplot
 
 chr = src.bismarkplot.levels.ChrLevels.from_bismark(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import polars as pl
 from pathlib import Path
+
 from .utils import MetageneSchema
 
 

@@ -12,9 +12,6 @@ import pandas as pd
 import polars as pl
 from dynamicTreeCut import cutreeHybrid
 from dynamicTreeCut.dynamicTreeCut import get_heights
-from matplotlib import pyplot as plt, colormaps
-from matplotlib.figure import Figure
-from pyreadr import write_rds
 from fastcluster import linkage
 from scipy.cluster.hierarchy import leaves_list, optimal_leaf_ordering
 from scipy.spatial.distance import pdist
@@ -24,7 +21,6 @@ import plotly.express as px
 
 from .Base import MetageneBase, MetageneFilesBase
 from abc import ABC, abstractmethod
-from .utils import prepare_labels, hm_flank_lines
 
 
 class _ClusterBase(ABC):

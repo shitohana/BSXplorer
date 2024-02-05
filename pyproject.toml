@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bsxplorer"
-version = "1.0.0"
+version = "1.0.0a0"
 authors = [
   { name="shitohana", email="kyudytskiy@gmail.com" },
 ]
@@ -40,17 +40,17 @@ classifiers = [
 # dynamic = ["version", "description"]
 
 [project.urls]
-Homepage = "https://github.com/shitohana/BismarkPlot"
-Documentation = "https://shitohana.github.io/BismarkPlot/"
-"Bug Tracker" = "https://github.com/shitohana/BismarkPlot/issues"
+Homepage = "https://github.com/shitohana/BSXplorer"
+Documentation = "https://shitohana.github.io/BSXplorer/"
+"Bug Tracker" = "https://github.com/shitohana/BSXplorer/issues"
 
 [tool.hatch.build]
 exclude = ["/venv", "/dist", "/test", "/docs"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/bismarkplot"]
+packages = ["src/bsxplorer"]
 
 [project.scripts]
-bsxplorer-metagene = "bismarkplot.templates.cons_MetageneReport:main"
-bsxplorer-category = "bismarkplot.templates.cons_CategoryReport:main"
-bsxplorer-chr = "bismarkplot.templates.cons_ChrLevelsReport:main"
+bsxplorer-metagene = "bsxplorer.templates.cons_MetageneReport:main"
+bsxplorer-category = "bsxplorer.templates.cons_CategoryReport:main"
+bsxplorer-chr = "bsxplorer.templates.cons_ChrLevelsReport:main"

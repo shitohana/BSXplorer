@@ -3,7 +3,6 @@ from __future__ import annotations
 import gc
 import gzip
 import io
-import multiprocessing
 import os
 import shutil
 import tempfile
