@@ -9,3 +9,4 @@ See the docs: https://shitohana.github.io/BSXplorer
 ```commandline
 pip install bsxplorer
 ```
+
