@@ -1,295 +1,264 @@
+from __future__ import annotations
+
 import gzip
+import warnings
 from collections import Counter
 from functools import cache
+from pathlib import Path
+from typing import Literal
 
 import numpy as np
+import pandas as pd
 import polars as pl
 from dynamicTreeCut import cutreeHybrid
+from dynamicTreeCut.dynamicTreeCut import get_heights
 from matplotlib import pyplot as plt, colormaps
 from matplotlib.figure import Figure
 from pyreadr import write_rds
-from scipy.cluster.hierarchy import linkage, leaves_list
+from fastcluster import linkage
+from scipy.cluster.hierarchy import leaves_list, optimal_leaf_ordering
 from scipy.spatial.distance import pdist
+from sklearn.cluster import KMeans, SpectralClustering
+import seaborn as sns
+import plotly.express as px
 
-from .Base import MetageneBase
+from .Base import MetageneBase, MetageneFilesBase
+from abc import ABC, abstractmethod
 from .utils import prepare_labels, hm_flank_lines
 
 
-class Clustering(MetageneBase):
-    """
-    Class for clustering genes within sample
-    """
+class _ClusterBase(ABC):
+    @abstractmethod
+    def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
+        ...
 
-    def __init__(self, bismark_df: pl.DataFrame, count_threshold=5, dist_method="euclidean", clust_method="average", **kwargs):
-        """
-        :param bismark_df: :class:polars.DataFrame with genes data
-        :param count_threshold: Minimum counts per fragment
-        :param dist_method: Method for evaluating distance
-        :param clust_method: Method for hierarchical clustering
-        """
-        super().__init__(bismark_df, **kwargs)
+    @abstractmethod
+    def cut_tree(self, dist_method="euclidean", clust_method="average", cutHeight_q=.99, **kwargs):
+        ...
 
-        if self.bismark["fragment"].max() > 50:
-            print(f"WARNING: too many windows ({self.bismark['fragment'].max() + 1}), clusterisation may take very long time")
+    @abstractmethod
+    def all(self):
+        ...
+
+    def __merge_strands(self, df: pl.DataFrame):
+        return df.filter(pl.col("strand") == "+").extend(self.__strand_reverse(df.filter(pl.col("strand") == "-")))
+
+    @staticmethod
+    def __strand_reverse(df: pl.DataFrame):
+        max_fragment = df["fragment"].max()
+        return df.with_columns((max_fragment - pl.col("fragment")).alias("fragment"))
+
+    def _process_metagene(
+            self,
+            metagene: MetageneBase,
+            count_threshold=5,
+            na_rm: float | None = None
+    ) -> (np.ndarray, np.ndarray):
+        # Merge strands
+        df = self.__merge_strands(metagene.bismark)
 
         grouped = (
-            self.bismark.lazy()
+            df.lazy()
+            .filter(pl.col("count") > count_threshold)
             .with_columns((pl.col("sum") / pl.col("count")).alias("density"))
             .group_by(["chr", "strand", "gene", "context"])
-            .agg([pl.col("density"),
+            .agg([pl.first("id"),
+                  pl.first("start"),
+                  pl.col("density"),
                   pl.col("fragment"),
                   pl.sum("count").alias("gene_count"),
                   pl.count("fragment").alias("count")])
         ).collect()
 
-        print(f"Starting with:\t{len(grouped)}")
+        # by_count = grouped.filter(pl.col("gene_count") > (count_threshold * pl.col("count")))
+        # print(f"Left after count theshold filtration:\t{len(by_count)}")
 
-        by_count = grouped.filter(pl.col("gene_count") > (count_threshold * pl.col("count")))
-
-        print(f"Left after count theshold filtration:\t{len(by_count)}")
-
-        by_count = by_count.filter(pl.col("count") == self.total_windows)
-
-        print(f"Left after empty windows filtration:\t{len(by_count)}")
+        by_count = grouped
+        if na_rm is None:
+            by_count = grouped.filter(pl.col("count") == metagene.total_windows)
+            print(f"Left after empty windows filtration:\t{len(by_count)}")
 
         if len(by_count) == 0:
-            print("All genes have empty windows, exiting")
             raise ValueError("All genes have empty windows")
 
         by_count = by_count.explode(["density", "fragment"]).drop(["gene_count", "count"]).fill_nan(0)
 
-        unpivot = by_count.pivot(
-            index=["chr", "strand", "gene"],
-            values="density",
-            columns="fragment",
-            aggregate_function="sum"
-        ).select(
-            ["chr", "strand", "gene"] + list(map(str, range(self.total_windows)))
-        ).with_columns(
-            pl.col("gene").alias("label")
+        unpivot: pl.DataFrame = (
+            by_count
+            .sort(["chr", "start"])
+            .with_columns(pl.when(pl.col("id").is_null()).then(pl.col("gene")).otherwise(pl.col("id")).alias("name"))
+            .pivot(
+                index=["chr", "strand", "name"],
+                values="density",
+                columns="fragment",
+                aggregate_function="sum",
+                maintain_order=True
+            )
+            .select(["chr", "strand", "name"] + list(map(str, range(metagene.total_windows))))
+            .cast({"name": pl.Utf8})
         )
 
-        self.gene_labels = unpivot.with_columns(pl.col("label").cast(pl.Utf8))["label"].to_numpy()
-        self.matrix = unpivot[list(map(str, range(self.total_windows)))].to_numpy()
-
-        self.gene_labels = self.gene_labels[~np.isnan(self.matrix).any(axis=1)]
-        self.matrix = self.matrix[~np.isnan(self.matrix).any(axis=1), :]
-
-        # dist matrix
-        print("Distances calculation")
-        self.dist = pdist(self.matrix, metric=dist_method)
-        # linkage matrix
-        print("Linkage calculation and minimizing distances")
-        self.linkage = linkage(self.dist, method=clust_method, optimal_ordering=True)
-
-        self.order = leaves_list(self.linkage)
-
-    def modules(self, **kwargs):
-        return Modules(self.gene_labels, self.matrix, self.linkage, self.dist,
-                       windows={
-                           key: self.metadata[key] for key in ["upstream_windows", "gene_windows", "downstream_windows"]
-                       },
-                       **kwargs)
-
-    # TODO: rewrite save_rds, save_tsv
-
-    def __add_flank_lines(self, axes, major_labels: list, minor_labels: list, show_border=True):
-        labels = prepare_labels(major_labels, minor_labels)
-
-        if self.downstream_windows < 1:
-            labels["down_mid"], labels["body_end"] = [""] * 2
-
-        if self.upstream_windows < 1:
-            labels["up_mid"], labels["body_start"] = [""] * 2
-
-        x_ticks = self.tick_positions
-        x_pos = list(x_ticks.values())
-        x_labels = [labels[key] for key in x_ticks.keys()]
-
-        axes.set_xticks(x_pos, labels=x_labels)
-
-        if show_border:
-            for tick in [x_ticks["body_start"], x_ticks["body_end"]]:
-                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
-
-        return axes
-
-    def draw(
-            self,
-            fig_axes: tuple = None,
-            title: str = None,
-            color_scale="Viridis",
-            major_labels=["TSS", "TES"],
-            minor_labels=["Upstream", "Body", "Downstream"],
-            show_border=True
-    ) -> Figure:
-        """
-        Draws heat-map on given :class:`matplotlib.Axes` or makes them itself.
-
-        :param fig_axes: Tuple with (fig, axes) from :meth:`matplotlib.plt.subplots`.
-        :param title: Title of the plot.
-        :return:
-        """
-        if fig_axes is None:
-            plt.clf()
-            fig, axes = plt.subplots()
+        if na_rm is None:
+            unpivot = unpivot.drop_nulls()
         else:
-            fig, axes = fig_axes
+            unpivot = unpivot.fill_null(na_rm)
 
-        vmin = 0
-        vmax = np.max(np.array(self.plot_data))
+        # add id if present
+        names = unpivot["name"].to_numpy()
+        matrix = unpivot.select(pl.all().exclude(["strand", "chr", "name"])).to_numpy()
 
-        image = axes.imshow(
-            self.matrix[self.order, :],
-            interpolation="nearest", aspect='auto',
-            cmap=colormaps[color_scale.lower()],
-            vmin=vmin, vmax=vmax
-        )
-        axes.set_title(title)
-        axes.set_xlabel('Position')
-        axes.set_ylabel('')
-
-        self.__add_flank_lines(axes, major_labels, minor_labels, show_border)
-
-        axes.set_yticks([])
-        plt.colorbar(image, ax=axes, label='Methylation density')
-
-        return fig
+        return matrix, names
 
 
-class Modules:
-    """
-    Class for module construction and visualization of clustered genes
-    """
-    def __init__(self, labels: list, matrix: np.ndarray, linkage, distance, windows, **kwargs):
-        if not len(labels) == len(matrix):
-            raise ValueError("Length of labels and methylation matrix labels don't match")
+class ClusterSingle(_ClusterBase):
+    def __init__(self, metagene: MetageneBase, count_threshold=5, na_rm: float | None = None):
+        self.matrix, self.names = self._process_metagene(metagene, count_threshold, na_rm)
 
-        self.labels, self.matrix = labels, matrix
-        self.linkage, self.distance = linkage, distance
+    def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
+        kmeans = KMeans(n_clusters=n_clusters, n_init=n_init, **kwargs).fit(self.matrix)
 
-        self.__windows = windows
+        print(f"Clustering done in {kmeans.n_iter_} iterations")
 
-        self.tree = self.__dynamic_tree_cut(**kwargs)
+        return ClusterPlot(ClusterData.from_kmeans(kmeans, self.names))
 
-    def recalculate(self, **kwargs):
-        """
-        Recalculate tree with another params
+    def cut_tree(self, dist_method="euclidean", clust_method="average", cut_height_q=.99, **kwargs):
+        dist = pdist(self.matrix, metric=dist_method)
+        link_matrix = linkage(dist, method=clust_method)
 
-        :param kwargs: any kwargs to cutreeHybrid from dynamicTreeCut
-        """
-        self.tree = self.__dynamic_tree_cut(**kwargs)
+        cutHeight = np.quantile(get_heights(link_matrix), q=cut_height_q)
+        tree = cutreeHybrid(link_matrix, dist, cutHeight=cutHeight, **kwargs)
 
-    @cache
-    def __dynamic_tree_cut(self, **kwargs):
-        return cutreeHybrid(self.linkage, self.distance, **kwargs)
+        labels = tree["labels"]
+        return ClusterPlot(ClusterData.from_matrix(self.matrix, labels, self.names))
 
-    @property
-    def __format__table(self) -> pl.DataFrame:
-        return pl.DataFrame(
-            {"gene_labels": list(self.labels)} |
-            {key: list(self.tree[key]) for key in ["labels", "cores", "smallLabels", "onBranch"]}
-        )
+    def all(self):
+        return ClusterPlot(ClusterData(self.matrix, np.arange(len(self.matrix), dtype=np.int64), self.names))
 
-    def save_rds(self, filename, compress: bool = False):
-        """
-        Save module data in Rds.
 
-        :param filename: Path for file.
-        :param compress: Whether to compress to gzip or not.
-        """
-        write_rds(filename, self.__format__table.to_pandas(),
-                  compress="gzip" if compress else None)
+class ClusterMany(_ClusterBase):
+    def __init__(self, metagenes: MetageneFilesBase, count_threshold=5, na_rm: float | None = None):
+        intersect_list = set.intersection(*[set(metagene.bismark["gene"].to_list()) for metagene in metagenes.samples])
+        for i in range(len(metagenes.samples)):
+            metagenes.samples[i].bismark = metagenes.samples[i].bismark.filter(pl.col("gene").is_in(intersect_list))
 
-    def save_tsv(self, filename, compress=False):
-        """
-        Save module data in TSV.
+        self.clusters = [ClusterSingle(metagene, count_threshold, na_rm) for metagene in metagenes.samples]
+        self.sample_names = metagenes.labels
 
-        :param filename: Path for file.
-        :param compress: Whether to compress to gzip or not.
-        """
-        if compress:
-            with gzip.open(filename + ".gz", "wb") as file:
-                # noinspection PyTypeChecker
-                self.__format__table.write_csv(file, separator="\t")
+    def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
+        return ClusterPlot([cluster.kmeans(n_clusters, n_init, **kwargs).data for cluster in self.clusters], self.sample_names)
+
+    def cut_tree(self, dist_method="euclidean", clust_method="average", cut_height_q=.99, **kwargs):
+        return ClusterPlot([
+            cluster.cut_tree(dist_method="euclidean", clust_method="average", cut_height_q=.99, **kwargs).data
+            for cluster in self.clusters
+        ], self.sample_names)
+
+    def all(self):
+        return ClusterPlot([cluster.all().data for cluster in self.clusters], self.sample_names)
+
+
+class ClusterData:
+    def __init__(self, centers: np.ndarray, labels: np.array, names: list[str] | np.array):
+        self.centers = centers
+        self.labels = labels
+        self.names = names
+
+    @classmethod
+    def from_kmeans(cls, kmeans: KMeans, names: list[str] | np.array):
+        return cls(kmeans.cluster_centers_, kmeans.labels_, names)
+
+    @classmethod
+    def from_matrix(cls, matrix: np.ndarray, labels: np.array, names: list[str] | np.array,
+                    method=Literal["mean", "median", "log1p"]):
+        if method == "mean":
+            agg_fun = lambda matrix: np.mean(matrix, axis=0)
+        elif method == "median":
+            agg_fun = lambda matrix: np.median(matrix, axis=0)
+        elif method == "log1p":
+            agg_fun = lambda matrix: np.log1p(matrix, axis=0)
         else:
-            self.__format__table.write_csv(filename, separator="\t")
+            agg_fun = lambda matrix: np.mean(matrix, axis=0)
 
-    def draw(
-            self,
-            fig_axes: tuple = None,
-            title: str = None,
-            show_labels=True,
-            show_size=False
-    ) -> Figure:
-        """
-        Method for visualization of moduled genes. Every row of heat-map represents an average methylation
-        profile of genes of the module.
+        modules = np.array([agg_fun(matrix[labels == label, :]) for label in labels])
 
-        :param fig_axes: tuple(Fig, Axes) to plot
-        :param title: Title of the plot
-        :param show_labels: Enable/disable module number labels
-        :param show_size: Enable/disable module size labels (in brackets)
-        """
+        return cls(modules, labels, names)
 
-        me_matrix, me_labels = [], []
-        label_stats = Counter(self.tree["labels"])
 
-        # iterate every label
-        for label in label_stats.keys():
-            # select genes from module
-            module_genes = self.tree["labels"] == label
-            # append mean module pattern
-            me_matrix.append(self.matrix[module_genes, :].mean(axis=0))
-
-            me_labels.append(f"{label} ({label_stats[label]})" if show_size else str(label))
-
-        me_matrix, me_labels = np.stack(me_matrix), np.stack(me_labels)
-        # sort matrix to minimize distances between modules
-        order = leaves_list(linkage(
-            y=pdist(me_matrix, metric="euclidean"),
-            method="average",
-            optimal_ordering=True
-        ))
-
-        me_matrix, me_labels = me_matrix[order, :], me_labels[order]
-
-        if fig_axes is None:
-            plt.clf()
-            fig, axes = plt.subplots()
+class ClusterPlot:
+    def __init__(self, data: ClusterData | list[ClusterData], sample_names=None):
+        if isinstance(data, list) and len(data) == 1:
+            self.data = data[0]
         else:
-            fig, axes = fig_axes
+            self.data = data
 
-        vmin = 0
-        vmax = np.max(np.array(me_matrix))
+        self.sample_names = sample_names
 
-        image = axes.imshow(
-            me_matrix,
-            interpolation="nearest", aspect='auto',
-            cmap=colormaps['cividis'],
-            vmin=vmin, vmax=vmax
-        )
+    def save_tsv(self, filename: str):
+        filename = Path(filename)
 
-        if show_labels:
-            axes.set_yticks(np.arange(.5, len(me_labels), 1))
-            axes.set_yticklabels(me_labels)
+        def save(data: ClusterData, path: Path):
+            df = pl.DataFrame(dict(name=list(map(str, data.names)), label=data.labels), schema=dict(name=pl.Utf8, label=pl.Utf8))
+            df.write_csv(path, has_header=False, separator="\t")
+
+        if self.sample_names is not None and isinstance(self.data, list):
+            for data, sample_name in zip(self.data, self.sample_names):
+
+                new_name = filename.name + sample_name
+                save(data, filename.with_name(new_name).with_suffix(".tsv"))
+
+        if not isinstance(self.data, list):
+
+            save(self.data, filename.with_suffix(".tsv"))
+
+
+    def __intersect_genes(self):
+        if isinstance(self.data, list):
+            names = [d.names for d in self.data]
+            intersection = set.intersection(*map(set, names))
+
+            if len(intersection) < 1:
+                raise ValueError("No same regions between samples")
+            elif len(intersection) < max(map(len, names)):
+                print(
+                    f"Found {len(intersection)} intersections between samples with {max(map(len, names))} regions max")
+
+    def draw_mpl(self, method='average', metric='euclidean', cmap: str = "cividis"):
+        if isinstance(self.data, list):
+            warnings.warn("Matplotlib version of cluster plot is not available for multiple samples")
+            return None
         else:
-            axes.set_yticks([])
+            df = pd.DataFrame(
+                self.data.centers,
+                index=[f"{name} ({count})" for name, count in zip(*np.unique(self.data.labels, return_counts=True))])
 
-        axes.set_title(title)
-        axes.set_xlabel('Position')
-        axes.set_ylabel('Module')
-        # axes.yaxis.tick_right()
+            fig = sns.clustermap(df, col_cluster=False, cmap=cmap, method=method, metric=metric)
+            return fig
 
-        hm_flank_lines(
-            axes,
-            self.__windows["upstream_windows"],
-            self.__windows["gene_windows"],
-            self.__windows["downstream_windows"],
-        )
+    def draw_plotly(self, method='average', metric='euclidean', cmap: str = "cividis"):
+        if isinstance(self.data, list):
+            # order for first sample
+            dist = pdist(self.data[0].centers, metric=metric)
+            link = linkage(dist, method, metric)
+            link = optimal_leaf_ordering(link, dist, metric=metric)
 
-        plt.colorbar(image, ax=axes, label='Methylation density',
-                     # orientation="horizontal", location="top"
-                     )
+            order = leaves_list(link)
 
-        return fig
+            im = np.dstack([d.centers[order, :] for d in self.data])
+
+            figure = px.imshow(im, color_continuous_scale=cmap, animation_frame=2, aspect='auto')
+            figure.update_layout(sliders=[{"currentvalue": {"prefix": "Sample = "}}])
+            if self.sample_names is not None:
+                for step, sample_name in zip(figure.layout.sliders[0].steps, self.sample_names):
+                    step.label = sample_name
+                    step.name = sample_name
+            return figure
+        else:
+            dist = pdist(self.centers, metric=metric)
+            link = linkage(dist, method, metric)
+            link = optimal_leaf_ordering(link, dist, metric=metric)
+
+            order = leaves_list(link)
+            im = self.data.centers[order, :]
+
+            figure = px.imshow(im, color_continuous_scale=cmap, aspect='auto')
+            return figure

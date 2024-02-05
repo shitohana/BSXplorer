@@ -19,7 +19,7 @@ from .Base import (
     MetageneBase, MetageneFilesBase,
     BismarkReportReader, ParquetReportReader, BinomReportReader
 )
-from .Clusters import Clustering
+from .Clusters import ClusterSingle, ClusterMany
 from .utils import MetageneSchema, ReportBar
 from .GenomeClass import Genome
 
@@ -30,6 +30,7 @@ class Metagene(MetageneBase):
     """
     Stores Metagene data.
     """
+
     def __init__(self, bismark_df: pl.DataFrame, **kwargs):
 
         super().__init__(bismark_df, **kwargs)
@@ -106,8 +107,8 @@ class Metagene(MetageneBase):
             up_windows: int = 0,
             body_windows: int = 2000,
             down_windows: int = 0,
-            sumfunc: str = "mean",
-            use_threads=True
+            use_threads=True,
+            sumfunc: str = "mean"
     ):
         """
         Constructor for Metagene class from converted ``.bedGraph`` or ``.cov`` (via :class:`Mapper`).
@@ -175,7 +176,8 @@ class Metagene(MetageneBase):
             body_windows: int = 2000,
             down_windows: int = 0,
             p_value: float = .05,
-            use_threads=True
+            use_threads=True,
+            sumfunc: None = None
     ):
         """
         Constructor for Metagene class from :meth:`BinomialData.preprocess` ``.parquet`` file.
@@ -370,7 +372,7 @@ class Metagene(MetageneBase):
             chr: str = None,
             genome: pl.DataFrame = None,
             id: list[str] = None
-    ):
+    ) -> Metagene:
         """
         Method for filtering metagene.
 
@@ -445,10 +447,11 @@ class Metagene(MetageneBase):
         if context_filter is None and strand_filter is None and chr_filter is None:
             return self
         else:
-            return self.__class__(id_filter(genome_filter(self.bismark.filter(context_filter & strand_filter & chr_filter))),
-                                  **metadata)
+            return self.__class__(
+                id_filter(genome_filter(self.bismark.filter(context_filter & strand_filter & chr_filter))),
+                **metadata)
 
-    def resize(self, to_fragments: int = None):
+    def resize(self, to_fragments: int = None) -> Metagene:
         """
         Mutate DataFrame to fewer fragments.
 
@@ -509,7 +512,7 @@ class Metagene(MetageneBase):
 
         return self.__class__(resized, **metadata)
 
-    def trim_flank(self, upstream=True, downstream=True):
+    def trim_flank(self, upstream=True, downstream=True) -> Metagene:
         """
         Trim Metagene flanking regions.
 
@@ -568,11 +571,10 @@ class Metagene(MetageneBase):
         return self.__class__(trimmed.collect(), **metadata)
 
     # TODO finish annotation
-    def clustering(
+    def cluster(
             self,
             count_threshold: int = 5,
-            dist_method: str = "euclidean",
-            clust_method: str = "average"):
+            na_rm: float | None = None) -> ClusterSingle:
         """
         Cluster regions with hierarchical clustering, by their methylation pattern.
 
@@ -580,36 +582,24 @@ class Metagene(MetageneBase):
         ----------
         count_threshold
             Minimum counts per window
-        dist_method
-            Distance method to use.
-        clust_method
-            Clustering method to use.
 
         Returns
         -------
-            :class:`Clustering`
-
-        Warnings
-        --------
-            Experimental Feature. May run very slow!
+            :class:`ClusterSingle`
 
         See Also
         -------
         Clustering : For possible analysis options
-
-        `scipy.spatial.distance.pdist <https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.pdist.html>`_ : For possible distance methods.
-
-        `scipy.cluster.hierarchy.linkage <https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html>`_ : For possible clustering methods.
         """
 
-        return Clustering(self.bismark, count_threshold, dist_method, clust_method, **self.metadata)
+        return ClusterSingle(self, count_threshold, na_rm)
 
     def line_plot(
             self,
             resolution: int = None,
             stat="wmean",
             merge_strands: bool = True
-    ):
+    ) -> LinePlot:
         """
         Create :class:`LinePlot` method.
 
@@ -686,7 +676,7 @@ class Metagene(MetageneBase):
             nrow: int = 100,
             ncol: int = 100,
             stat="wmean"
-    ):
+    ) -> HeatMap:
         """
         Create :class:`HeatMap` method.
 
@@ -762,6 +752,7 @@ class MetageneFiles(MetageneFilesBase):
 
     If you want to compare Bismark data with different genomes, create this class with a list of :class:`Bismark` classes.
     """
+
     @classmethod
     def from_list(
             cls,
@@ -773,7 +764,8 @@ class MetageneFiles(MetageneFilesBase):
             down_windows: int = 0,
             report_type: Literal["bismark", "parquet", "binom", "bedGraph", "coverage"] = "bismark",
             block_size_mb: int = 50,
-            use_threads: bool = True
+            use_threads: bool = True,
+            sumfunc: str = "wmean"
     ) -> MetageneFiles:
         """
         Create istance of :class:`MetageneFiles` from list of paths.
@@ -837,9 +829,9 @@ class MetageneFiles(MetageneFilesBase):
         When :class:`MetageneFiles` is initialized explicitly, number of windows needs ot be the same in evety sample
         """
         read_fnc: dict[str | typing.Callable] = {
-            "bismark":  Metagene.from_bismark,
-            "parquet":  Metagene.from_parquet,
-            "binom":    Metagene.from_binom,
+            "bismark": Metagene.from_bismark,
+            "parquet": Metagene.from_parquet,
+            "binom": Metagene.from_binom,
             "bedGraph": Metagene.from_bedGraph,
             "coverage": Metagene.from_coverage
         }
@@ -852,11 +844,17 @@ class MetageneFiles(MetageneFilesBase):
 
         samples: list[Metagene] = []
         for file, genome in zip(filenames, genomes):
-            samples.append(read_fnc[report_type](file, genome, up_windows, body_windows, down_windows, block_size_mb, use_threads))
+            args = dict(
+                file=file, genome=genome, up_windows=up_windows, body_windows=body_windows, down_windows=down_windows,
+                block_size_mb=block_size_mb, use_threads=use_threads, sumfunc=sumfunc
+            )
+            samples.append(
+                read_fnc[report_type](**args))
 
         return cls(samples, labels)
 
-    def filter(self, context: str = None, strand: str = None, chr: str = None, genome: pl.DataFrame = None, id: list[str] = None):
+    def filter(self, context: str = None, strand: str = None, chr: str = None, genome: pl.DataFrame = None,
+               id: list[str] = None):
         """
         :meth:`Metagene.filter` all metagenes.
 
@@ -1002,7 +1000,8 @@ class MetageneFiles(MetageneFilesBase):
 
         .. image:: ../../images/lineplot/ara_bradi_plotly.png
         """
-        return LinePlotFiles([sample.line_plot(resolution, stat, merge_strands) for sample in self.samples], self.labels)
+        return LinePlotFiles([sample.line_plot(resolution, stat, merge_strands) for sample in self.samples],
+                             self.labels)
 
     def heat_map(self, nrow: int = 100, ncol: int = None, stat: str = "wmean"):
         """
@@ -1224,6 +1223,7 @@ class MetageneFiles(MetageneFilesBase):
 
         .. image:: ../../images/boxplot/bp_ara_bradi_plotly.png
         """
+
         def sample_convert(sample, label):
             return (
                 sample
@@ -1266,7 +1266,7 @@ class MetageneFiles(MetageneFilesBase):
 
         gene_stats = [stat.filter(pl.col("gene").is_in(list(gene_set))) for stat in gene_stats]
 
-        dendro_data = pl.concat(gene_stats).pivot(values="density", columns="label", index="gene")
+        dendro_data = pl.concat(gene_stats).pivot(values="density", columns="label", index="gene", aggregate_function="mean")
 
         matrix = dendro_data.select(pl.all().exclude("gene")).to_pandas()
 
@@ -1277,3 +1277,6 @@ class MetageneFiles(MetageneFilesBase):
 
         fig = sns.clustermap(matrix, row_cluster=True)
         return fig
+
+    def cluster(self, count_threshold=5, na_rm: float | None = None):
+        return ClusterMany(self, count_threshold, na_rm)

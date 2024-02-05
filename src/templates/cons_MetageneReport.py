@@ -5,6 +5,7 @@ import base64
 import os
 import sys
 import time
+import warnings
 from collections import namedtuple
 from dataclasses import asdict
 from gc import collect
@@ -12,6 +13,7 @@ from io import BytesIO
 from pathlib import Path
 
 import polars as pl
+from matplotlib import pyplot as plt
 
 sys.path.insert(0, os.getcwd())
 from src.bismarkplot import Genome, Metagene, MetageneFiles
@@ -49,7 +51,9 @@ def get_metagene_parser():
     parser.add_argument('-H', help='Vertical resolution for heat-map', type=int, default=100, dest="vresolution")
     parser.add_argument('-V', help='Vertical resolution for heat-map', type=int, default=100, dest="hresolution")
 
-    parser.add_argument('--separate_strands', help='Do strands need to be processed separately', type=bool, default=False)
+    parser.add_argument('--separate_strands', help='Do strands need to be processed separately', type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('--export', help='Export format for plots (set none to disable)', type=str, default='pdf', choices=['pdf', 'svg', 'none'])
+    parser.add_argument('--ticks', help='Names of ticks (5 labels with ; separator in " brackets)', type=lambda val: str(val).replace("\\", ""), nargs=5)
 
     return parser
 
@@ -99,16 +103,20 @@ def parse_config(path: str | Path):
 def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespace, pca: PCA):
     body = TemplateMetageneBody("Metagene Report", [])
 
-    body.context_reports.append(
-        TemplateMetageneContext(
-            heading="PCA plot for all replicates",
-            caption="",
-            plots=[TemplateMetagenePlot(
-                title="",
-                data=pca.draw_plotly().to_html(full_html=False)
-            )]
-        )
-    )
+    if len(metagene_files.samples) > 1:
+        try:
+            body.context_reports.append(
+                TemplateMetageneContext(
+                    heading="PCA plot for all replicates",
+                    caption="",
+                    plots=[TemplateMetagenePlot(
+                        title="",
+                        data=pca.draw_plotly().to_html(full_html=False)
+                    )]
+                )
+            )
+        except ValueError:
+            print("Got different annotations. No PCA will be drawn")
 
     if not args.separate_strands:
         filters = [("CG", None), ("CHG", None), ("CHH", None)]
@@ -122,41 +130,75 @@ def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespa
             plots=[]
         )
 
+        major_ticks = [args.ticks[i] for i in [1, 3]]
+        minor_ticks = [args.ticks[i] for i in [0, 2, 4]]
+
         filtered: MetageneFiles = metagene_files.filter(context=metagene_filter[0], strand=metagene_filter[1])
 
-        lp = filtered.line_plot(merge_strands=not args.separate_strands).draw_plotly(smooth=args.smooth,
-                                                                                     confidence=args.confidence)
-        hm = filtered.heat_map(nrow=args.vresolution, ncol=args.hresolution).draw_plotly()
+        lp = filtered.line_plot(merge_strands=not args.separate_strands)
 
-        bp = filtered.box_plot_plotly()
-        bp_trimmed = filtered.trim_flank().box_plot_plotly()
+        hm = filtered.heat_map(nrow=args.vresolution, ncol=args.hresolution)
 
-        # todo add clustermap
-        cm = filtered.dendrogram(q=args.quantile)
-        tmpfile = BytesIO()
-        cm.savefig(tmpfile, format='png')
-        encoded = base64.b64encode(tmpfile.getvalue()).decode('utf-8')
+        bp_plotly = filtered.box_plot_plotly()
+        bp_trimmed_plotly = filtered.trim_flank().box_plot_plotly()
+
+        cm = None
+
+        if len(metagene_files.samples) > 1:
+            try:
+                cm = lambda: filtered.dendrogram(q=args.quantile)
+            except ValueError:
+                print("Got different annotations. No ClusterMap will be drawn")
+
+        if args.export != 'none':
+
+            base_name = "".join(map(str, filter(lambda val: val is not None, metagene_filter)))
+            if cm is not None:
+                cm().savefig(
+                    Path(args.dir) / "plots" / (base_name + "_cm" + f".{args.export}")
+                )
+            lp.draw_mpl(smooth=args.smooth, confidence=args.confidence, major_labels=major_ticks, minor_labels=minor_ticks).savefig(
+                Path(args.dir) / "plots" / (base_name + "_lp" + f".{args.export}")
+            )
+            hm.draw_mpl(major_labels=major_ticks, minor_labels=minor_ticks).savefig(
+                Path(args.dir) / "plots" / (base_name + "_hm" + f".{args.export}")
+            )
+            filtered.box_plot().savefig(
+                Path(args.dir) / "plots" / (base_name + "_bp" + f".{args.export}")
+            )
+            filtered.trim_flank().box_plot().savefig(
+                Path(args.dir) / "plots" / (base_name + "_bp_trimmed" + f".{args.export}")
+            )
+
+            plt.close()
+
+        if cm is not None:
+            tmpfile = BytesIO()
+            cm().savefig(tmpfile, format='png')
+            encoded = base64.b64encode(tmpfile.getvalue()).decode('utf-8')
+            context_report.plots.append(
+                TemplateMetagenePlot(
+                    f"Clustermap for {args.quantile} quantile",
+                    "<img src=\'data:image/png;base64,{}\'>".format(encoded)
+                )
+            )
 
         context_report.plots += [
             TemplateMetagenePlot(
                 "Line plot",
-                lp.to_html(full_html=False)
+                lp.draw_plotly(smooth=args.smooth, confidence=args.confidence).to_html(full_html=False)
             ),
             TemplateMetagenePlot(
                 "Heat map",
-                hm.to_html(full_html=False)
+                hm.draw_plotly().to_html(full_html=False)
             ),
             TemplateMetagenePlot(
                 "Box plot with flanking regions",
-                bp.to_html(full_html=False)
+                bp_plotly.to_html(full_html=False)
             ),
             TemplateMetagenePlot(
                 "Box plot without flanking regions",
-                bp_trimmed.to_html(full_html=False)
-            ),
-            TemplateMetagenePlot(
-                f"Clustermap for {args.quantile} quantile",
-                "<img src=\'data:image/png;base64,{}\'>".format(encoded)
+                bp_trimmed_plotly.to_html(full_html=False)
             )
         ]
 
@@ -168,9 +210,11 @@ def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespa
 
 
 def main():
+    warnings.filterwarnings('ignore')
+
     parser = get_metagene_parser()
-    # args = parser.parse_args()
-    args = parser.parse_args("-o test_pca -u 50 -d 50 -b 100 -S 5 -C 0 -V 50 /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/new_conf.tsv".split())
+    args = parser.parse_args()
+    # args = parser.parse_args('-o SingleMetageneReport --dir /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/supp_data/SingleMetagene -u 250 -d 250 -b 500 -S 50 --ticks \-2000kb TSS Body TES \+2000kb -C 0 -V 100 -H 100  /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/new_conf.tsv'.split())
 
     report_args = parse_config(args.config)
 
@@ -191,6 +235,12 @@ def main():
           f"\nUpstream | Body | Downstream (bins): {args.ubin} | {args.bbin} | {args.dbin}\n"
           f"RUN STARTED at {time.strftime('%d/%m/%y %H:%M:%S')}\n\n"
           )
+
+    if args.export != 'none':
+        if not (Path(args.dir) / "plots").exists():
+            (Path(args.dir) / "plots").mkdir()
+
+            print("Plots will be saved in directory:", (Path(args.dir) / "plots"))
 
     unique_samples = report_args["name"].unique().to_list()
 
@@ -239,8 +289,8 @@ def main():
     rendered = render_metagene_report(metagene_files, args, pca)
 
     out = Path(args.out).with_suffix(".html")
-    render_template(Path.cwd() / "html/MetageneTemplate.html", rendered, out)
-    # render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
+    # render_template(Path.cwd() / "html/MetageneTemplate.html", rendered, out)
+    render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
 
 
 if __name__ == '__main__':

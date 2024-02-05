@@ -14,7 +14,7 @@ from plotly import graph_objects as go, express as px
 from pyreadr import write_rds
 from scipy.signal import savgol_filter
 # todo add to dependencies sklearn
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA as PCA_sklearn
 
 from .Base import PlotBase, MetageneFilesBase
 from .utils import MetageneSchema, interval, remove_extension, prepare_labels
@@ -34,12 +34,12 @@ class LinePlot(PlotBase):
         self.stat = stat
 
         if merge_strands:
-            bismark_df = self.__merge_strands(bismark_df)
+            bismark_df = self._merge_strands(bismark_df)
         plot_data = self.__calculate_plot_data(bismark_df, stat, self.total_windows)
 
         if not merge_strands:
             if self.strand == '-':
-                plot_data = self.__strand_reverse(plot_data)
+                plot_data = self._strand_reverse(plot_data)
         self.plot_data = plot_data
 
     @staticmethod
@@ -78,15 +78,6 @@ class LinePlot(PlotBase):
         return joined
 
     @staticmethod
-    def __strand_reverse(df: pl.DataFrame):
-        max_fragment = df["fragment"].max()
-        return df.with_columns((max_fragment - pl.col("fragment")).alias("fragment")).sort("fragment")
-
-    def __merge_strands(self, df: pl.DataFrame):
-        return df.filter(pl.col("strand") == "+").extend(self.__strand_reverse(df.filter(pl.col("strand") == "-")))
-
-
-    @staticmethod
     def __get_x_y(df, smooth, confidence):
         if 0 < confidence < 1:
             df = (
@@ -100,18 +91,18 @@ class LinePlot(PlotBase):
                 .select(["fragment", "lower", "density", "upper"])
             )
 
-        data = df["density"]
+        data = df["density"].to_numpy()
 
         polyorder = 3
         window = smooth if smooth > polyorder else polyorder + 1
 
-        if smooth and data.is_null().sum() == 0:
+        if smooth and np.isnan(data).sum() == 0:
             data = savgol_filter(data, window, 3, mode='nearest')
 
         lower, upper = None, None
         data = data * 100  # convert to percents
 
-        if (0 < confidence < 1) and data.sum() == 0:
+        if (0 < confidence < 1) and np.isnan(data).sum() == 0:
             upper = df["upper"].to_numpy() * 100  # convert to percents
             lower = df["lower"].to_numpy() * 100  # convert to percents
 
@@ -146,7 +137,7 @@ class LinePlot(PlotBase):
             fig_axes: tuple = None,
             smooth: int = 50,
             label: str = "",
-            confidence: int = 0,
+            confidence: float = 0,
             linewidth: float = 1.0,
             linestyle: str = '-',
             major_labels: list[str] = None,
@@ -206,7 +197,7 @@ class LinePlot(PlotBase):
                       label=f"{context}" if not label else f"{label}_{context}",
                       linestyle=linestyle, linewidth=linewidth)
 
-            if (0 < confidence < 1) and data.is_null().sum() == 0:
+            if (0 < confidence < 1) and np.isnan(data).sum() == 0:
                 axes.fill_between(x, lower, upper, alpha=.2)
 
         self.flank_lines(axes, major_labels, minor_labels, show_border)
@@ -223,7 +214,7 @@ class LinePlot(PlotBase):
             figure: go.Figure = None,
             smooth: int = 50,
             label: str = "",
-            confidence: int = .0,
+            confidence: float = .0,
             major_labels: list[str] = None,
             minor_labels: list[str] = None,
             show_border: bool = True
@@ -402,11 +393,17 @@ class LinePlotFiles(MetageneFilesBase):
 class HeatMap(PlotBase):
     """Heat-map single metagene"""
 
-    def __init__(self, bismark_df: pl.DataFrame, nrow, order=None, stat="wmean", **kwargs):
+    def __init__(self, bismark_df: pl.DataFrame, nrow, order=None, stat="wmean", merge_strands: bool = True, **kwargs):
         super().__init__(bismark_df, **kwargs)
 
+        if merge_strands:
+            bismark_df = self._merge_strands(bismark_df)
+
         plot_data = self.__calculcate_plot_data(bismark_df, nrow, order, stat)
-        plot_data = self.__strand_reverse(plot_data)
+
+        if not merge_strands:
+            # switch to base strand reverse
+            plot_data = self.__strand_reverse(plot_data)
 
         self.plot_data = plot_data
 
@@ -750,43 +747,24 @@ class PCA:
             self.labels = labels
             self.groups = groups
 
-            # 1. Standartize
-            std = matrix.std(1)
-            # Filter same rows
-            matrix = matrix[std != 0, :]
-            std = std[std != 0]
-            mean = matrix.mean(1)
+            pca = PCA_sklearn(n_components=2)
+            fit: PCA_sklearn = pca.fit(matrix)
 
-            standartized = (matrix.T - mean).T
-            # standartized = ((matrix.T - mean) / std).T
-
-            # 2. Calculate covariance
-            cov = np.cov(standartized.T)
-
-            # 3. Calculate eigen
-            eigenvalues, eigenvectors = np.linalg.eig(cov)
-
-            # 4. Sort
-            idx = eigenvalues.argsort()[::-1]
-
-            self.groups = np.array(groups)[idx]
-            self.labels = np.array(labels)[idx]
-            self.eigenvalues = eigenvalues[idx]
-            self.eigenvectors = eigenvectors[:, idx]
-            self.explained_variance = eigenvalues / eigenvalues.sum()
+            self.eigenvectors = fit.components_
+            self.explained_variance = fit.explained_variance_ratio_
 
     def draw_plotly(self):
         data = self._get_pca_data()
 
-        x = data.eigenvectors[:, 0]
-        y = data.eigenvectors[:, 1]
+        x = data.eigenvectors[0, :]
+        y = data.eigenvectors[1, :]
 
         df = pl.DataFrame({"x": x, "y": y, "group": data.groups, "label": data.labels}).to_pandas()
         figure = px.scatter(df, x="x", y="y", color="group", text="label")
 
         figure.update_layout(
-            xaxis_title="PC1: %.2f" % data.explained_variance[0] + "%",
-            yaxis_title="PC2: %.2f" % data.explained_variance[1] + "%"
+            xaxis_title="PC1: %.2f" % (data.explained_variance[0]*100) + "%",
+            yaxis_title="PC2: %.2f" % (data.explained_variance[1]*100) + "%"
         )
 
         return figure

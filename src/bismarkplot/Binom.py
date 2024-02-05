@@ -551,7 +551,7 @@ class RegionStat:
         if save is not None:
             for df, df_type in zip([bm, im, um], ["BM", "IM", "UM"]):
                 save_path = Path(save)
-                df.save(save_path.with_name(save_path.name + "_" + df_type))
+                df.save(save_path.with_name(save_path.name + "_" + df_type).with_suffix(".tsv"))
         return bm.region_stats, im.region_stats, um.region_stats
 
     def __len__(self):

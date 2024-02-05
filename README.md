@@ -195,7 +195,7 @@ metagene = bismarkplot.Metagene.from_bismark(
     genome=genes,  # filtered regions
     up_windows=5, body_windows=10, down_windows=5,
 )
-clustered = metagene.clustering(
+clustered = metagene.cluster(
     count_threshold=5,  # Minimum counts per window
     dist_method="euclidean",  # See scipy.spatial.distance.pdist
     clust_method="average"  # See scipy.cluster.hierarchy.linkage

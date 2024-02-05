@@ -203,6 +203,14 @@ class PlotBase(MetageneBase):
 
         return axes
 
+    def _merge_strands(self, df: pl.DataFrame):
+        return df.filter(pl.col("strand") == "+").extend(self._strand_reverse(df.filter(pl.col("strand") == "-")))
+
+    @staticmethod
+    def _strand_reverse(df: pl.DataFrame):
+        max_fragment = df["fragment"].max()
+        return df.with_columns((max_fragment - pl.col("fragment")).alias("fragment")).sort("fragment")
+
     def flank_lines_plotly(self, figure: go.Figure, major_labels: list, minor_labels: list, show_border=True):
         """
         Add flank lines to the given axis (for line plot)
@@ -345,7 +353,7 @@ class ReportReader(ABC):
         else:
             AGG_EXPR = [pl.sum('density').alias('sum'), pl.count('density').alias('count')]
 
-        return (
+        processed = (
             df.lazy()
             # assign types
             # calculate density for each cytosine
@@ -385,6 +393,7 @@ class ReportReader(ABC):
             .agg(AGG_EXPR)
             .drop_nulls(subset=['sum'])
         ).collect()
+        return processed
 
     def read(self):
         print("Initializing report reader.")

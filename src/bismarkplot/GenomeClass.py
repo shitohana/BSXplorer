@@ -87,7 +87,7 @@ class Genome:
             pl.col(cols[id_col]).alias("id") if id_col is not None else pl.lit("").alias("id"),
         ]
 
-        genes = genes.with_columns(select_cols).drop(cols)
+        genes = genes.with_columns(select_cols).select(["chr", "type", "start", "end", "strand", "id"]).sort(["chr", "start"])
 
         print(f"Genome read from {file}")
         return cls(genes)
@@ -344,7 +344,8 @@ class Genome:
             self.genome, gene_type, min_length, flank_length)
         genes = (
             genes
-            .groupby(['chr', 'strand'], maintain_order=True).agg([
+            .groupby(['chr', 'strand'], maintain_order=True)
+            .agg([
                 pl.col('start'),
                 # upstream shift
                 (pl.col('start').shift(-1) - pl.col('end')).shift(1)

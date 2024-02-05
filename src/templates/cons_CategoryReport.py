@@ -6,6 +6,7 @@ from dataclasses import asdict
 import argparse
 
 import polars as pl
+from matplotlib import pyplot as plt
 
 from cons_MetageneReport import get_metagene_parser, parse_config, ReportRow, render_metagene_report
 from src.bismarkplot import Genome, Metagene, MetageneFiles, BinomialData
@@ -28,7 +29,12 @@ def render_category_report(metagene_files: MetageneFiles, args: argparse.Namespa
         um_metagene_files = []
 
         for metagene, label in zip(filtered.samples, filtered.labels):
-            bm, _, um = region_pvalues[label].categorise(context=metagene_filter[0], p_value=args.region_p)
+            if args.save_cat:
+                save_name = Path(args.dir) / (label + metagene_filter[0])
+            else:
+                save_name = None
+
+            bm, _, um = region_pvalues[label].categorise(context=metagene_filter[0], p_value=args.region_p, save=save_name)
 
             bm_metagene_files.append(metagene.filter(genome=bm))
             um_metagene_files.append(metagene.filter(genome=um))
@@ -44,21 +50,40 @@ def render_category_report(metagene_files: MetageneFiles, args: argparse.Namespa
                 plots=[]
             )
 
-            lp = category.line_plot(merge_strands=not args.separate_strands).draw_plotly(smooth=args.smooth,
-                                                                                         confidence=args.confidence)
-            hm = category.heat_map(nrow=args.vresolution, ncol=args.hresolution).draw_plotly()
+            lp = category.line_plot(merge_strands=not args.separate_strands)
+            hm = category.heat_map(nrow=args.vresolution, ncol=args.hresolution)
+
+            major_ticks = [args.ticks[i] for i in [1, 3]]
+            minor_ticks = [args.ticks[i] for i in [0, 2, 4]]
 
             bp = category.box_plot_plotly()
             bp_trimmed = category.trim_flank().box_plot_plotly()
 
+            if args.export != 'none':
+                base_name = name + "".join(map(str, filter(lambda val: val is not None, metagene_filter)))
+                lp.draw_mpl(smooth=args.smooth, confidence=args.confidence, major_labels=major_ticks, minor_labels=minor_ticks).savefig(
+                    Path(args.dir) / "plots" / (base_name + "_lp" + f".{args.export}")
+                )
+                hm.draw_mpl(major_labels=major_ticks, minor_labels=minor_ticks).savefig(
+                    Path(args.dir) / "plots" / (base_name + "_hm" + f".{args.export}")
+                )
+                category.box_plot().savefig(
+                    Path(args.dir) / "plots" / (base_name + "_bp" + f".{args.export}")
+                )
+                category.trim_flank().box_plot().savefig(
+                    Path(args.dir) / "plots" / (base_name + "_bp_trimmed" + f".{args.export}")
+                )
+
+                plt.close()
+
             context_report.plots += [
                 TemplateMetagenePlot(
                     "Line plot",
-                    lp.to_html(full_html=False)
+                    lp.draw_plotly(smooth=args.smooth, confidence=args.confidence, major_labels=major_ticks, minor_labels=minor_ticks).to_html(full_html=False)
                 ),
                 TemplateMetagenePlot(
                     "Heat map",
-                    hm.to_html(full_html=False)
+                    hm.draw_plotly(major_labels=major_ticks, minor_labels=minor_ticks).to_html(full_html=False)
                 ),
                 TemplateMetagenePlot(
                     "Box plot with flanking regions",
@@ -86,7 +111,7 @@ def main():
     parser.add_argument("--cytosine_p", help="P-value for binomial test to consider cytosine methylated", default=".05", type=float)
     parser.add_argument("--min_cov", help="Minimal coverage for cytosine to keep", default="2", type=int)
     parser.add_argument("--region_p", help="P-value for binomial test to consider region methylated", default=".05", type=float)
-    parser.add_argument("--save_cat", help="P-value for binomial test to consider region methylated", default=True, type=bool)
+    parser.add_argument("--save_cat", help="Does categories need to be saved", default=True, type=bool, action=argparse.BooleanOptionalAction)
 
     # args = parser.parse_args("-o F39_test --dir /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test -u 50 -d 50 -b 100 -S 20 -C 0 -V 50 /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/F39conf.tsv".split())
     args = parser.parse_args()
@@ -117,6 +142,12 @@ def main():
           f"\nUpstream | Body | Downstream (bins): {args.ubin} | {args.bbin} | {args.dbin}\n"
           f"RUN STARTED at {time.strftime('%d/%m/%y %H:%M:%S')}\n\n"
           )
+
+    if args.export != 'none':
+        if not (Path(args.dir) / "plots").exists():
+            (Path(args.dir) / "plots").mkdir()
+
+            print("Plots will be saved in directory:", (Path(args.dir) / "plots"))
 
     unique_samples = report_args["name"].unique().to_list()
 
