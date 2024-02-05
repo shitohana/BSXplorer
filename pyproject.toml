@@ -49,6 +49,7 @@ exclude = ["/venv", "/dist", "/test", "/docs"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bsxplorer"]
+include = ["src/templates"]
 
 [project.scripts]
 bsxplorer-metagene = "bsxplorer.templates.cons_MetageneReport:main"
