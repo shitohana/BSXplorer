@@ -4,7 +4,7 @@ import sys
 project = 'BSXplorer'
 copyright = '2023, shitohana'
 author = 'shitohana'
-release = '1.0.0a0'
+release = '1.0.0a1'
 sys.path.insert(0, os.path.abspath('../src'))
 sys.path.append(os.path.abspath('.'))
 
