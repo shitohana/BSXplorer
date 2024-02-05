@@ -8,9 +8,12 @@ import argparse
 import polars as pl
 from matplotlib import pyplot as plt
 
-from cons_MetageneReport import get_metagene_parser, parse_config, ReportRow, render_metagene_report
-from src.bsxplorer import Genome, Metagene, MetageneFiles, BinomialData
-from src.bsxplorer.utils import merge_replicates, decompress
+from cons_MetageneReport import get_metagene_parser, parse_config, ReportRow
+
+from source.GenomeClass import Genome
+from source.MetageneClasses import Metagene, MetageneFiles
+from source.Binom import BinomialData
+from source.utils import merge_replicates, decompress
 from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
 
 
@@ -216,3 +219,6 @@ def main():
     render_template(Path.cwd() / "src/templates/html/CategoryTemplate.html", rendered, out)
 
     pass
+
+if __name__ == "__main__":
+    main()

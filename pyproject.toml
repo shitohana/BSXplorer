@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bsxplorer"
-version = "1.0.0a1"
+version = "1.0.0a2"
 authors = [
   { name="shitohana", email="kyudytskiy@gmail.com" },
 ]
@@ -48,8 +48,7 @@ Documentation = "https://shitohana.github.io/BSXplorer/"
 exclude = ["/venv", "/dist", "/test", "/docs"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/bsxplorer"]
-include = ["src/templates"]
+packages = ["src"]
 
 [project.scripts]
 bsxplorer-metagene = "bsxplorer.templates.cons_MetageneReport:main"

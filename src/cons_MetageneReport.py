@@ -15,9 +15,9 @@ from pathlib import Path
 import polars as pl
 from matplotlib import pyplot as plt
 
-sys.path.insert(0, os.getcwd())
-from src.bsxplorer import Genome, Metagene, MetageneFiles
-from src.bsxplorer.Plots import PCA
+from source.GenomeClass import Genome
+from source.MetageneClasses import Metagene, MetageneFiles
+from source.Plots import PCA
 from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
 
 # TODO add plot data export option
@@ -28,6 +28,7 @@ ReportRow = namedtuple(
      "report_type"]
 )
 
+
 def get_metagene_parser():
     parser = argparse.ArgumentParser(
         prog='BSXplorer',
@@ -36,24 +37,35 @@ def get_metagene_parser():
     )
 
     parser.add_argument('config', help='Path to config file')
-    parser.add_argument('-o', '--out', help='Output filename', default=f"Metagene_Report_{time.strftime('%d-%m-%y_%H-%M-%S')}", metavar='NAME')
+    parser.add_argument('-o', '--out', help='Output filename',
+                        default=f"Metagene_Report_{time.strftime('%d-%m-%y_%H-%M-%S')}", metavar='NAME')
     parser.add_argument('--dir', help='Output and working dir', default=os.path.abspath(os.getcwd()), metavar='DIR')
-    parser.add_argument('-m', '--block_mb', help='Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)', type=int, default=50)
-    parser.add_argument('-t', '--threads', help='Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`', type=int, default=True)
-    parser.add_argument('-s', '--sumfunc', help='Summary function to calculate density for window with.', type=str, default="wmean")
+    parser.add_argument('-m', '--block_mb',
+                        help='Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)',
+                        type=int, default=50)
+    parser.add_argument('-t', '--threads',
+                        help='Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`',
+                        type=int, default=True)
+    parser.add_argument('-s', '--sumfunc', help='Summary function to calculate density for window with.', type=str,
+                        default="wmean")
     parser.add_argument('-u', '--ubin', help='Number of windows for upstream region', type=int, default=50)
     parser.add_argument('-d', '--dbin', help='Number of windows for downstream downstream', type=int, default=50)
     parser.add_argument('-b', '--bbin', help='Number of windows for body region', type=int, default=100)
-    parser.add_argument('-q', '--quantile', help='Quantile of most varying genes to draw on clustermap', type=float, default=.75)
+    parser.add_argument('-q', '--quantile', help='Quantile of most varying genes to draw on clustermap', type=float,
+                        default=.75)
 
     parser.add_argument('-S', '--smooth', help='Windows for SavGol function.', type=float, default=10)
-    parser.add_argument('-C', '--confidence', help='Probability for confidence bands for line-plot. 0 if disabled', type=float, default=.95)
+    parser.add_argument('-C', '--confidence', help='Probability for confidence bands for line-plot. 0 if disabled',
+                        type=float, default=.95)
     parser.add_argument('-H', help='Vertical resolution for heat-map', type=int, default=100, dest="vresolution")
     parser.add_argument('-V', help='Vertical resolution for heat-map', type=int, default=100, dest="hresolution")
 
-    parser.add_argument('--separate_strands', help='Do strands need to be processed separately', type=bool, default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument('--export', help='Export format for plots (set none to disable)', type=str, default='pdf', choices=['pdf', 'svg', 'none'])
-    parser.add_argument('--ticks', help='Names of ticks (5 labels with ; separator in " brackets)', type=lambda val: str(val).replace("\\", ""), nargs=5)
+    parser.add_argument('--separate_strands', help='Do strands need to be processed separately', type=bool,
+                        default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('--export', help='Export format for plots (set none to disable)', type=str, default='pdf',
+                        choices=['pdf', 'svg', 'none'])
+    parser.add_argument('--ticks', help='Names of ticks (5 labels with ; separator in " brackets)',
+                        type=lambda val: str(val).replace("\\", ""), nargs=5)
 
     return parser
 
@@ -157,7 +169,8 @@ def render_metagene_report(metagene_files: MetageneFiles, args: argparse.Namespa
                 cm().savefig(
                     Path(args.dir) / "plots" / (base_name + "_cm" + f".{args.export}")
                 )
-            lp.draw_mpl(smooth=args.smooth, confidence=args.confidence, major_labels=major_ticks, minor_labels=minor_ticks).savefig(
+            lp.draw_mpl(smooth=args.smooth, confidence=args.confidence, major_labels=major_ticks,
+                        minor_labels=minor_ticks).savefig(
                 Path(args.dir) / "plots" / (base_name + "_lp" + f".{args.export}")
             )
             hm.draw_mpl(major_labels=major_ticks, minor_labels=minor_ticks).savefig(
@@ -278,7 +291,8 @@ def main():
             pca.append_metagene(metagene, Path(report.report_file).stem, sample)
 
             sample_metagenes.append(metagene)
-        metagenes.append((MetageneFiles(sample_metagenes, list(map(str, range(len(sample_metagenes))))).merge(), sample))
+        metagenes.append(
+            (MetageneFiles(sample_metagenes, list(map(str, range(len(sample_metagenes))))).merge(), sample))
 
         sample_metagenes = None
         collect()
@@ -292,3 +306,5 @@ def main():
     # render_template(Path.cwd() / "html/MetageneTemplate.html", rendered, out)
     render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
 
+if __name__ == "__main__":
+    main()
