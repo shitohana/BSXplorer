@@ -8,7 +8,7 @@ release = '1.0.0a0'
 sys.path.insert(0, os.path.abspath('../src'))
 sys.path.append(os.path.abspath('.'))
 
-import bismarkplot
+import bsxplorer
 
 extensions = [
     # TODO add myst_parser to dependencies
