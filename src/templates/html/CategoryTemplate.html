@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+</head>
+<body>
+  <h1>{{ title }}</h1>
+  {% for context in context_reports %}
+  <h2>{{ context.heading }}</h2>
+    <div>{{ context.caption }}</div>
+    {% for plot in context.plots %}
+    <h3>{{ plot.title }}</h3>
+    {{ plot.data }}
+    {% endfor %}
+  {% endfor %}
+
+</body>
+</html>

@@ -26,10 +26,10 @@ def main():
     args = parser.parse_args()
 
     try:
-        from .BismarkPlot import ChrLevels
+        from src.bismarkplot import ChrLevels
         import matplotlib.pyplot as plt
 
-        chr = ChrLevels.from_file(
+        chr = ChrLevels.from_bismark(
             args.filename,
             window_length=args.wlength,
             chr_min_length=args.mlength,
@@ -41,7 +41,7 @@ def main():
             fig, axes = plt.subplots()
 
             for context in ["CG", "CHG", "CHH"]:
-                chr.filter(strand=strand, context=context).draw((fig, axes), smooth=args.smooth, label=context)
+                chr.filter(strand=strand, context=context).draw_mpl((fig, axes), smooth=args.smooth, label=context)
 
             save_path = f"{args.dir}/{args.out}_{strand}.{args.file_format}"
 

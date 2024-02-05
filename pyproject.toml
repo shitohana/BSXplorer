@@ -3,22 +3,31 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "bismarkplot"
-version = "1.3.2.post3"
+name = "bsxplorer"
+version = "1.0.0"
 authors = [
   { name="shitohana", email="kyudytskiy@gmail.com" },
 ]
 keywords = ['bismark', 'methylation', 'plot', 'bs-seq']
 license = {file = "LICENSE.txt"}
 dependencies = [
-    "matplotlib>=3.7.1",
-    "numpy>=1.24.2",
-    "pandas>=2.0.0",
-    "polars>=0.17.5",
-    "scipy>=1.10.1",
+    "biopython>=1.81",
+    "dynamicTreeCut>=0.1.1",
+    "fastcluster>=1.2.6",
+    "Jinja2>=3.1.2",
+    "matplotlib>=3.8.0",
+    "numba>=0.58.1",
+    "numpy>=1.26.3",
+    "pandas>=2.2.0",
+    "plotly>=5.18.0",
+    "polars>=0.20.7",
+    "progress>=1.6",
     "pyarrow>=13.0.0",
     "pyreadr>=0.4.9",
-    "dynamicTreeCut>=0.1.1"
+    "scikit-learn>=1.4.0",
+    "scipy>=1.12.0",
+    "seaborn>=0.13.2"
+
 ]
 description = "Analytical framework for BS-seq data comparison and visualization"
 readme = "README.md"
@@ -36,8 +45,9 @@ Documentation = "https://shitohana.github.io/BismarkPlot/"
 "Bug Tracker" = "https://github.com/shitohana/BismarkPlot/issues"
 
 [tool.hatch.build]
-exclude = ["/venv", "/dist", "/test"]
+exclude = ["/venv", "/dist", "/test", "/docs"]
 
 [project.scripts]
-bismarkplot-metagene = "bismarkplot.console_metagene:main"
-bismarkplot-chrs = "bismarkplot.console_chrs:main"
+bsxplorer-metagene = "bismarkplot.templates.cons_MetageneReport:main"
+bsxplorer-category = "bismarkplot.templates.cons_CategoryReport:main"
+bsxplorer-chr = "bismarkplot.templates.cons_ChrLevelsReport:main"

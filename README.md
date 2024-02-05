@@ -123,30 +123,32 @@ Below we will show the basic BismarkPlot workflow.
 ### Single sample
 
 ```python
+import src.bismarkplot.Genome
 import bismarkplot
+
 # Firstly, we need to read the regions annotation (e.g. reference genome .gff)
-genome = bismarkplot.Genome.from_gff("path/to/genome.gff")  
+genome = src.bismarkplot.genome.Genome.from_gff("path/to/genome.gff")
 # Next we need to filter regions of interest from the genome
 genes = genome.gene_body(min_length=4000, flank_length=2000)
 
 # Now we need to calculate metagene data
-metagene = bismarkplot.Metagene.from_file(
-    file = "path/to/CX_report.txt",
-    genome=genes,                         # filtered regions
-    upstream_windows = 500,               
-    gene_windows = 1000,
-    downstream_windows = 500,
-    batch_size= 10**7                     # number of lines to be read simultaneously
+metagene = bismarkplot.Metagene.from_bismark(
+    file="path/to/CX_report.txt",
+    genome=genes,  # filtered regions
+    up_windows=500,
+    body_windows=1000,
+    down_windows=500,
+    batch_size=10 ** 7  # number of lines to be read simultaneously
 )
 
 # Our metagene contains all methylation contexts and both strands, so we need to filter it (as in dplyr)
-filtered = metagene.filter(context = "CG", strand = "+")
+filtered = metagene.filter(context="CG", strand="+")
 # We are ready to plot
-lp = filtered.line_plot()                 # line plot data
-lp.draw().savefig("path/to/lp.pdf")       # matplotlib.Figure
+lp = filtered.line_plot()  # line plot data
+lp.draw_mpl().savefig("path/to/lp.pdf")  # matplotlib.Figure
 
 hm = filtered.heat_map(ncol=200, nrow=200)
-hm.draw().savefig("path/to/hm.pdf")       # matplotlib.Figure
+hm.draw_mpl().savefig("path/to/hm.pdf")  # matplotlib.Figure
 ```
 Output for _Brachypodium distachyon_:
 
@@ -160,7 +162,7 @@ If metagene is not filtered by context, **all available contexts will be plotted
 ```python
 filtered_by_strand = metagene.filter(strand == "+")
 lp = filtered_by_strand.line_plot()
-lp.draw()
+lp.draw_mpl()
 ```
 
 Output for _Brachypodium distachyon_:
@@ -172,7 +174,7 @@ Output for _Brachypodium distachyon_:
 **Confidence bands** can be visualized via setting the `confidence` parameter in `LinePlot.draw()`
 
 ```python
-lp.draw(confidence=.95)
+lp.draw_mpl(confidence=.95)
 ```
 
 Output for _Brachypodium distachyon_: 
@@ -188,19 +190,19 @@ overall methylation patterns in sample. _This operation is very time consuming. 
 windows (< 50)_.
 
 ```python
-metagene = bismarkplot.Metagene.from_file(
-    file = "path/to/CX_report.txt",
-    genome=genes,                         # filtered regions
-    upstream_windows = 5, gene_windows = 10, downstream_windows = 5,
+metagene = bismarkplot.Metagene.from_bismark(
+    file="path/to/CX_report.txt",
+    genome=genes,  # filtered regions
+    up_windows=5, body_windows=10, down_windows=5,
 )
-clustered = metagene.clustering(
-    count_threshold=5,                    # Minimum counts per window
-    dist_method="euclidean",              # See scipy.spatial.distance.pdist
-    clust_method="average"                # See scipy.cluster.hierarchy.linkage
+clustered = metagene.cluster(
+    count_threshold=5,  # Minimum counts per window
+    dist_method="euclidean",  # See scipy.spatial.distance.pdist
+    clust_method="average"  # See scipy.cluster.hierarchy.linkage
 )
 
 # Heatmap with optimized distances between genes will be drawn
-clustered.draw().savefig("path/to/clustered_hm.pdf")
+clustered.draw_mpl().savefig("path/to/clustered_hm.pdf")
 ```
 Output for _Brachypodium distachyon_ - CHG
 
@@ -216,9 +218,9 @@ Then genes can be plotted as heat-map as previous example:
 
 ```python
 # Parameters are the same as for cutreeHybrid (see dynamicTreeCut)
-modules = clustered.modules(deepSplit = 1)
+modules = clustered.modules(deepSplit=1)
 
-modules.draw().savefig("path/to/modules_hm.pdf")
+modules.draw_mpl().savefig("path/to/modules_hm.pdf")
 ```
 
 Output for _Brachypodium distachyon_ - CHG
@@ -233,9 +235,9 @@ Smoothing is very useful, when input signal is very weak (e.g. mammalian non-CpG
 
 ```python
 # mouse CHG methylation example
-filtered = metagene.filter(context = "CHG", strand = "+")
-lp.draw(smooth = 0).savefig("path/to/lp.pdf")       # no smooth
-lp.draw(smooth = 50).savefig("path/to/lp.pdf")      # smoothed with window length = 50
+filtered = metagene.filter(context="CHG", strand="+")
+lp.draw_mpl(smooth=0).savefig("path/to/lp.pdf")  # no smooth
+lp.draw_mpl(smooth=50).savefig("path/to/lp.pdf")  # smoothed with window length = 50
 ```
 
 Output for _Mus musculus_:
@@ -280,17 +282,19 @@ Output for _Brachypodium distachyon_:
 
 ```python
 # For analyzing samples with different reference genomes, we need to initialize several genomes instances
+import src.bismarkplot.Genome
+
 genome_filenames = ["arabidopsis.gff", "brachypodium.gff", "cucumis.gff", "mus.gff"]
 reports_filenames = ["arabidopsis.txt", "brachypodium.txt", "cucumis.txt", "mus.txt"]
 
 genomes = [
-    bismarkplot.Genome.from_gff(file).gene_body(...) for file in genome_filenames
+    src.bismarkplot.genome.Genome.from_gff(file).gene_body(...) for file in genome_filenames
 ]
 
 # Now we read reports
 metagenes = []
 for report, genome in zip(reports_filenames, genomes):
-    metagene = bismarkplot.Metagene(report, genome = genome, ...)
+    metagene = bismarkplot.Metagene(report, genome=genome, ...)
     metagenes.append(metagene)
 
 # Initialize MetageneFiles
@@ -315,26 +319,29 @@ Output:
 Other genomic regions from .gff can be analyzed too with ```.exon``` or ```.near_tss/.near_tes``` option for ```bismarkplot.Genome```
 
 ```python
+import src.bismarkplot.Genome
+
 exons = [
-    bismarkplot.Genome.from_gff(file).exon(min_length=100) for file in genome_filenames
+    src.bismarkplot.genome.Genome.from_gff(file).exon(min_length=100) for file in genome_filenames
 ]
 metagenes = []
 for report, exon in zip(reports_filenames, exons):
-    metagene = bismarkplot.Metagene(report, genome = exon, 
-                                    upstream_windows = 0,   # !!!
-                                    downstream_windows = 0, # !!!
+    metagene = bismarkplot.Metagene(report, genome=exon,
+                                    upstream_windows=0,  # !!!
+                                    downstream_windows=0,  # !!!
                                     ...)
     metagenes.append(metagene)
 # OR
 tss = [
-    bismarkplot.Genome.from_gff(file).near_tss(min_length = 2000, flank_length = 2000) for file in genome_filenames
+    src.bismarkplot.genome.Genome.from_gff(file).near_tss(min_length=2000, flank_length=2000) for file in
+    genome_filenames
 ]
 metagenes = []
 for report, t in zip(reports_filenames, tss):
-    metagene = bismarkplot.Metagene(report, genome = t, 
-                                    upstream_windows = 1000,# same number of windows
-                                    gene_windows = 1000,    # same number of windows
-                                    downstream_windows = 0, # !!!
+    metagene = bismarkplot.Metagene(report, genome=t,
+                                    upstream_windows=1000,  # same number of windows
+                                    gene_windows=1000,  # same number of windows
+                                    downstream_windows=0,  # !!!
                                     ...)
     metagenes.append(metagene)
 ```
@@ -356,23 +363,25 @@ TSS output:
 BismarkPlot allows user to visualize chromosome methylation levels across full genome
 
 ```python
+import src.bismarkplot.ChrLevels
 import bismarkplot
-chr = bismarkplot.ChrLevels.from_file(
+
+chr = src.bismarkplot.levels.ChrLevels.from_bismark(
     "path/to/CX_report.txt",
-    window_length=10**5,                  # window length in bp
-    batch_size=10**7,                     
-    chr_min_length = 10**6,               # minimum chr length in bp
+    window_length=10 ** 5,  # window length in bp
+    batch_size=10 ** 7,
+    chr_min_length=10 ** 6,  # minimum chr length in bp
 )
 fig, axes = plt.subplots()
 
 for context in ["CG", "CHG", "CHH"]:
-     chr.filter(strand="+", context=context).draw(
-         (fig, axes),                     # to plot contexts on same axes
-         smooth=10,                       # window number for smoothing
-         label=context                    # labels for lines
-     )
+    chr.filter(strand="+", context=context).draw_mpl(
+        (fig, axes),  # to plot contexts on same axes
+        smooth=10,  # window number for smoothing
+        label=context  # labels for lines
+    )
 
-fig.savefig(f"chrom.pdf", dpi = 200)
+fig.savefig(f"chrom.pdf", dpi=200)
 ```
 
 Output for _Arabidopsis thaliana_:
