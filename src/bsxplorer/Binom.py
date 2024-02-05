@@ -161,7 +161,7 @@ class BinomialData:
         --------
         If there no preprocessed file:
 
-        >>> import source as bp
+        >>> import bsxplorer as bp
         >>> report_path = "/path/to/report.txt"
         >>> genome_path = "/path/to/genome.gff"
         >>> c_binom = bp.BinomialData.preprocess(report_path, report_type="bismark")

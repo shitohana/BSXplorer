@@ -51,6 +51,6 @@ exclude = ["/venv", "/dist", "/test", "/docs"]
 packages = ["src"]
 
 [project.scripts]
-bsxplorer-metagene = "bsxplorer.templates.cons_MetageneReport:main"
-bsxplorer-category = "bsxplorer.templates.cons_CategoryReport:main"
-bsxplorer-chr = "bsxplorer.templates.cons_ChrLevelsReport:main"
+bsxplorer-metagene = "cons_MetageneReport:main"
+bsxplorer-category = "cons_CategoryReport:main"
+bsxplorer-chr = "cons_ChrLevelsReport:main"

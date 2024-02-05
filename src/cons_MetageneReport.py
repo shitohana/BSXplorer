@@ -15,9 +15,9 @@ from pathlib import Path
 import polars as pl
 from matplotlib import pyplot as plt
 
-from source.GenomeClass import Genome
-from source.MetageneClasses import Metagene, MetageneFiles
-from source.Plots import PCA
+from bsxplorer.GenomeClass import Genome
+from bsxplorer.MetageneClasses import Metagene, MetageneFiles
+from bsxplorer.Plots import PCA
 from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
 
 # TODO add plot data export option

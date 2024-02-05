@@ -10,10 +10,10 @@ from matplotlib import pyplot as plt
 
 from cons_MetageneReport import get_metagene_parser, parse_config, ReportRow
 
-from source.GenomeClass import Genome
-from source.MetageneClasses import Metagene, MetageneFiles
-from source.Binom import BinomialData
-from source.utils import merge_replicates, decompress
+from bsxplorer.GenomeClass import Genome
+from bsxplorer.MetageneClasses import Metagene, MetageneFiles
+from bsxplorer.Binom import BinomialData
+from bsxplorer.utils import merge_replicates, decompress
 from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
 
 
