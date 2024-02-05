@@ -47,6 +47,9 @@ Documentation = "https://shitohana.github.io/BismarkPlot/"
 [tool.hatch.build]
 exclude = ["/venv", "/dist", "/test", "/docs"]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/bismarkplot"]
+
 [project.scripts]
 bsxplorer-metagene = "bismarkplot.templates.cons_MetageneReport:main"
 bsxplorer-category = "bismarkplot.templates.cons_CategoryReport:main"
