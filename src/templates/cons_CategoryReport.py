@@ -211,13 +211,8 @@ def main():
 
     rendered = render_category_report(metagene_files, args, region_stats)
 
-    out = Path(args.out).with_suffix(".html")
+    out = Path(args.dir) / (args.out + ".html")
     # render_template(Path.cwd() / "html/CategoryTemplate.html", rendered, out)
     render_template(Path.cwd() / "src/templates/html/CategoryTemplate.html", rendered, out)
 
-
     pass
-
-
-if __name__ == '__main__':
-    main()

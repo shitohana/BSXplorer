@@ -4,4 +4,4 @@ from .Binom import BinomialData, RegionStat
 from .GenomeClass import Genome
 from .ChrLevels import ChrLevels
 
-__version__ = '1.4.1'
+__version__ = '1.0.0'

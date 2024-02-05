@@ -288,10 +288,7 @@ def main():
 
     rendered = render_metagene_report(metagene_files, args, pca)
 
-    out = Path(args.out).with_suffix(".html")
+    out = Path(args.dir) / (args.out + ".html")
     # render_template(Path.cwd() / "html/MetageneTemplate.html", rendered, out)
     render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
 
-
-if __name__ == '__main__':
-    main()

@@ -169,10 +169,6 @@ def main():
 
     rendered = render_chr_report(chr_levels, args, report_args["name"].to_list())
 
-    out = Path(args.out).with_suffix(".html")
-    render_template(Path.cwd() / "html/ChrLevelsTemplate.html", rendered, out)
-    # render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
-
-
-if __name__ == '__main__':
-    main()
+    out = Path(args.dir) / (args.out + ".html")
+    # render_template(Path.cwd() / "html/ChrLevelsTemplate.html", rendered, out)
+    render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
