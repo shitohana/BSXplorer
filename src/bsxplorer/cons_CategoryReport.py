@@ -8,7 +8,7 @@ import argparse
 import polars as pl
 from matplotlib import pyplot as plt
 
-from cons_MetageneReport import get_metagene_parser, parse_config, ReportRow
+from .cons_MetageneReport import get_metagene_parser, parse_config, ReportRow
 
 from .GenomeClass import Genome
 from .MetageneClasses import Metagene, MetageneFiles

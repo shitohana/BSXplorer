@@ -124,8 +124,7 @@ def render_chr_report(chr_levels: list[ChrLevels], args, labels: list[str]):
 
 def main():
     parser = get_chr_parser()
-    args = parser.parse_args("-o test /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/new_conf.tsv -l 10000 -w 50000 -C 0 -S 200".split())
-    # args = parser.parse_args()
+    args = parser.parse_args()
 
     report_args = parse_config(args.config)
 
@@ -170,8 +169,7 @@ def main():
     rendered = render_chr_report(chr_levels, args, report_args["name"].to_list())
 
     out = Path(args.dir) / (args.out + ".html")
-    # render_template(Path.cwd() / "html/ChrLevelsTemplate.html", rendered, out)
-    render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
+    render_template("html/MetageneTemplate.html", rendered, out)
 
 
 if __name__ == "__main__":

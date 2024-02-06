@@ -20,7 +20,6 @@ from .MetageneClasses import Metagene, MetageneFiles
 from .Plots import PCA
 from .cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
 
-# TODO add plot data export option
 
 ReportRow = namedtuple(
     "ReportRow",
@@ -36,38 +35,56 @@ def get_metagene_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
-    parser.add_argument('config', help='Path to config file')
-    parser.add_argument('-o', '--out', help='Output filename',
-                        default=f"Metagene_Report_{time.strftime('%d-%m-%y_%H-%M-%S')}", metavar='NAME')
-    parser.add_argument('--dir', help='Output and working dir', default=os.path.abspath(os.getcwd()), metavar='DIR')
-    parser.add_argument('-m', '--block_mb',
-                        help='Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)',
-                        type=int, default=50)
-    parser.add_argument('-t', '--threads',
-                        help='Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`',
-                        type=int, default=True)
-    parser.add_argument('-s', '--sumfunc', help='Summary function to calculate density for window with.', type=str,
-                        default="wmean")
-    parser.add_argument('-u', '--ubin', help='Number of windows for upstream region', type=int, default=50)
-    parser.add_argument('-d', '--dbin', help='Number of windows for downstream downstream', type=int, default=50)
-    parser.add_argument('-b', '--bbin', help='Number of windows for body region', type=int, default=100)
-    parser.add_argument('-q', '--quantile', help='Quantile of most varying genes to draw on clustermap', type=float,
-                        default=.75)
+    parser.add_argument('config',             help='Path to config file')
+    parser.add_argument('-o', '--out',        help='Output filename', default=f"Metagene_Report_{time.strftime('%d-%m-%y_%H-%M-%S')}", metavar='NAME')
+    parser.add_argument('--dir',              help='Output and working dir', default=os.path.abspath(os.getcwd()), metavar='DIR')
+    parser.add_argument('-m', '--block_mb',   help='Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)', type=int, default=50)
+    parser.add_argument('-t', '--threads',    help='Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`', type=bool, action="store_true")
+    parser.add_argument('-s', '--sumfunc',    help='Summary function to calculate density for window with.', type=str, default="wmean")
+    parser.add_argument('-u', '--ubin',       help='Number of windows for upstream region', type=int, default=50)
+    parser.add_argument('-d', '--dbin',       help='Number of windows for downstream downstream', type=int, default=50)
+    parser.add_argument('-b', '--bbin',       help='Number of windows for body region', type=int, default=100)
+    parser.add_argument('-q', '--quantile',   help='Quantile of most varying genes to draw on clustermap', type=float, default=.75)
 
-    parser.add_argument('-S', '--smooth', help='Windows for SavGol function.', type=float, default=10)
-    parser.add_argument('-C', '--confidence', help='Probability for confidence bands for line-plot. 0 if disabled',
-                        type=float, default=.95)
-    parser.add_argument('-H', help='Vertical resolution for heat-map', type=int, default=100, dest="vresolution")
-    parser.add_argument('-V', help='Vertical resolution for heat-map', type=int, default=100, dest="hresolution")
+    parser.add_argument('-S', '--smooth',     help='Windows for SavGol function.', type=float, default=10)
+    parser.add_argument('-C', '--confidence', help='Probability for confidence bands for line-plot. 0 if disabled', type=float, default=.95)
+    parser.add_argument('-H',                 help='Vertical resolution for heat-map', type=int, default=100, dest="vresolution")
+    parser.add_argument('-V',                 help='Vertical resolution for heat-map', type=int, default=100, dest="hresolution")
 
-    parser.add_argument('--separate_strands', help='Do strands need to be processed separately', type=bool,
-                        default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument('--export', help='Export format for plots (set none to disable)', type=str, default='pdf',
-                        choices=['pdf', 'svg', 'none'])
-    parser.add_argument('--ticks', help='Names of ticks (5 labels with ; separator in " brackets)',
-                        type=lambda val: str(val).replace("\\", ""), nargs=5)
+    parser.add_argument('--separate_strands', help='Do strands need to be processed separately', type=bool, action='store_true')
+    parser.add_argument('--export',           help='Export format for plots (set none to disable)', type=str, default='pdf', choices=['pdf', 'svg', 'none'], required=True)
+    parser.add_argument('--ticks',            help='Names of ticks (5 labels with ; separator in " brackets)', type=lambda val: str(val).replace("\\", ""), nargs=5)
 
     return parser
+
+
+def validate_args(args: argparse.Namespace):
+    # config
+    config_path = Path(args.config).expanduser().absolute()
+    if not config_path.exists():
+        raise FileNotFoundError(args.config)
+
+    # dir
+    dir_path = Path(args.dir).expanduser().absolute()
+    if dir_path.exists():
+        if not dir_path.is_dir():
+            raise ValueError(f"{dir_path} is not a folder!")
+    else:
+        print(f"{dir_path} does not exists. Creating folder there.")
+
+    if args.export != 'none':
+        if not (Path(args.dir) / "plots").exists():
+            (Path(args.dir) / "plots").mkdir()
+
+            print("Plots will be saved in directory:", (Path(args.dir) / "plots"))
+
+    # bbin
+    if args.bbin < 1:
+        raise ValueError("Threr should be at least 1 body window")
+
+    # quantile
+    if not (0 <= args.quantile < 1):
+        raise ValueError("Quantile option should be in interval [0, 1).")
 
 
 def parse_config(path: str | Path):
@@ -227,7 +244,6 @@ def main():
 
     parser = get_metagene_parser()
     args = parser.parse_args()
-    # args = parser.parse_args('-o SingleMetageneReport --dir /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/supp_data/SingleMetagene -u 250 -d 250 -b 500 -S 50 --ticks \-2000kb TSS Body TES \+2000kb -C 0 -V 100 -H 100  /Users/shitohana/Desktop/PycharmProjects/BismarkPlot/test/new_conf.tsv'.split())
 
     report_args = parse_config(args.config)
 
@@ -305,6 +321,3 @@ def main():
     out = Path(args.dir) / (args.out + ".html")
     # render_template(Path.cwd() / "html/MetageneTemplate.html", rendered, out)
     render_template(Path.cwd() / "src/templates/html/MetageneTemplate.html", rendered, out)
-
-if __name__ == "__main__":
-    main()
