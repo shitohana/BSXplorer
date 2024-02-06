@@ -2,7 +2,9 @@ name: Publish to PyPI and TestPyPI
 
 on:
   push:
-    branches: [master]
+    branches:
+      - master
+      - test
 
 jobs:
   build-n-publish:
@@ -24,13 +26,14 @@ jobs:
       run: >-
         python -m
         build
-#    - name: Publish distribution 📦 to Test PyPI
-#      if: startsWith(github.ref, 'refs/tags')
-#      uses: pypa/gh-action-pypi-publish@release/v1
-#      with:
-#        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
-#        repository-url: https://test.pypi.org/legacy/
-    - name: Publish distribution 📦 to PyPI
+    - name: Publish to Test PyPI
+      if: github.ref == 'refs/heads/test'
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        repository-url: https://test.pypi.org/legacy/
+    - name: Publish to PyPI
+      if: github.ref == 'refs/heads/master'
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}

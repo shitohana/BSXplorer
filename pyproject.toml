@@ -48,7 +48,7 @@ Documentation = "https://shitohana.github.io/BSXplorer/"
 exclude = ["/venv", "/dist", "/test", "/docs"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/bsxplorer"]
 
 [project.scripts]
 bsxplorer-metagene = "cons_MetageneReport:main"

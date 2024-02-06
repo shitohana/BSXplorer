@@ -10,11 +10,11 @@ from matplotlib import pyplot as plt
 
 from cons_MetageneReport import get_metagene_parser, parse_config, ReportRow
 
-from bsxplorer.GenomeClass import Genome
-from bsxplorer.MetageneClasses import Metagene, MetageneFiles
-from bsxplorer.Binom import BinomialData
-from bsxplorer.utils import merge_replicates, decompress
-from cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
+from .GenomeClass import Genome
+from .MetageneClasses import Metagene, MetageneFiles
+from .Binom import BinomialData
+from .utils import merge_replicates, decompress
+from .cons_utils import render_template, TemplateMetagenePlot, TemplateMetageneContext, TemplateMetageneBody
 
 
 def render_category_report(metagene_files: MetageneFiles, args: argparse.Namespace, region_pvalues):
