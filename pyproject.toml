@@ -47,10 +47,10 @@ Documentation = "https://shitohana.github.io/BSXplorer/"
 [tool.hatch.build]
 exclude = ["/venv", "/dist", "/test", "/docs"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/bsxplorer"]
+#[tool.hatch.build.targets.wheel]
+#packages = ["src/bsxplorer"]
 
 [project.scripts]
-bsxplorer-metagene = "cons_MetageneReport:main"
-bsxplorer-category = "cons_CategoryReport:main"
-bsxplorer-chr = "cons_ChrLevelsReport:main"
+bsxplorer-metagene = "bsxplorer.cons_MetageneReport:main"
+bsxplorer-category = "bsxplorer.cons_CategoryReport:main"
+bsxplorer-chr = "bsxplorer.cons_ChrLevelsReport:main"
