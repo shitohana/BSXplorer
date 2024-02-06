@@ -4,6 +4,7 @@ import itertools
 import re
 
 import numpy as np
+import packaging.version
 import polars as pl
 from matplotlib import pyplot as plt, colormaps, colors as mcolors
 from matplotlib.axes import Axes
@@ -449,12 +450,17 @@ class HeatMap(PlotBase):
             )
         )
 
+        template = pl.LazyFrame(data={"row": list(range(nrow))})
+
+        # this is needed because polars changed .lit list behaviour in > 0.20:
+        if packaging.version.parse(pl.__version__) < packaging.version.parse('0.20.0'):
+            template = template.with_columns(pl.lit([list(range(0, self.total_windows))]).alias("fragment"))
+        else:
+            template = template.with_columns(pl.lit(list(range(0, self.total_windows))).alias("fragment"))
+
         # prepare full template
         template = (
-            pl.LazyFrame(data={"row": list(range(nrow))})
-            .with_columns(
-                pl.lit([list(range(0, self.total_windows))]).alias("fragment")
-            )
+            template
             .explode("fragment")
             .with_columns([
                 pl.col("fragment").cast(MetageneSchema.fragment),
