@@ -337,7 +337,8 @@ class MetageneScript(ConsoleScript):
         sample_names = []
 
         # one genome check
-        if self.config["genome_file"].unique().len() == 1:
+        one_genome = self.config["genome_file"].unique().len() == 1
+        if one_genome:
             pca = PCA()
         else:
             pca = None
@@ -363,7 +364,8 @@ class MetageneScript(ConsoleScript):
 
                 report_metagene = self._metagene_constructors[report_type](**kwargs)
 
-                pca.append_metagene(report_metagene, Path(report_file).stem, row["name"])
+                if pca is not None:
+                    pca.append_metagene(report_metagene, Path(report_file).stem, row["name"])
                 replicates.append(report_metagene)
 
 
@@ -374,7 +376,7 @@ class MetageneScript(ConsoleScript):
 
         metagene_files = MetageneFiles(sample_metagenes, sample_names)
 
-        rendered = Renderer(self.args).metagene(metagene_files, pca)
+        rendered = Renderer(self.args).metagene(metagene_files, pca, draw_cm=one_genome)
 
         return rendered
 
@@ -699,7 +701,7 @@ class Renderer:
 
         return context_block
 
-    def metagene(self, metagene_files: MetageneFiles, pca: PCA):
+    def metagene(self, metagene_files: MetageneFiles, pca: PCA, draw_cm: bool = True):
         html_body = TemplateBody("Metagene Report")
 
         # PCA
@@ -723,7 +725,7 @@ class Renderer:
         for filters in filters_list:
             filtered_metagenes = metagene_files.filter(**filters)
 
-            context_block = self.metagene_context_block(filtered_metagenes, filters)
+            context_block = self.metagene_context_block(filtered_metagenes, filters, draw_cm)
             html_body.context_reports.append(context_block)
 
         return asdict(html_body)
