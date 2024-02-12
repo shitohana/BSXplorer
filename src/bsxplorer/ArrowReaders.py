@@ -126,6 +126,46 @@ class BismarkOptions(CsvOptions):
         )
 
 
+class CGmapOptions(CsvOptions):
+    def __init__(self,
+                 use_threads: bool = True,
+                 block_size: int = None):
+        super().__init__()
+
+        schema = dict(
+            chr=pa.utf8(),
+            nuc=pa.utf8(),
+            position=pa.uint64(),
+            context=pa.utf8(),
+            dinuc=pa.utf8(),
+            level=pa.float16(),
+            count_m=pa.uint32(),
+            count_total=pa.uint32(),
+        )
+        column_names = ["chr", "nuc", "position", "context", "dinuc", "level", "count_m", "count_total"]
+        include_cols = ["chr", "position", "nuc", "count_m", "count_total", "context"]
+
+        self.read_options = pcsv.ReadOptions(
+            use_threads=use_threads,
+            block_size=block_size,
+            skip_rows=0,
+            skip_rows_after_names=0,
+            column_names=column_names
+        )
+
+        self.parse_options = pcsv.ParseOptions(
+            delimiter="\t",
+            quote_char=False,
+            escape_char=False
+        )
+
+        self.convert_options = pcsv.ConvertOptions(
+            column_types=schema,
+            strings_can_be_null=False,
+            include_columns=include_cols
+        )
+
+
 class BedGraphOptions(CsvOptions):
     def __init__(self,
                  use_threads: bool = True,

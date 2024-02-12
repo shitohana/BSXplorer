@@ -12,7 +12,7 @@ from pyreadr import write_rds
 from matplotlib.axes import Axes
 import plotly.graph_objects as go
 
-from .ArrowReaders import CsvReader, ParquetReader, BismarkOptions
+from .ArrowReaders import CsvReader, ParquetReader, BismarkOptions, CGmapOptions
 from .utils import remove_extension, prepare_labels, MetageneSchema, ReportBar
 
 
@@ -252,7 +252,7 @@ class ReportReader(ABC):
             body_windows: int = 2000,
             downstream_windows: int = 0,
             use_threads: bool = True,
-            sumfunc: str = "mean"
+            sumfunc: str = "wmean"
     ):
         self.report_file        = report_file
         self.genome             = genome
@@ -344,12 +344,11 @@ class ReportReader(ABC):
             AGG_EXPR = [pl.min("density").alias("sum"), pl.lit(1).alias("count")]
         elif sumfunc == "max":
             AGG_EXPR = [pl.max("density").alias("sum"), pl.lit(1).alias("count")]
-        elif sumfunc == "geometric":
-            AGG_EXPR = [pl.col("density").log().mean().exp().alias("sum"),
-                        pl.lit(1).alias("count")]
-        elif sumfunc == "1pgeometric":
+        elif sumfunc == "1pgeom":
             AGG_EXPR = [(pl.col("density").log1p().mean().exp() - 1).alias("sum"),
                         pl.lit(1).alias("count")]
+        elif sumfunc == "mean":
+            AGG_EXPR = [pl.mean("density").alias("sum"), pl.lit(1).alias("count")]
         else:
             AGG_EXPR = [pl.sum('density').alias('sum'), pl.count('density').alias('count')]
 
@@ -460,6 +459,42 @@ class BismarkReportReader(ReportReader):
                 ((pl.col('count_m')) / (pl.col('count_m') + pl.col('count_um'))).alias('density')
                 .cast(MetageneSchema.sum)
             )
+        )
+
+        return mutated
+
+    def batch_size(self):
+        return self.block_size_mb * 1024**2
+
+
+class CGmapReportReader(ReportReader):
+    def __init__(self, block_size_mb: int = 50, **kwargs):
+        self.block_size_mb = block_size_mb
+
+        super().__init__(**kwargs)
+
+    def get_reader(self) -> CsvReader | ParquetReader:
+        pool = pa.default_memory_pool()
+        reader = CsvReader(
+            self.report_file,
+            CGmapOptions(use_threads=self.use_threads,
+                           block_size=self.batch_size()),
+            memory_pool=pool
+        )
+        pool.release_unused()
+
+        return reader
+
+    def mutate_batch(self, batch) -> pl.DataFrame:
+        mutated = (
+            pl
+            .from_arrow(batch)
+            .filter(pl.col("count_total") > 0)
+            .with_columns([
+                (pl.col('count_m') / pl.col('count_total')).alias('density').cast(MetageneSchema.sum),
+                pl.when(pl.col("nuc") == "G").then(pl.lit("-")).otherwise(pl.lit("+")).alias("strand").cast(MetageneSchema.strand)
+            ])
+            .select(["chr", "strand", "position", "context", "density"])
         )
 
         return mutated

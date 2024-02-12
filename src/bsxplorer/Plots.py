@@ -77,13 +77,15 @@ class LinePlot(PlotBase):
         return joined
 
     @staticmethod
-    def __get_x_y(df, smooth, confidence):
+    def __get_x_y(df, smooth, confidence, stat):
         if 0 < confidence < 1:
+            if not (stat in ["mean", "wmean"]):
+                raise ValueError("Confidence bands available only for mean and wmean stat parameters.")
             df = (
                 df
                 .with_columns(
                     pl.struct(["sum", "count"]).map_elements(
-                        lambda x: interval(x["sum"], x["count"], confidence)
+                        lambda x: interval(x["sum"], x["count"], confidence, True if stat in ["wmean"] else False)
                     ).alias("interval")
                 )
                 .unnest("interval")
@@ -188,7 +190,7 @@ class LinePlot(PlotBase):
         for context in contexts:
             df = self.plot_data.filter(pl.col("context") == context)
 
-            lower, data, upper = self.__get_x_y(df, smooth, confidence)
+            lower, data, upper = self.__get_x_y(df, smooth, confidence, self.stat)
 
             x = np.arange(len(data))
 
@@ -253,7 +255,7 @@ class LinePlot(PlotBase):
         for context in contexts:
             df = self.plot_data.filter(pl.col("context") == context)
 
-            lower, data, upper = self.__get_x_y(df, smooth, confidence)
+            lower, data, upper = self.__get_x_y(df, smooth, confidence, self.stat)
 
             x = np.arange(len(data))
 

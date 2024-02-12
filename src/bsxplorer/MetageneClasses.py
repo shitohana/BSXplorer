@@ -16,7 +16,7 @@ from .Plots import LinePlot, LinePlotFiles, HeatMap, HeatMapFiles
 from .SeqMapper import Mapper, Sequence
 from .Base import (
     MetageneBase, MetageneFilesBase,
-    BismarkReportReader, ParquetReportReader, BinomReportReader
+    BismarkReportReader, ParquetReportReader, BinomReportReader, CGmapReportReader
 )
 from .Clusters import ClusterSingle, ClusterMany
 from .utils import MetageneSchema
@@ -44,7 +44,7 @@ class Metagene(MetageneBase):
             down_windows: int = 0,
             block_size_mb: int = 100,
             use_threads: bool = True,
-            sumfunc: str = "mean"
+            sumfunc: str = "wmean"
     ):
         """
         Constructor for Metagene class from Bismark ``coverage2cytosine`` report.
@@ -99,6 +99,70 @@ class Metagene(MetageneBase):
                    downstream_windows=report_reader.downstream_windows)
 
     @classmethod
+    def from_cgmap(
+            cls,
+            file: str | Path,
+            genome: pl.DataFrame,
+            up_windows: int = 0,
+            body_windows: int = 2000,
+            down_windows: int = 0,
+            block_size_mb: int = 100,
+            use_threads: bool = True,
+            sumfunc: str = "wmean"
+    ):
+        """
+        Constructor for Metagene class from BSSeeker2 CGmap file.
+
+        Parameters
+        ----------
+        file
+            Path to CGmap file report.
+        genome
+            ``polars.Dataframe`` with gene ranges (from :class:`Genome`)
+        up_windows
+            Number of windows upstream region to split into
+        body_windows
+            Number of windows body region to split into
+        down_windows
+            Number of windows downstream region to split into
+        block_size_mb
+            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
+        use_threads
+            Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
+        sumfunc
+            Summary function to calculate density for window with.
+
+        Returns
+        -------
+        Metagene
+
+        Examples
+        --------
+        >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
+        >>>
+        >>> path = 'path/to/CGmap.txt'
+        >>> metagene = Metagene.from_cgmap(path, genome, up_windows=500, body_windows=1000, down_windows=500)
+        """
+
+        report_reader = CGmapReportReader(
+            report_file=file,
+            genome=genome,
+            upstream_windows=up_windows,
+            body_windows=body_windows,
+            downstream_windows=down_windows,
+            use_threads=use_threads,
+            sumfunc=sumfunc,
+            block_size_mb=block_size_mb
+        )
+
+        report_df = report_reader.read()
+
+        return cls(report_df,
+                   upstream_windows=report_reader.upstream_windows,
+                   gene_windows=report_reader.body_windows,
+                   downstream_windows=report_reader.downstream_windows)
+
+    @classmethod
     def from_parquet(
             cls,
             file: str | Path,
@@ -107,7 +171,7 @@ class Metagene(MetageneBase):
             body_windows: int = 2000,
             down_windows: int = 0,
             use_threads=True,
-            sumfunc: str = "mean"
+            sumfunc: str = "wmean"
     ):
         """
         Constructor for Metagene class from converted ``.bedGraph`` or ``.cov`` (via :class:`Mapper`).
@@ -239,7 +303,7 @@ class Metagene(MetageneBase):
             up_windows: int = 0,
             body_windows: int = 2000,
             down_windows: int = 0,
-            sumfunc: str = "mean",
+            sumfunc: str = "wmean",
             block_size_mb: int = 30,
             use_threads: bool = True,
             save_preprocessed: str = None,
@@ -305,7 +369,7 @@ class Metagene(MetageneBase):
             up_windows: int = 0,
             body_windows: int = 2000,
             down_windows: int = 0,
-            sumfunc: str = "mean",
+            sumfunc: str = "wmean",
             block_size_mb: int = 30,
             use_threads: bool = True,
             save_preprocessed: str = None,
@@ -744,7 +808,6 @@ class Metagene(MetageneBase):
 
 
 # TODO add other type constructors
-# todo add fastcluster to dependencies
 class MetageneFiles(MetageneFilesBase):
     """
     Stores and plots multiple data for :class:`Metagene`.
@@ -1248,7 +1311,7 @@ class MetageneFiles(MetageneFilesBase):
 
         return figure
 
-    def dendrogram(self, q: float = .75):
+    def dendrogram(self, q: float = .75, **kwargs):
         gene_stats = []
         for sample, label in zip(self.samples, self.labels):
             gene_stats.append(
@@ -1274,7 +1337,7 @@ class MetageneFiles(MetageneFilesBase):
             var = matrix.to_numpy().var(1)
             matrix = matrix[var > np.quantile(var, q)]
 
-        fig = sns.clustermap(matrix, row_cluster=True)
+        fig = sns.clustermap(matrix, **kwargs)
         return fig
 
     def cluster(self, count_threshold=5, na_rm: float | None = None):
