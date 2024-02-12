@@ -125,7 +125,7 @@ MetageneSchema = dotdict(dict(
 
 
 class ReportBar(Bar):
-    suffix = "%(progress2mb).2f/%(max2mb)d Mb [Elapsed: %(elapsed_fmt)s | ETA: %(eta_fmt)s]"
+    suffix = "%(progress2mb)d/%(max2mb)d Mb [%(elapsed_fmt)s | ETA: %(eta_fmt)s]"
     fill = "@"
 
     @property

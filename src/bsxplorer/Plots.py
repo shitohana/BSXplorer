@@ -423,7 +423,7 @@ class HeatMap(PlotBase):
 
         order = (
             df.lazy()
-            .groupby(['chr', 'strand', "gene"])
+            .group_by(['chr', 'strand', "gene"], maintain_order=True)
             .agg(
                 stat_expr.alias("order")
             )
@@ -432,7 +432,7 @@ class HeatMap(PlotBase):
         # sort by rows and add row numbers
         hm_data = (
             df.lazy()
-            .groupby(['chr', 'strand', "gene"])
+            .group_by(['chr', 'strand', "gene"], maintain_order=True)
             .agg([pl.col('fragment'), pl.col('sum'), pl.col('count')])
             .with_columns(
                 pl.lit(order).alias("order")
