@@ -17,8 +17,8 @@ from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from plotly import graph_objs as go
 
-from src.bsxplorer import Genome, Metagene, PCA, MetageneFiles, BinomialData, ChrLevels
-from src.bsxplorer.utils import merge_replicates, decompress
+from . import Genome, Metagene, PCA, MetageneFiles, BinomialData, ChrLevels
+from .utils import merge_replicates, decompress
 
 
 def render_template(
