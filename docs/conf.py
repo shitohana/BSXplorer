@@ -30,6 +30,8 @@ autosummary_generate = True
 autodoc_member_order = 'bysource'
 add_module_names = False
 html_short_title = 'BSXplorer Documentation'
+html_favicon = 'images/favicon.ico'
+html_logo = 'images/logo.png'
 
 
 html_theme = 'sphinx_rtd_theme'
