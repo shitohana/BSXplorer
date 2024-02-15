@@ -12,6 +12,26 @@ pip install bsxplorer
 
 # Console usage
 
+- [bsxplorer-metagene](#bsxplorer-metagene) - Create Metagene report
+- [bsxplorer-category](#bsxplorer-category) - Categorize regions by P_cg metric and render HTML-report
+- [bsxplorer-metagene](#bsxplorer-metagene) - Visualize chromosome methylation levels and render HTML-report
+
+## Config file
+
+All console scripts **require configuration file** – tab separated file with columns:
+
+Column **NAMES** should **NOT** be **INCLUDED** in real configuration file.
+| <ins>Group name</ins> | <ins>Path to report</ins> | <ins>Path to annotation</ins> | Flank length | Min region length | Genome type | Report type |
+| --------------------- | ------------------------- | ----------------------------- | ------------ | ----------------- | ----------- | ----------- |
+| Mock | mock-1.CX_report.txt | annotation.gff | 2000 | 0 | gff | bismark |
+| Mock | mock-2.CX_report.txt | annotation.gff | 2000 | 0 | gff | bismark |
+| Infected | infected-1.CX_report.txt | annotation.gff | 2000 | 0 | gff | bismark |
+| Infected | infected-2.CX_report.txt | annotation.gff | 2000 | 0 | gff | bismark |
+
+Columns with <ins>underlined</ins> are required.
+
+Currently only `gff` genome_type and only `bismark` report_type are supported in colsole version of BSXplorer, although you still can read various formats from Python API.
+
 ## bsxplorer-metagene
 
 ```commandline
