@@ -14,3 +14,4 @@ Reference for plotting classes.
     LinePlotFiles
     HeatMap
     HeatMapFiles
+    PCA
