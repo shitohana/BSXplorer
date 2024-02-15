@@ -173,7 +173,7 @@ class LinePlot(PlotBase):
 
         Returns
         -------
-            `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
 
         See Also
         --------
@@ -244,7 +244,7 @@ class LinePlot(PlotBase):
 
         Returns
         -------
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
 
          See Also
         --------
@@ -322,7 +322,7 @@ class LinePlotFiles(MetageneFilesBase):
 
         Returns
         -------
-            `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
 
         See Also
         --------
@@ -367,7 +367,7 @@ class LinePlotFiles(MetageneFilesBase):
 
         Returns
         -------
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
 
         """
 
@@ -400,9 +400,6 @@ class LinePlotFiles(MetageneFilesBase):
             Whether data needs to be compressed.
         merge
             Merge all plots data into single DataFrame with additional column label.
-
-        Returns
-        -------
 
         """
         if merge:
@@ -552,7 +549,7 @@ class HeatMap(PlotBase):
 
         Returns
         -------
-            `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
 
         See Also
         --------
@@ -616,7 +613,7 @@ class HeatMap(PlotBase):
 
         Returns
         -------
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
 
         See Also
         --------
@@ -727,7 +724,7 @@ class HeatMapFiles(MetageneFilesBase):
 
         Returns
         -------
-            `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
 
         See Also
         --------
@@ -802,7 +799,7 @@ class HeatMapFiles(MetageneFilesBase):
 
         Returns
         -------
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
 
         See Also
         --------
@@ -932,7 +929,7 @@ class PCA:
 
         Returns
         -------
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
         data = self._get_pca_data()
 
@@ -956,7 +953,7 @@ class PCA:
 
         Returns
         -------
-            `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
         """
         data = self._get_pca_data()
 
