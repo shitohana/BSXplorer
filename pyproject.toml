@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bsxplorer"
-version = "1.0.0rc3"
+version = "1.0.0rc4"
 authors = [
   { name="shitohana", email="kyudytskiy@gmail.com" },
 ]
