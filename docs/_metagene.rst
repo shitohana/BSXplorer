@@ -3,7 +3,7 @@ Metagene
 
 Metagene calculation and plotting related methods.
 
-.. currentmodule:: bismarkplot
+.. currentmodule:: bsxplorer
 
 .. autosummary::
     :nosignatures:

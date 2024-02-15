@@ -1,4 +1,4 @@
-Welcome to BismarkPlot's documentation!
+Welcome to BSXplorer's documentation!
 =======================================
 This page gives an overview of all public objects, functions and methods.
 

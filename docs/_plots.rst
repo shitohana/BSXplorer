@@ -3,7 +3,7 @@ Plots
 
 Reference for plotting classes.
 
-.. currentmodule:: bismarkplot
+.. currentmodule:: bsxplorer
 
 .. autosummary::
     :nosignatures:

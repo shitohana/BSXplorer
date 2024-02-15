@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import itertools
 import re
 
 import numpy as np
+import packaging.version
 import polars as pl
-from matplotlib import pyplot as plt, colormaps
+from matplotlib import pyplot as plt, colormaps, colors as mcolors
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from pandas import DataFrame as pdDataFrame
 from plotly import graph_objects as go, express as px
 from pyreadr import write_rds
 from scipy.signal import savgol_filter
+from sklearn.decomposition import PCA as PCA_sklearn
 
-from .Base import PlotBase, BismarkFilesBase
+from .Base import PlotBase, MetageneFilesBase
 from .utils import MetageneSchema, interval, remove_extension, prepare_labels
 
 
@@ -30,16 +33,16 @@ class LinePlot(PlotBase):
         self.stat = stat
 
         if merge_strands:
-            bismark_df = self.__merge_strands(bismark_df)
-        plot_data = self.__calculate_plot_data(bismark_df, stat)
+            bismark_df = self._merge_strands(bismark_df)
+        plot_data = self.__calculate_plot_data(bismark_df, stat, self.total_windows)
 
         if not merge_strands:
             if self.strand == '-':
-                plot_data = self.__strand_reverse(plot_data)
+                plot_data = self._strand_reverse(plot_data)
         self.plot_data = plot_data
 
     @staticmethod
-    def __calculate_plot_data(df: pl.DataFrame, stat):
+    def __calculate_plot_data(df: pl.DataFrame, stat, total_windows):
         if stat == "log":
             stat_expr = (pl.col("sum") / pl.col("count")).log1p().mean().exp() - 1
         elif stat == "wlog":
@@ -62,44 +65,45 @@ class LinePlot(PlotBase):
             .sort("fragment")
         )
 
-        # TODO add templating
-        return res
+        contexts = res["context"].unique().to_list()
+
+        template = pl.DataFrame({
+            "fragment": list(range(total_windows)) * len(contexts),
+            "context": list(itertools.chain(*[[c] * (total_windows) for c in contexts])),
+        }, schema={"fragment": res.schema["fragment"], "context": res.schema["context"]})
+
+        joined = template.join(res, on=["fragment", "context"], how="left")
+
+        return joined
 
     @staticmethod
-    def __strand_reverse(df: pl.DataFrame):
-        max_fragment = df["fragment"].max()
-        return df.with_columns((max_fragment - pl.col("fragment")).alias("fragment")).sort("fragment")
-
-    def __merge_strands(self, df: pl.DataFrame):
-        return df.filter(pl.col("strand") == "+").extend(self.__strand_reverse(df.filter(pl.col("strand") == "-")))
-
-
-    @staticmethod
-    def __get_x_y(df, smooth, confidence):
+    def __get_x_y(df, smooth, confidence, stat):
         if 0 < confidence < 1:
+            if not (stat in ["mean", "wmean"]):
+                raise ValueError("Confidence bands available only for mean and wmean stat parameters.")
             df = (
                 df
                 .with_columns(
                     pl.struct(["sum", "count"]).map_elements(
-                        lambda x: interval(x["sum"], x["count"], confidence)
+                        lambda x: interval(x["sum"], x["count"], confidence, True if stat in ["wmean"] else False)
                     ).alias("interval")
                 )
                 .unnest("interval")
                 .select(["fragment", "lower", "density", "upper"])
             )
 
-        data = df["density"]
+        data = df["density"].to_numpy()
 
         polyorder = 3
         window = smooth if smooth > polyorder else polyorder + 1
 
-        if smooth:
+        if smooth and np.isnan(data).sum() == 0:
             data = savgol_filter(data, window, 3, mode='nearest')
 
         lower, upper = None, None
         data = data * 100  # convert to percents
 
-        if 0 < confidence < 1:
+        if (0 < confidence < 1) and np.isnan(data).sum() == 0:
             upper = df["upper"].to_numpy() * 100  # convert to percents
             lower = df["lower"].to_numpy() * 100  # convert to percents
 
@@ -134,7 +138,7 @@ class LinePlot(PlotBase):
             fig_axes: tuple = None,
             smooth: int = 50,
             label: str = "",
-            confidence: int = 0,
+            confidence: float = 0,
             linewidth: float = 1.0,
             linestyle: str = '-',
             major_labels: list[str] = None,
@@ -186,7 +190,7 @@ class LinePlot(PlotBase):
         for context in contexts:
             df = self.plot_data.filter(pl.col("context") == context)
 
-            lower, data, upper = self.__get_x_y(df, smooth, confidence)
+            lower, data, upper = self.__get_x_y(df, smooth, confidence, self.stat)
 
             x = np.arange(len(data))
 
@@ -194,7 +198,7 @@ class LinePlot(PlotBase):
                       label=f"{context}" if not label else f"{label}_{context}",
                       linestyle=linestyle, linewidth=linewidth)
 
-            if 0 < confidence < 1:
+            if (0 < confidence < 1) and np.isnan(data).sum() == 0:
                 axes.fill_between(x, lower, upper, alpha=.2)
 
         self.flank_lines(axes, major_labels, minor_labels, show_border)
@@ -211,7 +215,7 @@ class LinePlot(PlotBase):
             figure: go.Figure = None,
             smooth: int = 50,
             label: str = "",
-            confidence: int = .0,
+            confidence: float = .0,
             major_labels: list[str] = None,
             minor_labels: list[str] = None,
             show_border: bool = True
@@ -251,7 +255,7 @@ class LinePlot(PlotBase):
         for context in contexts:
             df = self.plot_data.filter(pl.col("context") == context)
 
-            lower, data, upper = self.__get_x_y(df, smooth, confidence)
+            lower, data, upper = self.__get_x_y(df, smooth, confidence, self.stat)
 
             x = np.arange(len(data))
 
@@ -278,7 +282,7 @@ class LinePlot(PlotBase):
         return figure
 
 
-class LinePlotFiles(BismarkFilesBase):
+class LinePlotFiles(MetageneFilesBase):
     """Line-plot multiple metagenes"""
 
     def draw_mpl(
@@ -390,11 +394,17 @@ class LinePlotFiles(BismarkFilesBase):
 class HeatMap(PlotBase):
     """Heat-map single metagene"""
 
-    def __init__(self, bismark_df: pl.DataFrame, nrow, order=None, stat="wmean", **kwargs):
+    def __init__(self, bismark_df: pl.DataFrame, nrow, order=None, stat="wmean", merge_strands: bool = True, **kwargs):
         super().__init__(bismark_df, **kwargs)
 
+        if merge_strands:
+            bismark_df = self._merge_strands(bismark_df)
+
         plot_data = self.__calculcate_plot_data(bismark_df, nrow, order, stat)
-        plot_data = self.__strand_reverse(plot_data)
+
+        if not merge_strands:
+            # switch to base strand reverse
+            plot_data = self.__strand_reverse(plot_data)
 
         self.plot_data = plot_data
 
@@ -413,7 +423,7 @@ class HeatMap(PlotBase):
 
         order = (
             df.lazy()
-            .groupby(['chr', 'strand', "gene"])
+            .group_by(['chr', 'strand', "gene"], maintain_order=True)
             .agg(
                 stat_expr.alias("order")
             )
@@ -422,7 +432,7 @@ class HeatMap(PlotBase):
         # sort by rows and add row numbers
         hm_data = (
             df.lazy()
-            .groupby(['chr', 'strand', "gene"])
+            .group_by(['chr', 'strand', "gene"], maintain_order=True)
             .agg([pl.col('fragment'), pl.col('sum'), pl.col('count')])
             .with_columns(
                 pl.lit(order).alias("order")
@@ -442,12 +452,17 @@ class HeatMap(PlotBase):
             )
         )
 
+        template = pl.LazyFrame(data={"row": list(range(nrow))})
+
+        # this is needed because polars changed .lit list behaviour in > 0.20:
+        if packaging.version.parse(pl.__version__) < packaging.version.parse('0.20.0'):
+            template = template.with_columns(pl.lit([list(range(0, self.total_windows))]).alias("fragment"))
+        else:
+            template = template.with_columns(pl.lit(list(range(0, self.total_windows))).alias("fragment"))
+
         # prepare full template
         template = (
-            pl.LazyFrame(data={"row": list(range(nrow))})
-            .with_columns(
-                pl.lit([list(range(0, self.total_windows))]).alias("fragment")
-            )
+            template
             .explode("fragment")
             .with_columns([
                 pl.col("fragment").cast(MetageneSchema.fragment),
@@ -560,7 +575,7 @@ class HeatMap(PlotBase):
                   compress="gzip" if compress else None)
 
 
-class HeatMapFiles(BismarkFilesBase):
+class HeatMapFiles(MetageneFilesBase):
     """Heat-map multiple metagenes"""
 
     def __add_flank_lines_plotly(self, figure: go.Figure, major_labels: list, minor_labels: list, show_border=True):
@@ -690,3 +705,95 @@ class HeatMapFiles(BismarkFilesBase):
         for sample, label in zip(self.samples, self.labels):
             sample.save_plot_rds(f"{remove_extension(base_filename)}_{label}.rds",
                                  compress="gzip" if compress else None)
+
+
+class PCA:
+    def __init__(self):
+        self.region_density = []
+
+        self.mapping = {}
+
+    def append_metagene(self, metagene, label, group):
+        self.region_density.append(
+            metagene.bismark
+            .group_by("gene")
+            .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
+            .with_columns([
+                pl.lit(label).alias("label")
+            ])
+        )
+
+        self.mapping[label] = group
+
+    def _get_pivoted(self):
+        if self.region_density:
+            concated = pl.concat(self.region_density)
+
+            return concated.pivot(values="density",
+                                  index="gene",
+                                  columns="label",
+                                  aggregate_function="mean",
+                                  separator=";").drop_nulls()
+        else:
+            raise ValueError()
+
+    def _get_pca_data(self):
+        pivoted = self._get_pivoted()
+        excluded = pivoted.select(pl.all().exclude("gene"))
+
+        labels = excluded.columns
+        groups = list(map(lambda key: self.mapping[key], labels))
+        matrix = excluded.to_numpy()
+
+        return self.PCA_data(matrix, labels, groups)
+
+    class PCA_data:
+        def __init__(self, matrix: np.ndarray, labels: list[str], groups: list[str]):
+            self.matrix = matrix
+            self.labels = labels
+            self.groups = groups
+
+            pca = PCA_sklearn(n_components=2)
+            fit: PCA_sklearn = pca.fit(matrix)
+
+            self.eigenvectors = fit.components_
+            self.explained_variance = fit.explained_variance_ratio_
+
+    def draw_plotly(self):
+        data = self._get_pca_data()
+
+        x = data.eigenvectors[0, :]
+        y = data.eigenvectors[1, :]
+
+        df = pl.DataFrame({"x": x, "y": y, "group": data.groups, "label": data.labels}).to_pandas()
+        figure = px.scatter(df, x="x", y="y", color="group", text="label")
+
+        figure.update_layout(
+            xaxis_title="PC1: %.2f" % (data.explained_variance[0]*100) + "%",
+            yaxis_title="PC2: %.2f" % (data.explained_variance[1]*100) + "%"
+        )
+
+        return figure
+
+    def draw_mpl(self):
+        data = self._get_pca_data()
+
+        fig, axes = plt.subplots()
+
+        x = data.eigenvectors[:, 0]
+        y = data.eigenvectors[:, 1]
+
+        color_mapping = {label: list(mcolors.TABLEAU_COLORS.keys())[i] for i, label in zip(range(len(set(data.groups))), set(data.groups))}
+
+        for group in set(data.groups):
+            axes.scatter(x[data.groups == group], y[data.groups == group], c=color_mapping[group], label=group)
+
+        axes.set_xlabel("PC1: %.2f" % data.explained_variance[0] + "%")
+        axes.set_ylabel("PC2: %.2f" % data.explained_variance[1] + "%")
+
+        for x, y, label in zip(x, y, data.labels):
+            axes.text(x, y, label)
+
+        axes.legend()
+
+        return fig

@@ -56,7 +56,7 @@ class BinomialData:
         BinomialData
             Instance of Binom class.
         """
-        file = Path(file)
+        file = Path(file).expanduser().absolute()
         if not file.exists(): raise FileNotFoundError()
 
         block_size = (1024 ** 2) * block_size_mb
@@ -74,10 +74,14 @@ class BinomialData:
 
         if report_type == "bismark":
             options = BismarkOptions(use_threads=use_threads, block_size=block_size)
-            options.convert_options.include_columns = ["count_m", "count_um"]
 
-        with CsvReader(file, options) as csv_reader:
-            for batch in csv_reader:
+            get_reader = lambda: CsvReader(file, options)
+        # todo check with another parquet...
+        if report_type == "parquet":
+            get_reader = lambda: ParquetReader(file)
+
+        with get_reader() as reader:
+            for batch in reader:
                 # Update metadata with total distribution stats
                 formatted = cls.__formatters["stats"][report_type](batch)
                 metadata["cytosine_residues"] += len(batch)
@@ -93,9 +97,9 @@ class BinomialData:
         total_probability = metadata["density_sum"] / metadata["cytosine_residues"]
 
         with pq.ParquetWriter(save_path, cls.__schemas["arrow"]["p_value"]) as pq_writer:
-            with CsvReader(file, BismarkOptions(use_threads=use_threads, block_size=block_size)) as csv_reader:
+            with get_reader() as reader:
                 bar = cls.__bar("Calculating p-values", file_size)
-                for batch in csv_reader:
+                for batch in reader:
                     # Calculate density for each cytosine despite its methylation context.
                     formatted = (
                         cls.__formatters["p_value"][report_type](batch)
@@ -157,7 +161,7 @@ class BinomialData:
         --------
         If there no preprocessed file:
 
-        >>> import bismarkplot as bp
+        >>> import bsxplorer as bp
         >>> report_path = "/path/to/report.txt"
         >>> genome_path = "/path/to/genome.gff"
         >>> c_binom = bp.BinomialData.preprocess(report_path, report_type="bismark")
@@ -281,7 +285,17 @@ class BinomialData:
                         .alias("density")
                     ])
                     .filter(pl.col("density").is_not_nan())
-                ).collect()
+                ).collect(),
+            "parquet": lambda batch:
+                (
+                    pl.from_arrow(batch).lazy()
+                    .with_columns([
+                        (pl.col("count_m") / (pl.col("count_m") + pl.col("count_um")))
+                        .cast(pl.Float64)
+                        .alias("density")
+                    ])
+                    .filter(pl.col("density").is_not_nan())
+                ).collect(),
         },
         "p_value": {
             "bismark": lambda batch:
@@ -291,7 +305,15 @@ class BinomialData:
                         (pl.col("count_m") + pl.col("count_um")).cast(pl.Int32).alias("total"),
                         pl.col("count_m").cast(pl.Int32),
                     ])
-                ).collect()
+                ).collect(),
+            "parquet": lambda batch:
+            (
+                pl.from_arrow(batch).lazy()
+                .with_columns([
+                    (pl.col("count_m") + pl.col("count_um")).cast(pl.Int32).alias("total"),
+                    pl.col("count_m").cast(pl.Int32),
+                ])
+            ).collect()
         }
     }
 
@@ -483,8 +505,9 @@ class RegionStat:
             self,
             context: Literal["CG", "CHG", "CHH"] = None,
             p_value: float = .05,
-            min_n: int = 0
-    ) -> tuple[RegionStat, RegionStat, RegionStat]:
+            min_n: int = 0,
+            save: str | Path = None
+    ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
         """
         Categorise regions as BM (Body Methylation), IM (Intermediate Methylated) and UM (Undermethylated) according
         to `Takuno and Gaut <https://doi.org/10.1073/pnas.1215380110>`_
@@ -499,15 +522,15 @@ class RegionStat:
             P-value for operation.
         min_n
             Minimal counts for cytosines methylated in selected context.
+        save
+            Path where files with BM, IM, UM genes will be saved (None if saving not needed).
 
         Returns
         -------
-        tuple[RegionStat, RegionStat, RegionStat]
-            BM, IM, UM :class:`RegionStat`
+        tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]
+            BM, IM, UM :class:`pl.DataFrame`
         """
-        pass
-
-        other_contexts = list({"CG", "CHG", "CHH"} - set(context))
+        other_contexts = list({"CG", "CHG", "CHH"} - set([context]))
         bm = (
             self.filter(context, "<", p_value, min_n)
             .filter(other_contexts[0], ">=", 1 - p_value)
@@ -525,7 +548,11 @@ class RegionStat:
             .filter(other_contexts[1], ">=", 1 - p_value)
         )
 
-        return bm, im, um
+        if save is not None:
+            for df, df_type in zip([bm, im, um], ["BM", "IM", "UM"]):
+                save_path = Path(save)
+                df.save(save_path.with_name(save_path.name + "_" + df_type).with_suffix(".tsv"))
+        return bm.region_stats, im.region_stats, um.region_stats
 
     def __len__(self):
         return len(self.region_stats)

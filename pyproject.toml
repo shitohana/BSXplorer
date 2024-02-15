@@ -3,26 +3,30 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "bismarkplot"
-version = "1.4.1"
+name = "bsxplorer"
+version = "1.0.0rc4"
 authors = [
   { name="shitohana", email="kyudytskiy@gmail.com" },
 ]
 keywords = ['bismark', 'methylation', 'plot', 'bs-seq']
 license = {file = "LICENSE.txt"}
 dependencies = [
-    "matplotlib>=3.7.1",
-    "numpy>=1.24.2",
-    "pandas>=2.0.0",
-    "polars>=0.19.9",
-    "scipy>=1.10.1",
+    "biopython>=1.81",
+    "dynamicTreeCut>=0.1.1",
+    "fastcluster>=1.2.6",
+    "Jinja2>=3.1.2",
+    "matplotlib>=3.8.0",
+    "numba>=0.58.1",
+    "numpy>=1.26.3",
+    "pandas>=2.2.0",
+    "plotly>=5.18.0",
+    "polars>=0.20.7",
+    "progress>=1.6",
     "pyarrow>=13.0.0",
     "pyreadr>=0.4.9",
-    "dynamicTreeCut>=0.1.1",
-    "plotly>=5.18.0",
-    "numba==0.58.1",
-    "biopython==1.81",
-    "progress==1.6"
+    "scikit-learn>=1.4.0",
+    "scipy>=1.12.0",
+    "seaborn>=0.13.2"
 
 ]
 description = "Analytical framework for BS-seq data comparison and visualization"
@@ -36,13 +40,17 @@ classifiers = [
 # dynamic = ["version", "description"]
 
 [project.urls]
-Homepage = "https://github.com/shitohana/BismarkPlot"
-Documentation = "https://shitohana.github.io/BismarkPlot/"
-"Bug Tracker" = "https://github.com/shitohana/BismarkPlot/issues"
+Homepage = "https://github.com/shitohana/BSXplorer"
+Documentation = "https://shitohana.github.io/BSXplorer/"
+"Bug Tracker" = "https://github.com/shitohana/BSXplorer/issues"
 
 [tool.hatch.build]
 exclude = ["/venv", "/dist", "/test", "/docs"]
 
+#[tool.hatch.build.targets.wheel]
+#packages = ["src/bsxplorer"]
+
 [project.scripts]
-bismarkplot-metagene = "bismarkplot.console_metagene:main"
-bismarkplot-chrs = "bismarkplot.console_chrs:main"
+bsxplorer-metagene = "bsxplorer.cons_master:metagene"
+bsxplorer-category = "bsxplorer.cons_master:category"
+bsxplorer-chr = "bsxplorer.cons_master:chr_levels"

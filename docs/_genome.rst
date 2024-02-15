@@ -3,7 +3,7 @@ Genome
 
 Genome class
 
-.. currentmodule:: bismarkplot
+.. currentmodule:: bsxplorer
 
 .. class:: Genome
 
