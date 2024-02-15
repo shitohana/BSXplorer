@@ -173,11 +173,13 @@ class LinePlot(PlotBase):
 
         Returns
         -------
-        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        ``matplotlib.pyplot.Figure``
 
         See Also
         --------
         :doc:`LinePlot example<../../markdowns/test>`
+
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
 
         `matplotlib.pyplot.subplot() <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplot.html#matplotlib.pyplot.subplot>`_ : To create fig, axes
 
@@ -248,9 +250,9 @@ class LinePlot(PlotBase):
 
         See Also
         --------
-            :doc:`LinePlot example<../../markdowns/test>`
+        :doc:`LinePlot example<../../markdowns/test>`
 
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
         figure = go.Figure() if figure is None else figure
@@ -324,10 +326,12 @@ class LinePlotFiles(MetageneFilesBase):
 
         Returns
         -------
-        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        ``matplotlib.pyplot.Figure``
 
         See Also
         --------
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+
         `matplotlib.pyplot.subplot() <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplot.html#matplotlib.pyplot.subplot>`_ : To create fig, axes
 
         `Linestyles <https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html>`_ : For possible linestyles.
@@ -373,7 +377,7 @@ class LinePlotFiles(MetageneFilesBase):
 
         See Also
         --------
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
@@ -554,11 +558,13 @@ class HeatMap(PlotBase):
 
         Returns
         -------
-        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        ``matplotlib.pyplot.Figure``
 
         See Also
         --------
-            `Matplotlib color scales <https://matplotlib.org/stable/users/explain/colors/colormaps.html>`_: For possible colormap ``color_scale`` arguments.
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+
+        `Matplotlib color scales <https://matplotlib.org/stable/users/explain/colors/colormaps.html>`_: For possible colormap ``color_scale`` arguments.
         """
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
@@ -622,9 +628,9 @@ class HeatMap(PlotBase):
 
         See Also
         --------
-            `Plotly color scales <https://plotly.com/python/builtin-colorscales/#builtin-sequential-color-scales>`_: For possible colormap ``color_scale`` arguments.
+        `Plotly color scales <https://plotly.com/python/builtin-colorscales/#builtin-sequential-color-scales>`_: For possible colormap ``color_scale`` arguments.
 
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
@@ -731,11 +737,13 @@ class HeatMapFiles(MetageneFilesBase):
 
         Returns
         -------
-        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        ``matplotlib.pyplot.Figure``
 
         See Also
         --------
-            `Matplotlib color scales <https://matplotlib.org/stable/users/explain/colors/colormaps.html>`_: For possible colormap ``color_scale`` arguments.
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+
+        `Matplotlib color scales <https://matplotlib.org/stable/users/explain/colors/colormaps.html>`_: For possible colormap ``color_scale`` arguments.
         """
 
         plt.clf()
@@ -810,9 +818,9 @@ class HeatMapFiles(MetageneFilesBase):
 
         See Also
         --------
-            `Plotly color scales <https://plotly.com/python/builtin-colorscales/#builtin-sequential-color-scales>`_: For possible colormap ``color_scale`` arguments.
+        `Plotly color scales <https://plotly.com/python/builtin-colorscales/#builtin-sequential-color-scales>`_: For possible colormap ``color_scale`` arguments.
 
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
         minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
@@ -942,7 +950,7 @@ class PCA:
 
         See Also
         --------
-                `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
         data = self._get_pca_data()
 
@@ -970,7 +978,7 @@ class PCA:
 
         See Also
         --------
-            `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
         """
         data = self._get_pca_data()
 
