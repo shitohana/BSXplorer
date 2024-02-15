@@ -244,11 +244,13 @@ class LinePlot(PlotBase):
 
         Returns
         -------
-        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        ``plotly.graph_objects.Figure``
 
          See Also
         --------
             :doc:`LinePlot example<../../markdowns/test>`
+
+            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
         figure = go.Figure() if figure is None else figure
@@ -367,8 +369,11 @@ class LinePlotFiles(MetageneFilesBase):
 
         Returns
         -------
-        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        ``plotly.graph_objects.Figure``
 
+         See Also
+        --------
+            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
@@ -613,11 +618,13 @@ class HeatMap(PlotBase):
 
         Returns
         -------
-        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        ``plotly.graph_objects.Figure``
 
         See Also
         --------
             `Plotly color scales <https://plotly.com/python/builtin-colorscales/#builtin-sequential-color-scales>`_: For possible colormap ``color_scale`` arguments.
+
+            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
@@ -799,11 +806,13 @@ class HeatMapFiles(MetageneFilesBase):
 
         Returns
         -------
-        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        ``plotly.graph_objects.Figure``
 
         See Also
         --------
             `Plotly color scales <https://plotly.com/python/builtin-colorscales/#builtin-sequential-color-scales>`_: For possible colormap ``color_scale`` arguments.
+
+            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
         minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
@@ -929,7 +938,11 @@ class PCA:
 
         Returns
         -------
-        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        ``plotly.graph_objects.Figure``
+
+         See Also
+        --------
+            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
         data = self._get_pca_data()
 
@@ -953,6 +966,9 @@ class PCA:
 
         Returns
         -------
+        ``matplotlib.pyplot.Figure``
+
+        See Also
         `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
         """
         data = self._get_pca_data()
