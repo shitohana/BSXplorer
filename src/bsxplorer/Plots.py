@@ -246,7 +246,7 @@ class LinePlot(PlotBase):
         -------
         ``plotly.graph_objects.Figure``
 
-         See Also
+        See Also
         --------
             :doc:`LinePlot example<../../markdowns/test>`
 
@@ -371,7 +371,7 @@ class LinePlotFiles(MetageneFilesBase):
         -------
         ``plotly.graph_objects.Figure``
 
-         See Also
+        See Also
         --------
             `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
@@ -940,9 +940,9 @@ class PCA:
         -------
         ``plotly.graph_objects.Figure``
 
-         See Also
+        See Also
         --------
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+                `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
         data = self._get_pca_data()
 
@@ -969,7 +969,8 @@ class PCA:
         ``matplotlib.pyplot.Figure``
 
         See Also
-        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        --------
+            `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
         """
         data = self._get_pca_data()
 
