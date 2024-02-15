@@ -4,6 +4,7 @@ import itertools
 import re
 
 import numpy as np
+import packaging.version
 import polars as pl
 from matplotlib import pyplot as plt, colormaps, colors as mcolors
 from matplotlib.axes import Axes
@@ -76,13 +77,15 @@ class LinePlot(PlotBase):
         return joined
 
     @staticmethod
-    def __get_x_y(df, smooth, confidence):
+    def __get_x_y(df, smooth, confidence, stat):
         if 0 < confidence < 1:
+            if not (stat in ["mean", "wmean"]):
+                raise ValueError("Confidence bands available only for mean and wmean stat parameters.")
             df = (
                 df
                 .with_columns(
                     pl.struct(["sum", "count"]).map_elements(
-                        lambda x: interval(x["sum"], x["count"], confidence)
+                        lambda x: interval(x["sum"], x["count"], confidence, True if stat in ["wmean"] else False)
                     ).alias("interval")
                 )
                 .unnest("interval")
@@ -187,7 +190,7 @@ class LinePlot(PlotBase):
         for context in contexts:
             df = self.plot_data.filter(pl.col("context") == context)
 
-            lower, data, upper = self.__get_x_y(df, smooth, confidence)
+            lower, data, upper = self.__get_x_y(df, smooth, confidence, self.stat)
 
             x = np.arange(len(data))
 
@@ -252,7 +255,7 @@ class LinePlot(PlotBase):
         for context in contexts:
             df = self.plot_data.filter(pl.col("context") == context)
 
-            lower, data, upper = self.__get_x_y(df, smooth, confidence)
+            lower, data, upper = self.__get_x_y(df, smooth, confidence, self.stat)
 
             x = np.arange(len(data))
 
@@ -420,7 +423,7 @@ class HeatMap(PlotBase):
 
         order = (
             df.lazy()
-            .groupby(['chr', 'strand', "gene"])
+            .group_by(['chr', 'strand', "gene"], maintain_order=True)
             .agg(
                 stat_expr.alias("order")
             )
@@ -429,7 +432,7 @@ class HeatMap(PlotBase):
         # sort by rows and add row numbers
         hm_data = (
             df.lazy()
-            .groupby(['chr', 'strand', "gene"])
+            .group_by(['chr', 'strand', "gene"], maintain_order=True)
             .agg([pl.col('fragment'), pl.col('sum'), pl.col('count')])
             .with_columns(
                 pl.lit(order).alias("order")
@@ -449,12 +452,17 @@ class HeatMap(PlotBase):
             )
         )
 
+        template = pl.LazyFrame(data={"row": list(range(nrow))})
+
+        # this is needed because polars changed .lit list behaviour in > 0.20:
+        if packaging.version.parse(pl.__version__) < packaging.version.parse('0.20.0'):
+            template = template.with_columns(pl.lit([list(range(0, self.total_windows))]).alias("fragment"))
+        else:
+            template = template.with_columns(pl.lit(list(range(0, self.total_windows))).alias("fragment"))
+
         # prepare full template
         template = (
-            pl.LazyFrame(data={"row": list(range(nrow))})
-            .with_columns(
-                pl.lit([list(range(0, self.total_windows))]).alias("fragment")
-            )
+            template
             .explode("fragment")
             .with_columns([
                 pl.col("fragment").cast(MetageneSchema.fragment),

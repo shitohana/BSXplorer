@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 import numpy as np
 import polars as pl
@@ -11,12 +12,13 @@ from scipy.signal import savgol_filter
 import pyarrow as pa
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.express.colors import qualitative as PALETTE
 from pathlib import Path
 from abc import ABC, abstractmethod
 import warnings
 
 from .utils import interval, decompress, ReportBar
-from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader
+from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader, CGmapOptions
 
 
 class ChrBaseReader(ABC):
@@ -167,6 +169,42 @@ class ChrBismarkReader(ChrBaseReader):
         return pl.from_arrow(batch)
 
 
+class ChrCGmapReader(ChrBaseReader):
+    def __init__(self, block_size_mb: int = 100, use_threads: bool = True, **kwargs):
+        super().__init__(**kwargs)
+
+        self._block_size_mb = block_size_mb
+        self._use_threads = use_threads
+
+    def _batch_size(self) -> int:
+        return self._block_size_mb * (1024 ** 2)
+
+    def _get_reader(self) -> CsvReader | ParquetReader:
+        pool = pa.default_memory_pool()
+        reader = CsvReader(
+            self.report_file,
+            CGmapOptions(use_threads=self._use_threads, block_size=self._batch_size()),
+            memory_pool=pool
+        )
+        pool.release_unused()
+
+        return reader
+
+    def _mutate_batch(self, batch) -> pl.DataFrame:
+        mutated = (
+            pl
+            .from_arrow(batch)
+            .filter(pl.col("count_total") > 0)
+            .with_columns([
+                (pl.col('count_total') - pl.col('count_m')).alias('count_um'),
+                pl.when(pl.col("nuc") == "G").then(pl.lit("-")).otherwise(pl.lit("+")).alias("strand").cast(pl.Categorical)
+            ])
+            .select(["chr", "strand", "position", "context", "count_m", "count_um"])
+        )
+
+        return mutated
+
+
 class ChrParquetReader(ChrBaseReader):
     def _batch_size(self) -> int:
         return int(self.report_file.stat().st_size / self._get_reader().reader.num_row_groups)
@@ -226,6 +264,34 @@ class ChrLevels:
 
         return cls(report_df)
 
+    @classmethod
+    def from_cgmap(
+            cls,
+            file: str | Path,
+            chr_min_length=10 ** 6,
+            window_length: int = 10 ** 6,
+            block_size_mb: int = 100,
+            use_threads: bool = True,
+            confidence: int = None
+    ):
+        """
+        Initialize ChrLevels with CGmap file
+
+        :param file: Path to file
+        :param chr_min_length: Minimum length of chromosome to be analyzed
+        :param window_length: Length of windows in bp
+        """
+        chr_reader = ChrCGmapReader(
+            file=file,
+            chr_min_length=chr_min_length,
+            window_length=window_length,
+            block_size_mb=block_size_mb,
+            use_threads=use_threads,
+            confidence=confidence
+        )
+        report_df = chr_reader.read()
+
+        return cls(report_df)
 
     @classmethod
     def from_parquet(
@@ -359,7 +425,7 @@ class ChrLevels:
         return fig
 
     def draw_plotly(self,
-                    figure: tuple = None,
+                    figure: Figure = None,
                     smooth: int = 10,
                     label: str = None
                     ):
@@ -396,12 +462,22 @@ class ChrLevels:
                 "chr": True,
                 "chr_pos": True,
                 "density": ":.4f"
-            },
+            }
         )
 
-
-
         figure.add_traces(trace_fig.data)
+
+        if label is not None:
+            curent_fig_i = len(figure.data) - 1
+
+            figure.data[curent_fig_i].name = label
+            figure.data[curent_fig_i].showlegend = True
+            figure.data[curent_fig_i].line.color = PALETTE.Dark24[curent_fig_i]
+            figure.data[curent_fig_i].hovertemplate = re.sub(
+                '^<b>.+?</b>',
+                f'<b>{label}</b>',
+                figure.data[curent_fig_i].hovertemplate
+            )
 
         figure.update_layout(
             xaxis_title="Position",

@@ -87,7 +87,7 @@ def hm_flank_lines(axes: Axes, upstream_windows: int, gene_windows: int, downstr
             axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
 
 
-def interval(sum_density: list[int], sum_counts: list[int], alpha=.95):
+def interval(sum_density: list[int], sum_counts: list[int], alpha=.95, weighted: bool =True):
     """
     Evaluate confidence interval for point
 
@@ -98,9 +98,11 @@ def interval(sum_density: list[int], sum_counts: list[int], alpha=.95):
     sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
     average = sum_density.sum() / sum_counts.sum()
 
-    normalized = np.divide(sum_density, sum_counts)
-
-    variance = np.average((normalized - average) ** 2, weights=sum_counts)
+    if weighted:
+        normalized = np.divide(sum_density, sum_counts)
+        variance = np.average((normalized - average) ** 2, weights=sum_counts)
+    else:
+        variance = np.average((sum_density - average) ** 2)
 
     n = sum(sum_counts) - 1
 
@@ -123,7 +125,7 @@ MetageneSchema = dotdict(dict(
 
 
 class ReportBar(Bar):
-    suffix = "%(progress2mb).2f/%(max2mb)d Mb [Elapsed: %(elapsed_fmt)s | ETA: %(eta_fmt)s]"
+    suffix = "%(progress2mb)d/%(max2mb)d Mb [%(elapsed_fmt)s | ETA: %(eta_fmt)s]"
     fill = "@"
 
     @property
