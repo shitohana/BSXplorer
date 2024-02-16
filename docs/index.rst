@@ -5,9 +5,16 @@ This page gives an overview of all public objects, functions and methods.
 
 .. toctree::
     :maxdepth: 1
+    :caption: Scenarios
+
+    markdowns/gettingstarted
+
+
+.. toctree::
+    :maxdepth: 1
     :caption: Tutorials
 
-    markdowns/test
+    markdowns/lineplot
 
 
 .. toctree::

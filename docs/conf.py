@@ -32,8 +32,10 @@ add_module_names = False
 html_short_title = 'BSXplorer Documentation'
 html_favicon = 'images/favicon.ico'
 html_logo = 'images/logo.png'
-
-
+html_static_path = ['_static']
+html_css_files = [
+    'css/custom.css',
+]
 html_theme = 'sphinx_rtd_theme'
 html_show_sourcelink = False
 

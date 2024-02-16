@@ -14,7 +14,7 @@ pip install bsxplorer
 
 - [bsxplorer-metagene](#bsxplorer-metagene) - Create Metagene report
 - [bsxplorer-category](#bsxplorer-category) - Categorize regions by P_cg metric and render HTML-report
-- [bsxplorer-metagene](#bsxplorer-metagene) - Visualize chromosome methylation levels and render HTML-report
+- [bsxplorer-chr](#bsxplorer-chr) - Visualize chromosome methylation levels and render HTML-report
 
 ## Config file
 

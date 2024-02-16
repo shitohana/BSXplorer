@@ -177,7 +177,7 @@ class LinePlot(PlotBase):
 
         See Also
         --------
-        :doc:`LinePlot example<../../markdowns/test>`
+        :doc:`LinePlot example<../../markdowns/lineplot>`
 
         `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
 
@@ -250,7 +250,7 @@ class LinePlot(PlotBase):
 
         See Also
         --------
-        :doc:`LinePlot example<../../markdowns/test>`
+        :doc:`LinePlot example<../../markdowns/lineplot>`
 
         `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
@@ -858,6 +858,20 @@ class HeatMapFiles(MetageneFilesBase):
         return figure
 
     def save_plot_rds(self, base_filename, compress: bool = False):
+        """
+        Save heat-map data in a matrix (ncol:nrow)
+
+        Parameters
+        ----------
+        base_filename
+            Base name for output files. Final will be ``[base_filename]_[label].rds``
+        compress
+            Whether data needs to be compressed.
+
+        Returns
+        -------
+
+        """
         for sample, label in zip(self.samples, self.labels):
             sample.save_plot_rds(f"{remove_extension(base_filename)}_{label}.rds",
                                  compress="gzip" if compress else None)

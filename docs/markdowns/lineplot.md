@@ -1,4 +1,4 @@
-# LinePlot Tutorial
+# Lineplot
 
 This tutorial will explain you how to calculate, visualize and configure line-plots.
 
