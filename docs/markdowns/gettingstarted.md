@@ -2,9 +2,9 @@
 
 This page will give you the overview of the BSXplorer analysis scenarios.
 
-- [Basic usage](gs.Basic_usage)
-- [Contrasting experiments](gs.Contrasting_experiments)
-- [Clustering of methylation patterns](gs.Clustering)
+- [**Basic usage**](gs.Basic_usage)
+- [**Contrasting experiments**](gs.Contrasting_experiments)
+- [**Clustering of methylation patterns**](gs.Clustering)
 
 (gs.Basic_usage)=
 ## Basic Usage
@@ -76,12 +76,12 @@ can be generated with the [**`Metagene.line_plot().draw_mpl()`**](bsxplorer.Line
 filtered.line_plot().draw_mpl(smooth=10)
 ```
 
-![Basic usage - LinePlot](../images/gettingstarted/basic_usage_lp.png)
+![Basic usage - LinePlot](../images/gettingstarted/basic_usage_lp.png){.doc-single-image}
 
 Alternatively, a heatmap representation of the methylation signal density is made available by application of the 
 [**`Metagene.heat_map().draw_mpl()`**](bsxplorer.HeatMap.draw_mpl) method.
 
-![Basic usage - HeatMap](../images/gettingstarted/basic_usage_hm.png)
+![Basic usage - HeatMap](../images/gettingstarted/basic_usage_hm.png){.doc-single-image}
 
 
 (gs.Contrasting_experiments)=
@@ -121,7 +121,7 @@ different species is constructed:
 filtered.line_plot().draw_mpl(smooth=50)
 ```
 
-![Contrasting experiments - LinePlot](../images/gettingstarted/contrasting_lp.png)
+![Contrasting experiments - LinePlot](../images/gettingstarted/contrasting_lp.png){.doc-single-image}
 
 The line plot representation may be further supplemented by a heatmap: 
 
@@ -129,7 +129,7 @@ The line plot representation may be further supplemented by a heatmap:
 filtered.heat_map(100, 100).draw_mpl()
 ```
 
-![Contrasting experiments - HeatMap](../images/gettingstarted/contrasting_hm.png)
+![Contrasting experiments - HeatMap](../images/gettingstarted/contrasting_hm.png){.doc-single-image}
 
 To examine and highlight differences in methylation patterns between different organisms, summary statistics is made available in a graphical format.
 
@@ -138,8 +138,8 @@ filtered.violin_plot()
 filtered.box_plot()
 ```
 
-![Contrasting experiments - ViolinPlot](../images/gettingstarted/contrasting_vp.png)
-![Contrasting experiments - BoxPlot](../images/gettingstarted/contrasting_bp.png)
+![Contrasting experiments - ViolinPlot](../images/gettingstarted/contrasting_vp.png){.doc-double-image}
+![Contrasting experiments - BoxPlot](../images/gettingstarted/contrasting_bp.png){.doc-double-image}
 
 
 (gs.Clustering)=
@@ -168,7 +168,7 @@ arath_clustered = arath_filtered.cluster(count_threshold=5, na_rm=0).all()
 
 To visualise the clustered genes, use the [**`.draw()`**](bsxplorer.ClusterSingle.draw_mpl) method.
 
-![Clustering - All](../images/gettingstarted/clustering_all.png)
+![Clustering - All](../images/gettingstarted/clustering_all.png){.doc-single-image}
 
 To identify gene modules that exhibit similar methylation patterns apply the .modules() function of the Clustering class. This method relies on the dynamicTreeCut algorithm to find modules.
 
@@ -177,4 +177,4 @@ arath_modules = arath_filtered.cluster(count_threshold=5, na_rm=0).kmeans(n_clus
 arath_modules.draw_mpl()
 ```
 
-![Clustering - All](../images/gettingstarted/clustering_modules.png)
+![Clustering - All](../images/gettingstarted/clustering_modules.png){.doc-single-image}

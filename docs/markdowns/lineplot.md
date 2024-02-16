@@ -41,7 +41,7 @@ figure = lp.draw_mpl()
 figure.show()
 ```
 
-![basic line-plot mpl](../images/lineplot/lp_ara_mpl.png)
+![basic line-plot mpl](../images/lineplot/lp_ara_mpl.png){.doc-single-image}
 
 Or for Plotly version
 
@@ -61,7 +61,7 @@ figure = lp.draw_mpl()
 figure.show()
 ```
 
-![multi line-plot mpl](../images/lineplot/ara_multi_mpl.png)
+![multi line-plot mpl](../images/lineplot/ara_multi_mpl.png){.doc-single-image}
 
 And for plotly version
 
@@ -70,7 +70,7 @@ figure = lp.draw_mpl()
 figure.show()
 ```
 
-![multi line-plot plotly](../images/lineplot/ara_multi_plotly.png)
+![multi line-plot plotly](../images/lineplot/ara_multi_plotly.png){.doc-single-image}
 
 
 ### Advanced configuration
@@ -87,7 +87,7 @@ Custom label can be set for line-plot using `label` parameter:
 lp.draw_mpl(label="My custom label")
 ```
 
-![line-plot mpl label](../images/lineplot/ara_custom_label.png)
+![line-plot mpl label](../images/lineplot/ara_custom_label.png){.doc-single-image}
 
 #### `minor_labels` parameter
 
@@ -100,13 +100,13 @@ Set ``[]`` to disable.
 lp.draw_mpl(minor_labels=["-2000kb", "Gene", "+2000kb"])
 ```
 
-![line-plot mpl label](../images/lineplot/ara_minor_labels.png)
+![line-plot mpl label](../images/lineplot/ara_minor_labels.png){.doc-single-image}
 
 ```python
 lp.draw_mpl(minor_labels=[])
 ```
 
-![line-plot mpl label](../images/lineplot/ara_NO_minor_labels.png)
+![line-plot mpl label](../images/lineplot/ara_NO_minor_labels.png){.doc-single-image}
 
 #### `major_labels` parameter
 
@@ -119,10 +119,10 @@ Set ``[]`` to disable.
 lp.draw_mpl(major_labels=["Start", "End"], minor_labels=[])
 ```
 
-![line-plot mpl label](../images/lineplot/ara_major_labels.png)
+![line-plot mpl label](../images/lineplot/ara_major_labels.png){.doc-single-image}
 
 ```python
 lp.draw_mpl(major_labels=[], minor_labels=["-2000kb", "Gene", "+2000kb"])
 ```
 
-![line-plot mpl label](../images/lineplot/ara_NO_major_labels.png)
+![line-plot mpl label](../images/lineplot/ara_NO_major_labels.png){.doc-single-image}

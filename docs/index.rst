@@ -8,6 +8,8 @@ This page gives an overview of all public objects, functions and methods.
     :caption: Scenarios
 
     markdowns/gettingstarted
+    markdowns/eda1nonmodel
+    markdowns/eda2conditions
 
 
 .. toctree::
@@ -25,3 +27,5 @@ This page gives an overview of all public objects, functions and methods.
     _plots
     _binom
     _genome
+    _chr
+    _cluster

@@ -19,6 +19,10 @@ extensions = [
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon'
 ]
+myst_enable_extensions = [
+    "dollarmath",
+    "attrs_inline"
+]
 
 templates_path = ['_templates']
 autodoc_mock_imports = ['polars', 'matplotlib', 'numpy', 'scipy', 'pandas', 'pyarrow', 'pyreadr', 'dynamicTreeCut', 'plotly', 'numba', 'pathlib']
