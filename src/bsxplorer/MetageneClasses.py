@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import multiprocessing
-import os
 import typing
 from pathlib import Path
 from typing import Literal
@@ -15,8 +13,13 @@ import seaborn as sns
 from .Plots import LinePlot, LinePlotFiles, HeatMap, HeatMapFiles
 from .SeqMapper import Mapper, Sequence
 from .Base import (
-    MetageneBase, MetageneFilesBase,
-    BismarkReportReader, ParquetReportReader, BinomReportReader, CGmapReportReader
+    MetageneBase,
+    MetageneFilesBase,
+
+    BismarkReportReader,
+    ParquetReportReader,
+    BinomReportReader,
+    CGmapReportReader
 )
 from .Clusters import ClusterSingle, ClusterMany
 from .utils import MetageneSchema
@@ -239,8 +242,7 @@ class Metagene(MetageneBase):
             body_windows: int = 2000,
             down_windows: int = 0,
             p_value: float = .05,
-            use_threads=True,
-            sumfunc: None = None
+            use_threads=True
     ):
         """
         Constructor for Metagene class from :meth:`BinomialData.preprocess` ``.parquet`` file.
@@ -320,8 +322,6 @@ class Metagene(MetageneBase):
             ``polars.Dataframe`` with gene ranges (from :class:`Genome`)
         sequence
             Path to FASTA genome sequence file.
-        batch_size
-            How many rows to read simultaneously.
         up_windows
             Number of windows upstream region to split into
         body_windows
@@ -334,10 +334,10 @@ class Metagene(MetageneBase):
             Directory for temporary files.
         save_preprocessed
             Does preprocessed file need to be saved
-        skip_rows
-            How many rows to skip from header.
-        cpu
-            How many CPU cores to use.
+        block_size_mb
+            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
+        use_threads
+            Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
 
         Returns
         -------
@@ -348,7 +348,8 @@ class Metagene(MetageneBase):
         >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
         >>>
         >>> path = 'path/to/report.bedGraph'
-        >>> metagene = Metagene.from_bedGraph(path, genome, up_windows=500, body_windows=1000, down_windows=500)
+        >>> sequence = 'path/to/sequence.fa'
+        >>> metagene = Metagene.from_bedGraph(path, genome, sequence, up_windows=500, body_windows=1000, down_windows=500)
         """
         if isinstance(genome, Genome):
             raise TypeError("Genome must be converted into DataFrame (e.g. via Genome.gene_body()).")
@@ -386,8 +387,6 @@ class Metagene(MetageneBase):
             ``polars.Dataframe`` with gene ranges (from :class:`Genome`)
         sequence
             Path to FASTA genome sequence file.
-        batch_size
-            How many rows to read simultaneously.
         up_windows
             Number of windows upstream region to split into
         body_windows
@@ -400,10 +399,10 @@ class Metagene(MetageneBase):
             Directory for temporary files.
         save_preprocessed
             Does preprocessed file need to be saved
-        skip_rows
-            How many rows to skip from header.
-        cpu
-            How many CPU cores to use.
+        block_size_mb
+            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
+        use_threads
+            Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
 
 
         Returns
@@ -416,7 +415,8 @@ class Metagene(MetageneBase):
         >>> path = 'path/to/report.cov'
         >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
         >>>
-        >>> metagene = Metagene.from_coverage(path, genome, up_windows=500, body_windows=1000, down_windows=500)
+        >>> sequence = 'path/to/sequence.fa'
+        >>> metagene = Metagene.from_coverage(path, genome, sequence, up_windows=500, body_windows=1000, down_windows=500)
         """
         if isinstance(genome, Genome):
             raise TypeError("Genome must be converted into DataFrame (e.g. via Genome.gene_body()).")
@@ -448,7 +448,7 @@ class Metagene(MetageneBase):
         chr
             Chromosome name to filter.
         genome
-            DataFrame with annotation to filter with (e.g. from :class:`Genome`)
+            DataFrame with annotation to filter with (from :class:`Genome`)
 
         Returns
         -------
@@ -652,7 +652,7 @@ class Metagene(MetageneBase):
 
         See Also
         -------
-        Clustering : For possible analysis options
+        ClusterSingle : For possible analysis options
         """
 
         return ClusterSingle(self, count_threshold, na_rm)
@@ -677,7 +677,7 @@ class Metagene(MetageneBase):
 
         Returns
         -------
-        src.bismarkplot.LinePlot
+            :class:`LinePlot`
 
         Notes
         -----
@@ -690,6 +690,10 @@ class Metagene(MetageneBase):
         - ``wlog`` - Weighted geometric mean.
 
         - ``qN`` – Return quantile by ``N`` percent (e.g. "``q50``")
+
+        See Also
+        --------
+            :doc:`LinePlot example<../../markdowns/test>`
 
         Examples
         --------
@@ -754,7 +758,7 @@ class Metagene(MetageneBase):
 
         Returns
         -------
-        src.bismarkplot.HeatMap
+            :class:`HeatMap`
 
         Examples
         --------
@@ -827,7 +831,8 @@ class MetageneFiles(MetageneFilesBase):
             report_type: Literal["bismark", "parquet", "binom", "bedGraph", "coverage"] = "bismark",
             block_size_mb: int = 50,
             use_threads: bool = True,
-            sumfunc: str = "wmean"
+            sumfunc: str = "wmean",
+            **kwargs
     ) -> MetageneFiles:
         """
         Create istance of :class:`MetageneFiles` from list of paths.
@@ -837,7 +842,7 @@ class MetageneFiles(MetageneFilesBase):
         filenames
             List of filenames to read from
         genomes
-            Annotation DataFrame or list of DataFrames (may be different annotations)
+            Annotation DataFrame or list of Annotations (may be different annotations)
         labels
             Labels for plots for Metagenes
         up_windows
@@ -852,6 +857,8 @@ class MetageneFiles(MetageneFilesBase):
             Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
         use_threads
             Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
+        sumfunc
+            Summary function to calculate density for window with.
 
         Returns
         -------
@@ -904,14 +911,27 @@ class MetageneFiles(MetageneFilesBase):
             if len(genomes) != len(filenames):
                 raise AttributeError("Number of genomes and filenames provided does not match")
 
+        default_args = dict(
+            up_windows=up_windows,
+            body_windows=body_windows,
+            down_windows=down_windows,
+            use_threads=use_threads
+        )
+
+        if report_type not in ["parquet"]:
+            default_args |= dict(
+                block_size_mb=block_size_mb
+            )
+        if report_type not in ["binom"]:
+            default_args |= dict(
+                sumfunc=sumfunc
+            )
+
         samples: list[Metagene] = []
         for file, genome in zip(filenames, genomes):
-            args = dict(
-                file=file, genome=genome, up_windows=up_windows, body_windows=body_windows, down_windows=down_windows,
-                block_size_mb=block_size_mb, use_threads=use_threads, sumfunc=sumfunc
-            )
-            samples.append(
-                read_fnc[report_type](**args))
+            sample = read_fnc[report_type](file=file, genome=genome, **default_args, **kwargs)
+
+            samples.append(sample)
 
         return cls(samples, labels)
 
@@ -1034,7 +1054,7 @@ class MetageneFiles(MetageneFilesBase):
 
         Returns
         -------
-            Instance of :class:`LinePlotFiles`
+            :class:`LinePlotFiles`
 
         See Also
         --------
@@ -1080,7 +1100,7 @@ class MetageneFiles(MetageneFilesBase):
 
         Returns
         -------
-            Instance of :class:`HeatMapFiles`
+            :class:`HeatMapFiles`
 
         See Also
         --------

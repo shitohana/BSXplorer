@@ -107,10 +107,29 @@ class _ClusterBase(ABC):
 
 
 class ClusterSingle(_ClusterBase):
+    """Class for operating with single sample regions clustering"""
+
     def __init__(self, metagene: MetageneBase, count_threshold=5, na_rm: float | None = None):
         self.matrix, self.names = self._process_metagene(metagene, count_threshold, na_rm)
 
     def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
+        """
+        KMeans clustering on sample regions. Clustering is being made with `sklearn.cluster.KMeans <https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html>`_.
+
+        Parameters
+        ----------
+        n_clusters
+            The number of clusters to generate.
+        n_init
+            Number of times the k-means algorithm is run with different centroid seeds.
+        kwargs
+            See `sklearn.cluster.KMeans <https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html>`_.
+
+        Returns
+        -------
+        :class:`ClusterPlot`
+
+        """
         kmeans = KMeans(n_clusters=n_clusters, n_init=n_init, **kwargs).fit(self.matrix)
 
         print(f"Clustering done in {kmeans.n_iter_} iterations")
@@ -118,6 +137,25 @@ class ClusterSingle(_ClusterBase):
         return ClusterPlot(ClusterData.from_kmeans(kmeans, self.names))
 
     def cut_tree(self, dist_method="euclidean", clust_method="average", cut_height_q=.99, **kwargs):
+        """
+        KMeans clustering on sample regions. Clustering is being made with `dynamicTreeCut.cutreeHybrid <https://github.com/kylessmith/dynamicTreeCut>`_.
+
+        Parameters
+        ----------
+        dist_method
+            Distances calculation metric
+        clust_method
+            Hierarchical clustering method
+        cut_height_q
+            Quantile of leaves height to be cut.
+        kwargs
+            See `dynamicTreeCut <https://github.com/kylessmith/dynamicTreeCut>`_.
+
+        Returns
+        -------
+        :class:`ClusterPlot`
+        """
+
         dist = pdist(self.matrix, metric=dist_method)
         link_matrix = linkage(dist, method=clust_method)
 
@@ -128,6 +166,13 @@ class ClusterSingle(_ClusterBase):
         return ClusterPlot(ClusterData.from_matrix(self.matrix, labels, self.names))
 
     def all(self):
+        """
+        Returns all regions for downstream plotting.
+
+        Returns
+        -------
+        :class:`ClusterPlot`
+        """
         return ClusterPlot(ClusterData(self.matrix, np.arange(len(self.matrix), dtype=np.int64), self.names))
 
 

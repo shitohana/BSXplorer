@@ -114,7 +114,7 @@ class LinePlot(PlotBase):
 
     def save_plot_rds(self, path, compress: bool = False):
         """
-        Saves plot data in a rds DataFrame with columns:
+        Saves plot data in a .Rds DataFrame with columns:
 
         +----------+---------+
         | fragment | density |
@@ -124,8 +124,10 @@ class LinePlot(PlotBase):
 
         Parameters
         ----------
-        :param filename: Path for file.
-        :param compress: Whether to compress to gzip or not.
+        path
+            Path to saved file
+        compress
+            Whether data needs to be compressed.
         """
         df = self.bismark.group_by("fragment").agg(
             (pl.sum("sum") / pl.sum("count")).alias("density")
@@ -146,7 +148,7 @@ class LinePlot(PlotBase):
             show_border: bool = True
     ) -> Figure:
         """
-        Draws line-plot on given axes.
+        Draws line-plot on given matplotlib axes.
 
         Parameters
         ----------
@@ -157,7 +159,7 @@ class LinePlot(PlotBase):
         label
             Label of line on line-plot
         confidence
-            Probability for confidence bands (e.g. 95%)
+            Probability for confidence bands (e.g. 0.95)
         linewidth
             Width of the line
         linestyle
@@ -171,11 +173,13 @@ class LinePlot(PlotBase):
 
         Returns
         -------
-            `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        ``matplotlib.pyplot.Figure``
 
         See Also
         --------
-        :doc:`LinePlot example<../../markdowns/test>`
+        :doc:`LinePlot example<../../markdowns/lineplot>`
+
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
 
         `matplotlib.pyplot.subplot() <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplot.html#matplotlib.pyplot.subplot>`_ : To create fig, axes
 
@@ -232,7 +236,7 @@ class LinePlot(PlotBase):
         label
             Label of line on line-plot
         confidence
-            Probability for confidence bands (e.g. 95%)
+            Probability for confidence bands (e.g. 0.95)
         major_labels
             Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
         minor_labels
@@ -242,8 +246,13 @@ class LinePlot(PlotBase):
 
         Returns
         -------
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        ``plotly.graph_objects.Figure``
 
+        See Also
+        --------
+        :doc:`LinePlot example<../../markdowns/lineplot>`
+
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
         figure = go.Figure() if figure is None else figure
@@ -303,7 +312,7 @@ class LinePlotFiles(MetageneFilesBase):
         smooth
             Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
         confidence
-            Probability for confidence bands (e.g. 95%)
+            Probability for confidence bands (e.g. 0.95)
         linewidth
             Width of the line
         linestyle
@@ -317,10 +326,12 @@ class LinePlotFiles(MetageneFilesBase):
 
         Returns
         -------
-            `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        ``matplotlib.pyplot.Figure``
 
         See Also
         --------
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+
         `matplotlib.pyplot.subplot() <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplot.html#matplotlib.pyplot.subplot>`_ : To create fig, axes
 
         `Linestyles <https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html>`_ : For possible linestyles.
@@ -352,7 +363,7 @@ class LinePlotFiles(MetageneFilesBase):
         smooth
             Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
         confidence
-            Probability for confidence bands (e.g. 95%)
+            Probability for confidence bands (e.g. 0.95)
         major_labels
             Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
         minor_labels
@@ -362,8 +373,11 @@ class LinePlotFiles(MetageneFilesBase):
 
         Returns
         -------
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        ``plotly.graph_objects.Figure``
 
+        See Also
+        --------
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
@@ -378,9 +392,28 @@ class LinePlotFiles(MetageneFilesBase):
         return figure
 
     def save_plot_rds(self, base_filename, compress: bool = False, merge: bool = False):
+        """
+        Saves plot data in a set of .Rds DataFrames with columns:
+
+        +----------+---------+
+        | fragment | density |
+        +==========+=========+
+        | Int      | Float   |
+        +----------+---------+
+
+        Parameters
+        ----------
+        base_filename
+            Base name for output files. Final will be ``[base_filename]_[label].rds``
+        compress
+            Whether data needs to be compressed.
+        merge
+            Merge all plots data into single DataFrame with additional column label.
+
+        """
         if merge:
             merged = pl.concat(
-                [sample.plot_data.lazy().with_columns(pl.lit(label))
+                [sample.plot_data.lazy().with_columns(pl.lit(label).alias("label"))
                  for sample, label in zip(self.samples, self.labels)]
             )
             write_rds(base_filename, merged.to_pandas(),
@@ -501,6 +534,38 @@ class HeatMap(PlotBase):
             minor_labels: list[str] = None,
             show_border: bool = True
     ):
+        """
+        Draws heat-map plot on given matplotlib axes.
+
+        Parameters
+        ----------
+        fig_axes
+            Tuple of (`matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_, `matplotlib.axes.Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes>`_). New are created if ``None``
+        title
+            Title for axis
+        vmin
+            Set minimum value for colorbar explicitly.
+        vmax
+            Set maximum value for colorbar explicitly.
+        color_scale
+            Name of color scale.
+        major_labels
+            Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
+        minor_labels
+            Labels for upstream, body and downstream regions. **Exactly 3** need to be provided. Set ``[]`` to disable.
+        show_border
+            Whether to draw dotted vertical line on body region borders or not.
+
+        Returns
+        -------
+        ``matplotlib.pyplot.Figure``
+
+        See Also
+        --------
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+
+        `Matplotlib color scales <https://matplotlib.org/stable/users/explain/colors/colormaps.html>`_: For possible colormap ``color_scale`` arguments.
+        """
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
         minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
@@ -537,6 +602,36 @@ class HeatMap(PlotBase):
             minor_labels: list[str] = None,
             show_border: bool = True
     ):
+        """
+        Draws heat-map plot on given plotly figure.
+
+        Parameters
+        ----------
+        title
+            Title for axis
+        vmin
+            Set minimum value for colorbar explicitly.
+        vmax
+            Set maximum value for colorbar explicitly.
+        color_scale
+            Name of color scale.
+        major_labels
+            Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
+        minor_labels
+            Labels for upstream, body and downstream regions. **Exactly 3** need to be provided. Set ``[]`` to disable.
+        show_border
+            Whether to draw dotted vertical line on body region borders or not.
+
+        Returns
+        -------
+        ``plotly.graph_objects.Figure``
+
+        See Also
+        --------
+        `Plotly color scales <https://plotly.com/python/builtin-colorscales/#builtin-sequential-color-scales>`_: For possible colormap ``color_scale`` arguments.
+
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        """
 
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
         minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
@@ -570,6 +665,13 @@ class HeatMap(PlotBase):
     def save_plot_rds(self, path, compress: bool = False):
         """
         Save heat-map data in a matrix (ncol:nrow)
+
+        Parameters
+        ----------
+        path
+            Path to saved file
+        compress
+            Whether data needs to be compressed.
         """
         write_rds(path, pdDataFrame(self.plot_data),
                   compress="gzip" if compress else None)
@@ -616,6 +718,34 @@ class HeatMapFiles(MetageneFilesBase):
             minor_labels: list[str] = None,
             show_border: bool = True,
     ):
+        """
+        Draws heat-map plot for all samples.
+
+        Parameters
+        ----------
+        title
+            Title for axis
+        color_scale
+            Name of color scale.
+        major_labels
+            Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
+        minor_labels
+            Labels for upstream, body and downstream regions. **Exactly 3** need to be provided. Set ``[]`` to disable.
+        show_border
+            Whether to draw dotted vertical line on body region borders or not.
+
+
+        Returns
+        -------
+        ``matplotlib.pyplot.Figure``
+
+        See Also
+        --------
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+
+        `Matplotlib color scales <https://matplotlib.org/stable/users/explain/colors/colormaps.html>`_: For possible colormap ``color_scale`` arguments.
+        """
+
         plt.clf()
         if len(self.samples) > 3:
             subplots_y = 2
@@ -666,6 +796,32 @@ class HeatMapFiles(MetageneFilesBase):
             show_border: bool = True,
             facet_cols: int = 3,
     ):
+        """
+        Draws heat-map plot for all samples.
+
+        Parameters
+        ----------
+        title
+            Title for axis
+        color_scale
+            Name of color scale.
+        major_labels
+            Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
+        minor_labels
+            Labels for upstream, body and downstream regions. **Exactly 3** need to be provided. Set ``[]`` to disable.
+        facet_cols
+            How many columns will be in output multiple heat-map grid.
+
+        Returns
+        -------
+        ``plotly.graph_objects.Figure``
+
+        See Also
+        --------
+        `Plotly color scales <https://plotly.com/python/builtin-colorscales/#builtin-sequential-color-scales>`_: For possible colormap ``color_scale`` arguments.
+
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        """
         major_labels = ["TSS", "TES"] if major_labels is None else major_labels
         minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
         samples_matrix = np.stack([sample.plot_data for sample in self.samples])
@@ -702,18 +858,53 @@ class HeatMapFiles(MetageneFilesBase):
         return figure
 
     def save_plot_rds(self, base_filename, compress: bool = False):
+        """
+        Save heat-map data in a matrix (ncol:nrow)
+
+        Parameters
+        ----------
+        base_filename
+            Base name for output files. Final will be ``[base_filename]_[label].rds``
+        compress
+            Whether data needs to be compressed.
+
+        Returns
+        -------
+
+        """
         for sample, label in zip(self.samples, self.labels):
             sample.save_plot_rds(f"{remove_extension(base_filename)}_{label}.rds",
                                  compress="gzip" if compress else None)
 
 
 class PCA:
+    """PCA for samples initialized with same annotation."""
     def __init__(self):
         self.region_density = []
 
         self.mapping = {}
 
     def append_metagene(self, metagene, label, group):
+        """
+        Add metagene to PCA object.
+
+        Parameters
+        ----------
+        metagene
+            Metagene to add.
+        label
+            Label for this appended metagene.
+        group
+            Sample group this metagene belongs to
+
+        Examples
+        --------
+
+        >>> pca = bsxplorer.PCA()
+        >>>
+        >>> metagene = bsxplorer.Metagene.from_bismark(...)
+        >>> pca.append_metagene(metagene, 'control-1', 'control')
+        """
         self.region_density.append(
             metagene.bismark
             .group_by("gene")
@@ -748,6 +939,9 @@ class PCA:
         return self.PCA_data(matrix, labels, groups)
 
     class PCA_data:
+        """
+        PCA data is calculated with `sklearn.decomposition.PCA <https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html>`_
+        """
         def __init__(self, matrix: np.ndarray, labels: list[str], groups: list[str]):
             self.matrix = matrix
             self.labels = labels
@@ -760,6 +954,18 @@ class PCA:
             self.explained_variance = fit.explained_variance_ratio_
 
     def draw_plotly(self):
+        """
+        Draw PCA plot.
+        PCA data is calculated with `sklearn.decomposition.PCA <https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html>`_
+
+        Returns
+        -------
+        ``plotly.graph_objects.Figure``
+
+        See Also
+        --------
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        """
         data = self._get_pca_data()
 
         x = data.eigenvectors[0, :]
@@ -776,6 +982,18 @@ class PCA:
         return figure
 
     def draw_mpl(self):
+        """
+        Draw PCA plot.
+        PCA data is calculated with `sklearn.decomposition.PCA <https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html>`_
+
+        Returns
+        -------
+        ``matplotlib.pyplot.Figure``
+
+        See Also
+        --------
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        """
         data = self._get_pca_data()
 
         fig, axes = plt.subplots()

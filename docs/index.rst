@@ -5,9 +5,19 @@ This page gives an overview of all public objects, functions and methods.
 
 .. toctree::
     :maxdepth: 1
+    :caption: Scenarios
+
+    markdowns/gettingstarted
+    markdowns/eda1nonmodel
+    markdowns/eda2conditions
+    markdowns/eda3contrasting
+
+
+.. toctree::
+    :maxdepth: 1
     :caption: Tutorials
 
-    markdowns/test
+    markdowns/lineplot
 
 
 .. toctree::
@@ -18,3 +28,5 @@ This page gives an overview of all public objects, functions and methods.
     _plots
     _binom
     _genome
+    _chr
+    _cluster

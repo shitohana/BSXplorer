@@ -1,0 +1,16 @@
+.wy-nav-content {
+    height: 100%;
+    max-width: 90%;
+    margin: auto;
+}
+
+.doc-single-image {
+    display: block;
+    width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.doc-double-image {
+    width: 400px;
+}
