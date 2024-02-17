@@ -596,13 +596,15 @@ class Renderer:
     def __init__(self, args: argparse.Namespace):
         self.args = args
 
+        self.__add_plotlyjs = True
+
     def _save_mpl(self, fig: Figure, name: str):
         path = self.args.dir / "plots" / (name + f'.{self.args.export}')
         fig.savefig(path)
 
     @staticmethod
-    def _p2html(fig: go.Figure, full_html=False):
-        return fig.to_html(full_html=full_html)
+    def _p2html(fig: go.Figure, full_html=False, include_plotlyjs=False):
+        return fig.to_html(full_html=full_html, include_plotlyjs=include_plotlyjs, default_width="900px", default_height="675px")
 
     @property
     def _get_filters(self):
@@ -682,8 +684,11 @@ class Renderer:
 
         # Other
         fig = line_plot.draw_plotly(smooth=self.args.smooth, confidence=self.args.confidence, **tick_args)
-        html_plot = TemplatePlot("Line plot", self._p2html(fig))
+        html_plot = TemplatePlot("Line plot", self._p2html(fig, include_plotlyjs=self.__add_plotlyjs))
         context_block.plots.append(html_plot)
+
+        if self.__add_plotlyjs:
+            self.__add_plotlyjs = False
 
         fig = heat_map.draw_plotly(**tick_args)
         html_plot = TemplatePlot("Heat map", self._p2html(fig))
@@ -707,7 +712,7 @@ class Renderer:
         # PCA
         if pca is not None:
             try:
-                pca_plot_data = self._p2html(pca.draw_plotly())
+                pca_plot_data = self._p2html(pca.draw_plotly(), include_plotlyjs=self.__add_plotlyjs)
                 pca_plot = TemplatePlot(
                     data=pca_plot_data
                 )
@@ -717,6 +722,9 @@ class Renderer:
                     plots=[pca_plot]
                 )
                 html_body.context_reports.append(pca_block)
+
+                if self.__add_plotlyjs:
+                    self.__add_plotlyjs = False
             except ValueError:
                 print("Got different annotations. No PCA will be drawn")
 
@@ -778,7 +786,10 @@ class Renderer:
             for level, label in zip(chr_levels_list, labels):
                 level.filter(**filters).draw_plotly(fig, smooth=self.args.smooth, label=label)
 
-            plot_html = TemplatePlot("Line plot", fig.to_html(full_html=False))
+            plot_html = TemplatePlot("Line plot", fig.to_html(full_html=False, include_plotlyjs=self.__add_plotlyjs))
+            if self.__add_plotlyjs:
+                self.__add_plotlyjs = False
+
             context_report.plots.append(plot_html)
             html_body.context_reports.append(context_report)
 

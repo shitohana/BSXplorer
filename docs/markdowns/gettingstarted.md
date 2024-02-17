@@ -3,7 +3,6 @@
 This page will give you the overview of the BSXplorer analysis scenarios.
 
 - [**Basic usage**](gs.Basic_usage)
-- [**Contrasting experiments**](gs.Contrasting_experiments)
 - [**Clustering of methylation patterns**](gs.Clustering)
 
 (gs.Basic_usage)=
@@ -82,64 +81,6 @@ Alternatively, a heatmap representation of the methylation signal density is mad
 [**`Metagene.heat_map().draw_mpl()`**](bsxplorer.HeatMap.draw_mpl) method.
 
 ![Basic usage - HeatMap](../images/gettingstarted/basic_usage_hm.png){.doc-single-image}
-
-
-(gs.Contrasting_experiments)=
-## Contrasting experiments
-
-Start with import of genome annotation data for species of interest.
-
-```python
-arath_genes = bsxplorer.Genome.from_gff("arath_genome.gff").gene_body(min_length=0)
-bradi_genes = bsxplorer.Genome.from_gff("bradi_genome.gff").gene_body(min_length=0)
-mouse_genes = bsxplorer.Genome.from_gff("musmu_genome.gff").gene_body(min_length=0)
-```
-
-Next, read in cytosine reports for each sample separately:
-
-```python
-window_kwargs = dict(up_windows=200, body_windows=400, down_windows=200)
-
-arath_metagene = bsxplorer.Metagene.from_bismark("arath_example.txt", arath_genes, **window_kwargs)
-bradi_metagene = bsxplorer.Metagene.from_bismark("bradi_example.txt", bradi_genes, **window_kwargs)
-musmu_metagene = bsxplorer.Metagene.from_bismark("musmu_example.txt", mouse_genes, **window_kwargs)
-```
-
-To perform comparative analysis, initialize the [**`bsxplorer.MetageneFiles`**](bsxplorer.MetageneFiles) 
-class using metagene data in a vector format, where labels for every organism are provided explicitly.
-
-Next, apply methylation context and strand filters to the input files:
-
-```python
-filtered = files.filter("CG", "+")
-```
-
-Then, a compendium of line plots to guide a comparative analyses of methylation patterns in 
-different species is constructed:
-
-```python
-filtered.line_plot().draw_mpl(smooth=50)
-```
-
-![Contrasting experiments - LinePlot](../images/gettingstarted/contrasting_lp.png){.doc-single-image}
-
-The line plot representation may be further supplemented by a heatmap: 
-
-```python
-filtered.heat_map(100, 100).draw_mpl()
-```
-
-![Contrasting experiments - HeatMap](../images/gettingstarted/contrasting_hm.png){.doc-single-image}
-
-To examine and highlight differences in methylation patterns between different organisms, summary statistics is made available in a graphical format.
-
-```python
-filtered.violin_plot()
-filtered.box_plot()
-```
-
-![Contrasting experiments - ViolinPlot](../images/gettingstarted/contrasting_vp.png){.doc-double-image}
-![Contrasting experiments - BoxPlot](../images/gettingstarted/contrasting_bp.png){.doc-double-image}
 
 
 (gs.Clustering)=

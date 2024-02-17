@@ -6,12 +6,11 @@
 
 .doc-single-image {
     display: block;
-    width: 50%;
+    width: 600px;
     margin-left: auto;
     margin-right: auto;
 }
 
 .doc-double-image {
-    display: block;
-    width: 35%;
+    width: 400px;
 }

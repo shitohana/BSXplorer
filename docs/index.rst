@@ -10,6 +10,7 @@ This page gives an overview of all public objects, functions and methods.
     markdowns/gettingstarted
     markdowns/eda1nonmodel
     markdowns/eda2conditions
+    markdowns/eda3contrasting
 
 
 .. toctree::
