@@ -3,12 +3,13 @@ Cluster
 
 Methods for calculating P-value for cytosine residues or genomic regions.
 
-.. currentmodule:: bsxplorer
+.. currentmodule:: bsxplorer.Clusters
 
 .. autosummary::
     :nosignatures:
-    :toctree: _Binom
+    :toctree: _Cluster
     :template: class.rst
 
-    RegionStat
-    BinomialData
+    ClusterSingle
+    ClusterMany
+    ClusterPlot

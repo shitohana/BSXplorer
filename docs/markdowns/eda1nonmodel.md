@@ -148,7 +148,7 @@ filtered.heat_map(10, 20).draw_mpl(**labels_settings)
 ![EDA1 - Genes_vs_TE HeatMap](../images/eda1nonmodel/g_vs_te_hm.png){.doc-single-image}
 
 The MetageneFiles object has [**`.box_plot()`**](bsxplorer.MetageneFiles.box_plot) and 
-[**`.violin_plot()`**](bsxplorer.MetageneFiles.violun_plot) functions for box plot and violin plot graphs. 
+[**`.violin_plot()`**](bsxplorer.MetageneFiles.violin_plot) functions for box plot and violin plot graphs. 
 The [**`.trim_flank()`**](bsxplorer.MetageneFiles.trim_flank) method analyzes methylation of the body of the region.
 
 ```python

@@ -177,6 +177,8 @@ class ClusterSingle(_ClusterBase):
 
 
 class ClusterMany(_ClusterBase):
+    """Class for operating with multiple samples regions clustering"""
+
     def __init__(self, metagenes: MetageneFilesBase, count_threshold=5, na_rm: float | None = None):
         intersect_list = set.intersection(*[set(metagene.bismark["gene"].to_list()) for metagene in metagenes.samples])
         for i in range(len(metagenes.samples)):
@@ -186,15 +188,59 @@ class ClusterMany(_ClusterBase):
         self.sample_names = metagenes.labels
 
     def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
+        """
+        KMeans clustering on sample regions. Clustering is being made with `sklearn.cluster.KMeans <https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html>`_.
+
+        Parameters
+        ----------
+        n_clusters
+            The number of clusters to generate.
+        n_init
+            Number of times the k-means algorithm is run with different centroid seeds.
+        kwargs
+            See `sklearn.cluster.KMeans <https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html>`_.
+
+        Returns
+        -------
+        :class:`ClusterPlot`
+
+        """
         return ClusterPlot([cluster.kmeans(n_clusters, n_init, **kwargs).data for cluster in self.clusters], self.sample_names)
 
     def cut_tree(self, dist_method="euclidean", clust_method="average", cut_height_q=.99, **kwargs):
+        """
+        KMeans clustering on sample regions. Clustering is being made with `dynamicTreeCut.cutreeHybrid <https://github.com/kylessmith/dynamicTreeCut>`_.
+
+        Parameters
+        ----------
+        dist_method
+            Distances calculation metric
+        clust_method
+            Hierarchical clustering method
+        cut_height_q
+            Quantile of leaves height to be cut.
+        kwargs
+            See `dynamicTreeCut <https://github.com/kylessmith/dynamicTreeCut>`_.
+
+        Returns
+        -------
+        :class:`ClusterPlot`
+        """
+
         return ClusterPlot([
             cluster.cut_tree(dist_method="euclidean", clust_method="average", cut_height_q=.99, **kwargs).data
             for cluster in self.clusters
         ], self.sample_names)
 
     def all(self):
+        """
+        Returns all regions for downstream plotting.
+
+        Returns
+        -------
+        :class:`ClusterPlot`
+        """
+
         return ClusterPlot([cluster.all().data for cluster in self.clusters], self.sample_names)
 
 
@@ -226,6 +272,7 @@ class ClusterData:
 
 
 class ClusterPlot:
+    """Class for plotting cluster data."""
     def __init__(self, data: ClusterData | list[ClusterData], sample_names=None):
         if isinstance(data, list) and len(data) == 1:
             self.data = data[0]
@@ -235,6 +282,15 @@ class ClusterPlot:
         self.sample_names = sample_names
 
     def save_tsv(self, filename: str):
+        """
+        Save labels for regions in a TSV file.
+
+        Parameters
+        ----------
+        filename
+            File name for output file
+        """
+
         filename = Path(filename)
 
         def save(data: ClusterData, path: Path):
@@ -263,7 +319,26 @@ class ClusterPlot:
                 print(
                     f"Found {len(intersection)} intersections between samples with {max(map(len, names))} regions max")
 
-    def draw_mpl(self, method='average', metric='euclidean', cmap: str = "cividis"):
+    def draw_mpl(self, method='average', metric='euclidean', cmap: str = "cividis", **kwargs):
+        """
+        Draws clustermap with seaborn.clustermap.
+
+        Parameters
+        ----------
+        method
+            Method for hierarchical clustering.
+        metric
+            Metric for distance calculation
+        cmap
+            Colormap to use
+        **kwargs
+            ``seaborn.clustermap`` parameters
+
+        See Also
+        --------
+        `seaborn.clustermap <https://seaborn.pydata.org/generated/seaborn.clustermap.html>`_ : For more information about possible parameters
+        """
+
         if isinstance(self.data, list):
             warnings.warn("Matplotlib version of cluster plot is not available for multiple samples")
             return None
@@ -272,10 +347,30 @@ class ClusterPlot:
                 self.data.centers,
                 index=[f"{name} ({count})" for name, count in zip(*np.unique(self.data.labels, return_counts=True))])
 
-            fig = sns.clustermap(df, col_cluster=False, cmap=cmap, method=method, metric=metric)
+            args = dict(col_cluster=False) | kwargs
+            args |= dict(cmap=cmap, method=method, metric=metric)
+
+            fig = sns.clustermap(df, **args)
             return fig
 
     def draw_plotly(self, method='average', metric='euclidean', cmap: str = "cividis"):
+        """
+        Draws clustermap with plotly imshow.
+
+        Parameters
+        ----------
+        method
+            Method for hierarchical clustering.
+        metric
+            Metric for distance calculation
+        cmap
+            Colormap to use
+
+        Returns
+        --------
+        ``plotly.graph_objects.Figure``
+        """
+
         if isinstance(self.data, list):
             # order for first sample
             dist = pdist(self.data[0].centers, metric=metric)

@@ -218,6 +218,13 @@ class ChrParquetReader(ChrBaseReader):
 
 class ChrLevels:
     def __init__(self, df: pl.DataFrame) -> None:
+        """
+        Read report and visualize chromosome methylation levels
+
+        Parameters
+        ----------
+        df
+        """
         self.bismark = df
 
         # delete this in future and change to calculation of plot data
@@ -302,7 +309,7 @@ class ChrLevels:
             confidence: int = None
     ):
         """
-        Initialize ChrLevels with CX_report file
+        Initialize ChrLevels with parquet file
 
         :param file: Path to file
         :param chr_min_length: Minimum length of chromosome to be analyzed
@@ -334,10 +341,20 @@ class ChrLevels:
 
     def filter(self, context: str = None, strand: str = None, chr: str = None):
         """
-        :param context: Methylation context (CG, CHG, CHH) to filter (only one).
-        :param strand: Strand to filter (+ or -).
-        :param chr: Chromosome name to filter.
-        :return: Filtered :class:`Bismark`.
+        Filter chromosome methylation levels data.
+
+        Parameters
+        ----------
+        context
+            Methylation context (CG, CHG, CHH) to filter (only one).
+        strand
+            Strand to filter (+ or -).
+        chr
+            Chromosome name to filter.
+
+        Returns
+        -------
+            :class:`ChrLevels`
         """
         context_filter = self.bismark["context"] == context if context is not None else True
         strand_filter = self.bismark["strand"] == strand if strand is not None else True
@@ -392,6 +409,34 @@ class ChrLevels:
             linewidth: float = 1.0,
             linestyle: str = '-'
     ) -> Figure:
+        """
+        Draws line-plot on given axis.
+
+        Parameters
+        ----------
+        fig_axes
+            Tuple of (`matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_, `matplotlib.axes.Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes>`_). New are created if ``None``
+        smooth
+            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
+        label
+            Label of line on line-plot
+        linewidth
+            Width of the line
+        linestyle
+            Style of the line
+
+        Returns
+        -------
+            ``matplotlib.pyplot.Figure``
+
+        See Also
+        --------
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+
+        `matplotlib.pyplot.subplot() <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplot.html#matplotlib.pyplot.subplot>`_ : To create fig, axes
+
+        `Linestyles <https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html>`_ : For possible linestyles.
+        """
         if fig_axes is None:
             fig, axes = plt.subplots()
         else:
@@ -429,6 +474,27 @@ class ChrLevels:
                     smooth: int = 10,
                     label: str = None
                     ):
+        """
+        Draws line-plot on given figure.
+
+
+        Parameters
+        ----------
+        figure
+            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_. New is created if ``None``
+        smooth
+            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
+        label
+            Label of line on line-plot
+
+        Returns
+        -------
+        ``plotly.graph_objects.Figure``
+
+        See Also
+        --------
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        """
         if figure is None:
             figure = go.Figure()
 

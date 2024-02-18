@@ -1,14 +1,36 @@
 ChrLevels
 =========
 
-Methods for calculating P-value for cytosine residues or genomic regions.
+ChrLevels class.
 
 .. currentmodule:: bsxplorer
 
-.. autosummary::
-    :nosignatures:
-    :toctree: _Binom
-    :template: class.rst
+.. class:: ChrLevels
 
-    RegionStat
-    BinomialData
+    .. rubric:: Methods
+
+   .. autosummary::
+    :nosignatures:
+    :toctree: _ChrLevels/_method
+    :template: method.rst
+
+         ~ChrLevels.from_bismark
+
+
+         ~ChrLevels.from_cgmap
+
+
+         ~ChrLevels.from_parquet
+
+
+         ~ChrLevels.save_plot_rds
+
+
+         ~ChrLevels.filter
+
+
+         ~ChrLevels.draw_mpl
+
+
+         ~ChrLevels.draw_plotly
+
