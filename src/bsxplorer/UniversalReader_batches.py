@@ -60,8 +60,32 @@ class BedGraphBatch(ConvertedBatch):
             ])
             .cast(cls.pl_schema())
         )
-        return converted
+        return cls(converted)
 
+
+class CoverageBatch(ConvertedBatch):
+    @classmethod
+    def pl_schema(cls):
+        return OrderedDict(
+            chr=pl.Utf8,
+            start=pl.UInt64,
+            end=pl.UInt64,
+            density=pl.Float64
+        )
+
+    @classmethod
+    def from_full(cls, full_batch: FullSchemaBatch):
+        converted = (
+            full_batch.data
+            .filter(pl.col("count_total") != 0)
+            .select([
+                "chr",
+                (pl.col("position")).alias("start"),
+                (pl.col("position")).alias("end"),
+                (pl.col("count_m"))
+            ])
+        )
+        return cls(converted)
 
 # todo write other
 
@@ -82,15 +106,9 @@ class FullSchemaBatch(BaseBatch):
     def __init__(self, data: pl.DataFrame):
         super().__init__(data)
 
-    # def to_coverage(self):
-    #     converted = (
-    #         self.data
-    #         .filter(pl.col("count_total") != 0)
-    #         .select([
-    #             "chr",
-    #             (pl.col("position")).alias("start"),
-    #             (pl.col("position")).alias("end"),
-    #             (pl.col(count_m))
-    #         ])
-    #     )
+    def to_coverage(self):
+        return CoverageBatch(self.data)
+
+    def to_bedGraph(self):
+        return BedGraphBatch(self.data)
 
