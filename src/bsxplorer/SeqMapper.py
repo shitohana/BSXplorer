@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import gzip
 import io
+import itertools
 import os
 import shutil
 import tempfile
@@ -131,9 +132,10 @@ class Sequence:
     def cytosine_file_schema(self):
         return pa.schema([
             ("position", pa.int32()),
-            ("context", pa.dictionary(pa.int8(), pa.utf8())),
+            ("context", pa.dictionary(pa.int16(), pa.utf8())),
             ("chr", pa.dictionary(pa.int8(), pa.utf8())),
-            ("strand", pa.bool_())])
+            ("strand", pa.bool_())
+        ])
 
     def __infer_schema_table(self, handle: io.TextIOBase):
         """
@@ -144,10 +146,19 @@ class Sequence:
         handle.seek(0)
         schema = self.cytosine_file_schema
 
+        nuc_symbols = ["A", "C", "G", "T", "U", "R", "Y", "K", "M", "S", "W", "B", "D", "H", "V", "N"]
+        possible_trinuc = ["C" + "".join(product) for product in itertools.product(nuc_symbols, repeat=2)]
+
         # get all chromosome names to categorise them
         chrom_ids = [record.id for record in seqio.parse(handle, format="fasta")]
-        # longer list for length be allways greater than chroms or contexts
-        chrom_ids += [str(chrom_ids[0])] * 3
+
+        len_diff = len(possible_trinuc) - len(chrom_ids)
+        if len_diff > 0:
+            chrom_ids += [chrom_ids[0]] * len_diff
+        elif len_diff == 0:
+            pass
+        else:
+            possible_trinuc += [possible_trinuc[0]] * (-len_diff)
 
         # init other rows of table
         contexts = ["CG", "CHG", "CHH"]
@@ -180,7 +191,7 @@ class Sequence:
 
             # convert into arrow  table
             arrow_table = pa.Table.from_arrays(
-                arrays=[positions, trinuc, [record.id for _ in positions], [True for _ in positions]],
+                arrays=[positions, trinuc, [record.id] * len(positions), [True] * len(positions)],
                 schema=self.cytosine_file_schema
             )
             # unify dictionary keys with dummy table
@@ -322,7 +333,7 @@ class Mapper:
                 # arrow table aligned to genome
                 filtered_lazy = batch.lazy().filter(pl.col("chr") == chrom)
                 filtered_aligned = cls.__map_with_sequence(filtered_lazy, chrom_genome)
-                print(len(chrom_genome))
+
                 if mutations is not None:
                     filtered_aligned = filtered_aligned.with_columns(mutations)
 
@@ -448,7 +459,7 @@ class Mapper:
         path = Path(path)
         print(f"Started reading coverage file from {path}")
 
-        coverage_reader = CsvReader(report_file, CoverageOptions(use_threads, block_size_mb * 1024**2))
+        coverage_reader = CsvReader(file.name, CoverageOptions(use_threads, block_size_mb * 1024**2))
 
         mutations = [
             (pl.col("count_m") + pl.col("count_um")).alias("count_total")

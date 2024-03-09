@@ -4,6 +4,7 @@ import gzip
 import re
 import shutil
 import tempfile
+from collections import OrderedDict
 from os.path import getsize
 from pathlib import Path
 from typing import Literal
@@ -98,6 +99,7 @@ def interval(sum_density: list[int], sum_counts: list[int], alpha=.95, weighted:
     sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
     average = sum_density.sum() / sum_counts.sum()
 
+    normalized = None
     if weighted:
         normalized = np.divide(sum_density, sum_counts)
         variance = np.average((normalized - average) ** 2, weights=sum_counts)
@@ -105,7 +107,25 @@ def interval(sum_density: list[int], sum_counts: list[int], alpha=.95, weighted:
         variance = np.average((sum_density - average) ** 2)
 
     n = sum(sum_counts) - 1
+    i = stats.t.interval(alpha, df=n, loc=normalized if weighted else average, scale=np.sqrt(variance / n))
 
+    return {"lower": i[0], "upper": i[1]}
+
+
+def interval_chr(sum_density: list[int], sum_counts: list[int], alpha=.95):
+    """
+    Evaluate confidence interval for point
+
+    :param sum_density: Sums of methylated counts in fragment
+    :param sum_counts: Sums of all read cytosines in fragment
+    :param alpha: Probability for confidence band
+    """
+    sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
+    average = sum_density.sum() / len(sum_counts)
+
+    variance = np.average((sum_density - average) ** 2)
+
+    n = sum(sum_counts) - 1
     i = stats.t.interval(alpha, df=n, loc=average, scale=np.sqrt(variance / n))
 
     return {"lower": i[0], "upper": i[1]}
@@ -235,3 +255,29 @@ def merge_replicates(
 
     print("\nDONE")
     return temp_parquet
+
+polars2arrow = {
+    pl.Int8: pa.int8(),
+    pl.Int16: pa.int16(),
+    pl.Int32: pa.int32(),
+    pl.Int64: pa.int64(),
+    pl.UInt8: pa.uint8(),
+    pl.UInt16: pa.uint16(),
+    pl.UInt32: pa.uint32(),
+    pl.UInt64: pa.uint64(),
+    pl.Float32: pa.float32(),
+    pl.Float64: pa.float64(),
+    pl.Boolean: pa.bool_(),
+    pl.Binary: pa.binary(),
+    pl.Utf8: pa.utf8()
+}
+
+arrow2polars = {value: key for key, value in polars2arrow.items()}
+
+def polars2arrow_convert(pl_schema: OrderedDict):
+    if pl.Categorical in pl_schema.values():
+        raise ValueError("You should write schema for Categorical manually")
+    pa_schema = pa.schema([
+        (key, polars2arrow[value]) for key, value in pl_schema.items()
+    ])
+    return pa_schema

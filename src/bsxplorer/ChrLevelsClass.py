@@ -17,7 +17,7 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 import warnings
 
-from .utils import interval, decompress, ReportBar
+from .utils import interval, decompress, ReportBar, interval_chr
 from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader, CGmapOptions
 
 
@@ -26,7 +26,7 @@ class ChrBaseReader(ABC):
         file: str | Path,
         chr_min_length=10 ** 6,
         window_length: int = 10 ** 6,
-        confidence: int = None
+        confidence: float = None
     ):
         self.report_file    = file
         self.chr_min_length = chr_min_length
@@ -93,7 +93,7 @@ class ChrBaseReader(ABC):
         if confidence is not None and confidence > 0:
             DATA_COLS.append(
                 pl.struct(["density", "count"])
-                .map_elements(lambda x: interval(x.struct.field("density"), x.struct.field("count"), confidence))
+                .map_elements(lambda x: interval_chr(x.struct.field("density"), x.struct.field("count"), confidence))
                 .alias("interval")
             )
         df = (
@@ -233,14 +233,21 @@ class ChrLevels:
 
     @staticmethod
     def __calculate_plot_data(df: pl.DataFrame):
+        group_cols = [pl.sum("sum"), pl.sum("count"), pl.first("chr_pos")]
+        mut_cols = [(pl.col("sum") / pl.col("count")).alias("density")]
+
+        if "upper" in df.columns:
+            group_cols += [pl.mean("upper"), pl.mean("lower")]
+
         return (
             df
             .sort(["chr", "window"])
             .group_by(["chr", "window"], maintain_order=True)
-            .agg([pl.sum("sum"), pl.sum("count"), pl.first("chr_pos")])
+            .agg(group_cols)
             .with_row_count("fragment")
-            .with_columns((pl.col("sum") / pl.col("count")).alias("density"))
+            .with_columns(mut_cols)
         )
+
 
     @classmethod
     def from_bismark(
@@ -444,6 +451,11 @@ class ChrLevels:
 
         data = self.plot_data["density"].to_numpy()
 
+        upper, lower = None, None
+        if "upper" in self.plot_data.columns and np.isnan(data).sum() == 0:
+            upper = self.plot_data["upper"].to_numpy() # convert to percents
+            lower = self.plot_data["lower"].to_numpy()
+
         polyorder = 3
         window = smooth if smooth > polyorder else polyorder + 1
 
@@ -454,10 +466,16 @@ class ChrLevels:
 
             data = np.concatenate(data_ranges)
 
+            if upper is not None:
+                upper = np.concatenate([savgol_filter(r, window, 3, mode="nearest") for r in [upper[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]])
+                lower = np.concatenate([savgol_filter(r, window, 3, mode="nearest") for r in [lower[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]])
+
         x = np.arange(len(data))
         data = data * 100  # convert to percents
         axes.plot(x, data, label=label,
                   linestyle=linestyle, linewidth=linewidth)
+        if upper is not None:
+            axes.fill_between(x, lower * 100, upper * 100, alpha=.2)
 
         axes.legend()
         axes.set_ylabel('Methylation density, %')
