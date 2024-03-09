@@ -14,6 +14,7 @@ from pyarrow import csv as pcsv, parquet as pq
 
 from .SeqMapper import Sequence
 from .UniversalReader_batches import FullSchemaBatch
+from .utils import ReportBar
 
 
 class ArrowReaderBase(ABC, object):
@@ -317,6 +318,8 @@ class UniversalReader(object):
         elif report_type == "parquet":
             pass
 
+        self.bar = None
+
     def __validate(self, file, report_type):
         file = Path(file).expanduser().absolute()
         if not file.exists():
@@ -350,11 +353,16 @@ class UniversalReader(object):
 
     def __iter__(self):
         self.reader.__next__()
+        self.bar = ReportBar(max=Path(self.file).stat().st_size)
         return self
 
     def __next__(self) -> FullSchemaBatch:
         next_batch = self.reader.__next__()
         converted = cast2full_batch(next_batch, self.report_type)
+
+        if self.bar is not None:
+            self.bar.next(self.batch_size)
+
         return converted
 
     @property
