@@ -4,6 +4,10 @@ Analytical framework for BS-seq data comparison and visualization.
 
 For Python API reference manual and tutorials visit: https://shitohana.github.io/BSXplorer.
 
+# How to cite
+
+Yuditskiy, K., Bezdvornykh, I., Kazantseva, A. et al. BSXplorer: analytical framework for exploratory analysis of BS-seq data. BMC Bioinformatics 25, 96 (2024). https://doi.org/10.1186/s12859-024-05722-9
+
 # Installation
 
 ```commandline
