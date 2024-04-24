@@ -349,6 +349,7 @@ class UniversalReader(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.__decompressed is not None:
             self.__decompressed.close()
+        self.bar.finish()
         self.reader.__exit__(exc_type, exc_val, exc_tb)
 
     def __iter__(self):
