@@ -17,6 +17,11 @@ from .UniversalReader_batches import FullSchemaBatch
 from .utils import ReportBar
 
 
+def invalid_row_handler(row):
+    print(f"Got invalid row: {row}")
+    return("skip")
+
+
 class ArrowReaderBase(ABC, object):
     def __enter__(self):
         return self
@@ -66,27 +71,33 @@ class ArrowReaderCSV(ArrowReaderBase):
 
     def get_reader(
             self,
-            read_kwargs=None,
-            parse_kwargs=None,
-            convert_kwargs=None,
+            read_options: pcsv.ReadOptions = None,
+            parse_options: pcsv.ParseOptions = None,
+            convert_options: pcsv.ConvertOptions = None,
             memory_pool=None
     ) -> pcsv.CSVStreamingReader:
-        read_kwargs = {} if read_kwargs is None else read_kwargs
-        parse_kwargs = {} if parse_kwargs is None else parse_kwargs
-        convert_kwargs = {} if convert_kwargs is None else convert_kwargs
 
-        reader = pcsv.open_csv(
-            self.file,
-            self.read_options(**read_kwargs),
-            self.parse_options(**parse_kwargs),
-            self.convert_options(**convert_kwargs),
-            memory_pool
-        )
+        try:
+            reader = pcsv.open_csv(
+                self.file,
+                read_options,
+                parse_options,
+                convert_options,
+                memory_pool
+            )
+        except pa.ArrowInvalid as e:
+            print(f"Error opening file: {self.file}")
+            raise e
+
         return reader
 
     def next_raw(self) -> pa.RecordBatch:
         old_batch = self._current_batch
-        self._current_batch = self.reader.read_next_batch()
+        try:
+            self._current_batch = self.reader.read_next_batch()
+        except pa.ArrowInvalid as e:
+            print(e)
+            return self.next_raw()
         if self._current_batch.num_rows != 0:
             return old_batch
         raise StopIteration()
@@ -142,7 +153,9 @@ class BismarkReader(ArrowReaderCSV):
 
         super().__init__(file, block_size_mb)
         self.reader = self.get_reader(
-            read_kwargs=dict(use_threads=use_threads, block_size=self.batch_size),
+            self.read_options(use_threads=use_threads, block_size=self.batch_size),
+            self.parse_options(),
+            self.convert_options(),
             memory_pool=memory_pool
         )
 
@@ -188,7 +201,9 @@ class CoverageReader(ArrowReaderCSV):
     ):
         super().__init__(file, block_size_mb)
         self.reader = self.get_reader(
-            read_kwargs=dict(use_threads=use_threads, block_size=self.batch_size),
+            self.read_options(use_threads=use_threads, block_size=self.batch_size),
+            self.parse_options(),
+            self.convert_options(),
             memory_pool=memory_pool
         )
 

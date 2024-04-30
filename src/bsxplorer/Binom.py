@@ -196,6 +196,7 @@ class BinomialData:
         # Format genome
         pl.enable_string_cache()
         genome = genome.cast({k: v for k, v in self.__schemas["polars"]["p_value"].items() if k in genome.columns})
+        genome = genome.rename({"strand": "gene_strand"})
 
         metadata = pl.DataFrame(schema={"context":    self.__schemas["polars"]["p_value"]["context"],
                                         "methylated": pl.Int64,
@@ -228,14 +229,16 @@ class BinomialData:
                     .join_asof(genome.lazy(),
                                left_on="position", right_on="start",
                                strategy="backward",
-                               by=["chr", "strand"])
+                               by=["chr"])
                     .filter(pl.col("position") <= pl.col("end"))
+                    .filter(((pl.col("gene_strand") != ".") & (pl.col("gene_strand") == pl.col("strand"))) | (pl.col("gene_strand") == "."))
                     .filter(pl.col("start").is_not_nan())
-                    .group_by(["chr", "strand", "start", "end", "id", "context"], maintain_order=True)
+                    .group_by(["chr", "gene_strand", "start", "end", "id", "context"], maintain_order=True)
                     .agg([
                         pl.col("methylated").sum().cast(pl.Int64),
                         pl.count("position").alias("total").cast(pl.Int64)
                     ])
+                    .rename({"gene_strand": "strand"})
                     .collect()
                 )
 

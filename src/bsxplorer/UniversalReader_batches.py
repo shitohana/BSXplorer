@@ -8,6 +8,7 @@ import pyarrow as pa
 
 from .utils import polars2arrow_convert
 
+
 class BaseBatch(ABC):
     def __init__(self, df: pl.DataFrame):
         self.validate_schema(df)

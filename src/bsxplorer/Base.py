@@ -204,7 +204,7 @@ class PlotBase(MetageneBase):
         return axes
 
     def _merge_strands(self, df: pl.DataFrame):
-        return df.filter(pl.col("strand") == "+").extend(self._strand_reverse(df.filter(pl.col("strand") == "-")))
+        return df.filter(pl.col("strand") != "-").extend(self._strand_reverse(df.filter(pl.col("strand") == "-")))
 
     @staticmethod
     def _strand_reverse(df: pl.DataFrame):
@@ -315,8 +315,7 @@ class ReportReader(ABC):
         # *** POLARS EXPRESSIONS ***
         # cast genome columns to type to join
         GENE_COLUMNS = [
-            pl.col('strand').cast(MetageneSchema["strand"]),
-            pl.col('chr').cast(MetageneSchema["chr"])
+            pl.col('strand').cast(MetageneSchema["strand"])
         ]
         # upstream region position check
         UP_REGION = pl.col('position') < pl.col('start')
@@ -338,22 +337,31 @@ class ReportReader(ABC):
         # Sum and count of densities was calculated for further weighted mean analysis in respect to fragment size
         # For backwards compatibility, for newly introduces statistics, column names are kept the same.
         # Count is set to 1 and "sum" to actual statistics (e.g. median, min, e.t.c)
+        AGG_EXPR = [pl.lit(1).alias("count"), pl.first("gene_strand").alias("strand")]
         if sumfunc == "median":
-            AGG_EXPR = [pl.median("density").alias("sum"), pl.lit(1).alias("count")]
+            AGG_EXPR.append(pl.median("density").alias("sum"))
         elif sumfunc == "min":
-            AGG_EXPR = [pl.min("density").alias("sum"), pl.lit(1).alias("count")]
+            AGG_EXPR.append(pl.min("density").alias("sum"))
         elif sumfunc == "max":
-            AGG_EXPR = [pl.max("density").alias("sum"), pl.lit(1).alias("count")]
+            AGG_EXPR.append(pl.max("density").alias("sum"))
         elif sumfunc == "1pgeom":
-            AGG_EXPR = [(pl.col("density").log1p().mean().exp() - 1).alias("sum"),
-                        pl.lit(1).alias("count")]
+            AGG_EXPR.append((pl.col("density").log1p().mean().exp() - 1).alias("sum"))
         elif sumfunc == "mean":
-            AGG_EXPR = [pl.mean("density").alias("sum"), pl.lit(1).alias("count")]
+            AGG_EXPR.append(pl.mean("density").alias("sum"))
         else:
-            AGG_EXPR = [pl.sum('density').alias('sum'), pl.count('density').alias('count')]
+            AGG_EXPR.append(pl.sum('density').alias('sum'))
+
 
         processed = (
             df.lazy()
+            # sort by position for joining
+            .sort(['chr', 'position'])
+            .cast({"chr": pl.Utf8})
+            # join with nearest
+            .join_asof(
+                genome.lazy().with_columns(GENE_COLUMNS).rename({"strand": "gene_strand"}),
+                left_on='position', right_on='upstream', by='chr', strategy="backward"
+            )
             # assign types
             # calculate density for each cytosine
             .with_columns([
@@ -362,15 +370,10 @@ class ReportReader(ABC):
                 pl.col('strand').cast(MetageneSchema["strand"]),
                 pl.col('context').cast(MetageneSchema["context"]),
             ])
-            # sort by position for joining
-            .sort(['chr', 'strand', 'position'])
-            # join with nearest
-            .join_asof(
-                genome.lazy().with_columns(GENE_COLUMNS),
-                left_on='position', right_on='upstream', by=['chr', 'strand']
-            )
             # limit by end of region
             .filter(pl.col('position') <= pl.col('downstream'))
+            # filter by strand if it is defined
+            .filter(((pl.col("gene_strand") != ".") & (pl.col("gene_strand") == pl.col("strand"))) | (pl.col("gene_strand") == "."))
             # calculate fragment ids
             .with_columns([
                 pl.when(UP_REGION).then(UP_FRAGMENT)
@@ -388,7 +391,7 @@ class ReportReader(ABC):
                 pl.col('id').cast(MetageneSchema["id"])
             ])
             # gather fragment stats
-            .groupby(by=['chr', 'strand', 'start', 'gene', 'context', 'id', 'fragment'])
+            .groupby(by=['chr', 'start', 'gene', 'context', 'id', 'fragment'])
             .agg(AGG_EXPR)
             .drop_nulls(subset=['sum'])
         ).collect()

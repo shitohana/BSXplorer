@@ -29,7 +29,7 @@ class Genome:
                     start_col: int = 1,
                     end_col: int = 2,
                     id_col: int = None,
-                    strand_col: int = 5,
+                    strand_col: int | None = 5,
                     type_col: int = None,
                     comment_char: str = "#",
                     has_header: bool = False) -> Genome:
@@ -67,7 +67,7 @@ class Genome:
             Instance of :class:`Genome`
         """
 
-        if sum([val is None for val in [chr_col, strand_col, start_col, end_col]]) > 0:
+        if any(val is None for val in [chr_col, start_col, end_col]):
             raise Exception("All position columns need to be specified!")
 
         genes = (
@@ -80,12 +80,12 @@ class Genome:
         )
         cols = genes.columns
         select_cols = [
-            pl.col(cols[chr_col]).alias("chr").cast(pl.Utf8),
-            pl.col(cols[type_col]).alias("type") if type_col is not None else pl.lit(None).alias("type"),
-            pl.col(cols[start_col]).alias("start").cast(MetageneSchema.position),
-            pl.col(cols[end_col]).alias("end").cast(MetageneSchema.position),
-            pl.col(cols[strand_col]).alias("strand"),
-            pl.col(cols[id_col]).alias("id") if id_col is not None else pl.lit("").alias("id"),
+            pl.col(cols[chr_col]).cast(pl.Utf8).alias("chr"),
+            (pl.col(cols[type_col]) if type_col is not None else pl.lit(None)).alias("type"),
+            pl.col(cols[start_col]).cast(MetageneSchema.position).alias("start"),
+            pl.col(cols[end_col]).cast(MetageneSchema.position).alias("end"),
+            (pl.col(cols[strand_col]) if strand_col is not None else pl.lit(".")).alias("strand"),
+            (pl.col(cols[id_col]) if id_col is not None else pl.lit("")).cast(pl.Categorical).alias("id"),
         ]
 
         genes = genes.with_columns(select_cols).select(["chr", "type", "start", "end", "strand", "id"]).sort(["chr", "start"])
@@ -154,8 +154,8 @@ class Genome:
         """
 
         genes = self.__filter_genes(
-            self.genome, None, min_length, flank_length)
-        genes = self.__trim_genes(genes, flank_length).collect()
+            self.genome, None, min_length, flank_length).collect()
+        genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
     def gene_body(self, min_length: int = 4000, flank_length: int = 2000) -> pl.DataFrame:
@@ -197,8 +197,8 @@ class Genome:
 
         """
         genes = self.__filter_genes(
-            self.genome, 'gene', min_length, flank_length)
-        genes = self.__trim_genes(genes, flank_length).collect()
+            self.genome, 'gene', min_length, flank_length).collect()
+        genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
     def exon(self, min_length: int = 100) -> pl.DataFrame:
@@ -238,8 +238,8 @@ class Genome:
         """
         flank_length = 0
         genes = self.__filter_genes(
-            self.genome, 'exon', min_length, flank_length)
-        genes = self.__trim_genes(genes, flank_length).collect()
+            self.genome, 'exon', min_length, flank_length).collect()
+        genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
     def cds(self, min_length: int = 100) -> pl.DataFrame:
@@ -279,8 +279,8 @@ class Genome:
         """
         flank_length = 0
         genes = self.__filter_genes(
-            self.genome, 'CDS', min_length, flank_length)
-        genes = self.__trim_genes(genes, flank_length).collect()
+            self.genome, 'CDS', min_length, flank_length).collect()
+        genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
     def near_TSS(self, min_length: int = 4000, flank_length: int = 2000):
@@ -486,8 +486,8 @@ class Genome:
 
         """
         genes = self.__filter_genes(
-            self.genome, region_type, min_length, flank_length)
-        genes = self.__trim_genes(genes, flank_length).collect()
+            self.genome, region_type, min_length, flank_length).collect()
+        genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
     @staticmethod
@@ -507,7 +507,7 @@ class Genome:
         return genes
 
     @staticmethod
-    def __trim_genes(genes, flank_length) -> pl.LazyFrame:
+    def __trim_genes(genes, flank_length) -> pl.DataFrame:
         # upstream shift
         # calculates length to previous gene on same chr_strand
         length_before = (pl.col('start').shift(-1) - pl.col('end')).shift(1).fill_null(flank_length)
@@ -541,8 +541,22 @@ class Genome:
             .otherwise((pl.col('downstream') - pl.col('downstream') % 2) // 2)
         )
         '''
+        if (genes["end"] < genes["start"]).sum() > 0:
+            forward = (
+                genes.filter(pl.col("start") <= pl.col("end"))
+                .with_columns(pl.lit("+").alias("strand"))
 
-        return (
+            )
+            reverse = (
+                genes.filter(pl.col("start") > pl.col("end"))
+                .with_columns(pl.lit("-").alias("strand"))
+                .rename({"start": "end", "end": "start"})
+                .select(forward.columns)
+            )
+
+            genes = pl.concat([forward, reverse]).sort(["chr", "start"]).cast({"strand": pl.Categorical})
+
+        trimmed = (
             genes
             .groupby(['chr', 'strand'], maintain_order=True).agg([
                 pl.col('start'),
@@ -560,10 +574,11 @@ class Genome:
             ])
         )
 
+        return trimmed
+
     @staticmethod
     def __check_empty(genes):
         if len(genes) > 0:
             return genes
         else:
-            raise Exception(
-                "Genome DataFrame is empty. Are you sure input file is valid?")
+            raise Exception("Genome DataFrame is empty. Are you sure input file is valid?")

@@ -375,7 +375,7 @@ class MetageneScript(ConsoleScript):
             sample_names.append(row["name"])
 
         metagene_files = MetageneFiles(sample_metagenes, sample_names)
-
+        pass
         rendered = Renderer(self.args).metagene(metagene_files, pca, draw_cm=one_genome)
 
         return rendered

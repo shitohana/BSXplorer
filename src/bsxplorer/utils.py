@@ -223,32 +223,54 @@ def merge_replicates(
 
     print("Reading reports")
 
-    batches = [reader.next_batches(1)[0] for reader in readers]
-    while sum(map(lambda batch: batch is not None, batches)) > 0:
+    batches = [reader.next_batches(1) for reader in readers]
+    ungrouped = None
 
-        batches = list(map(lambda group: group[0], filter(lambda group: group is not None, batches)))
+    while any(batch is not None for batch in batches):
 
-        concat = pl.concat(batches)
+        batches = list(map(
+            # Add group_column column to check if position is fully grouped or not
+            lambda batch: pl.concat(batch).with_columns(pl.lit(1).alias("group_count")),
+            # Filter empty batches
+            filter(lambda batch: batch is not None, batches)
+        ))
+        pass
 
-        grouped = (
-            concat
-            .group_by(["chr", "strand", "position", "context"], maintain_order=True)
-            .agg([pl.sum("count_m"), pl.sum("count_um")])
-            .cast(dict(
-                chr=pl.Categorical,
-                strand=pl.Categorical,
-                position=pl.UInt64,
-                count_m=pl.UInt32,
-                count_um=pl.UInt32,
-                context=pl.Categorical
-            ))
-            .select(pq_schema.names)
+        concat = (
+            # Concat all DataFrames into single one
+            pl.concat(batches + [ungrouped.select(batches[0].columns)] if ungrouped is not None else batches)
         )
 
-        print(f"Current position: {batches[0].row(0)[0]} {batches[0].row(0)[1]}", end="\r")
+        # Group all and sum group_count
+        stacked = (
+            concat
+            .group_by(["chr", "strand", "position", "context"], maintain_order=True)
+            .agg([pl.sum("count_m"), pl.sum("count_um"), pl.sum("group_count")])
+        )
+
+        # Only rows, which are fully grouped (have found its pair in every file)
+        grouped = stacked.filter(pl.col("group_count") == len(batches))
+        # Yet ungrouped ones
+        ungrouped = stacked.filter(pl.col("group_count") < len(batches))
+
+        print(f"Current position: {batches[0].row(0)[0]} {batches[0].row(0)[1]} Ungrouped rows: {len(ungrouped)}", end="\r")
 
         pq_writer.write(
-            grouped.to_arrow().cast(target_schema=pq_schema)
+            (
+                grouped
+                .select(pq_schema.names)
+                # Cast to optimal types for conversion to polars end easier grouping
+                .cast(dict(
+                    chr=pl.Categorical,
+                    strand=pl.Categorical,
+                    position=pl.UInt64,
+                    count_m=pl.UInt32,
+                    count_um=pl.UInt32,
+                    context=pl.Categorical
+                ))
+                .to_arrow()
+                .cast(target_schema=pq_schema)
+            )
         )
         batches = [reader.next_batches(1) for reader in readers]
         collect()
@@ -281,3 +303,5 @@ def polars2arrow_convert(pl_schema: OrderedDict):
         (key, polars2arrow[value]) for key, value in pl_schema.items()
     ])
     return pa_schema
+
+CONTEXTS = ["CG", "CHG", "CHH"]

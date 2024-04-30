@@ -497,7 +497,10 @@ class Metagene(MetageneBase):
 
         if genome is not None:
             def genome_filter(df: pl.DataFrame):
-                return df.join(genome.select(["chr", "strand", "start"]), on=["chr", "strand", "start"])
+                if all(char in ["-", "+"] for char in genome["strand"].unique()):
+                    return df.cast({"chr": pl.Utf8}).join(genome.cast({"chr": pl.Utf8}).select(["chr", "strand", "start"]), on=["chr", "strand", "start"])
+                else:
+                    return df.cast({"chr": pl.Utf8}).join(genome.cast({"chr": pl.Utf8}).select(["chr", "start"]), on=["chr", "start"])
         else:
             genome_filter = lambda df: df
 
