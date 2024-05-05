@@ -6,18 +6,58 @@ from collections import OrderedDict
 import polars as pl
 import pyarrow as pa
 
-from .utils import polars2arrow_convert
+from .utils import polars2arrow_convert, arrow2polars_convert
+
+ARROW_SCHEMAS = {
+    "bedgraph": pa.schema([
+        ("chr", pa.utf8()),
+        ("start", pa.uint64()),
+        ("position", pa.uint64()),
+        ("density", pa.float32()),
+    ]),
+    "coverage": pa.schema([
+        ("chr", pa.utf8()),
+        ("position", pa.uint64()),
+        ("end", pa.uint64()),
+        ("density", pa.float32()),
+        ("count_m", pa.uint32()),
+        ("count_um", pa.uint32())
+    ]),
+    "cgmap": pa.schema([
+        ("chr", pa.utf8()),
+        ("nuc", pa.utf8()),  # G/C
+        ("position", pa.uint64()),
+        ("context", pa.utf8()),
+        ("dinuc", pa.utf8()),
+        ("density", pa.float32()),
+        ("count_m", pa.uint32()),
+        ("count_total", pa.uint32()),
+    ]),
+    "bismark": pa.schema([
+        ("chr", pa.utf8()),
+        ("position", pa.uint64()),
+        ("strand", pa.utf8()),
+        ("count_m", pa.uint32()),
+        ("count_um", pa.uint32()),
+        ("context", pa.utf8()),
+        ("trinuc", pa.utf8())
+    ])
+}
 
 
 class BaseBatch(ABC):
     def __init__(self, df: pl.DataFrame):
-        self.validate_schema(df)
-        self.data = df
+        self.data = self.get_validated(df)
 
-    def validate_schema(self, df: pl.DataFrame):
-        for i, j in zip(df.schema.items(), self.pl_schema().items()):
-            if i != j:
-                raise pl.SchemaError()
+    def get_validated(self, df: pl.DataFrame):
+        if all(c in df.columns for c in self.colnames()):
+            try:
+                return df.select(self.colnames()).cast(self.pl_schema())
+            except Exception as e:
+                raise pl.SchemaError(e)
+        else:
+            raise KeyError("Not all columns from schema in batch")
+
     @classmethod
     @abstractmethod
     def pl_schema(cls) -> OrderedDict:
@@ -26,6 +66,10 @@ class BaseBatch(ABC):
     @classmethod
     def pa_schema(cls) -> pa.Schema:
         return polars2arrow_convert(cls.pl_schema())
+
+    @classmethod
+    def colnames(cls):
+        return list(FullSchemaBatch.pl_schema().keys())
 
     def to_arrow(self):
         return self.data.to_arrow().cast(self.pa_schema())
@@ -38,59 +82,6 @@ class ConvertedBatch(BaseBatch):
         ...
 
 
-class BedGraphBatch(ConvertedBatch):
-    @classmethod
-    def pl_schema(cls):
-        return OrderedDict(
-            chr=pl.Utf8,
-            start=pl.UInt64,
-            end=pl.UInt64,
-            density=pl.Float64
-        )
-
-    @classmethod
-    def from_full(cls, full_batch: FullSchemaBatch):
-        converted = (
-            full_batch.data
-            .filter(pl.col("count_total") != 0)
-            .select([
-                "chr",
-                (pl.col("position") - 1).alias("start"),
-                (pl.col("position")).alias("end"),
-                (pl.col("count_m") / pl.col("count_total")).alias("density")
-            ])
-            .cast(cls.pl_schema())
-        )
-        return cls(converted)
-
-
-# class CoverageBatch(ConvertedBatch):
-#     @classmethod
-#     def pl_schema(cls):
-#         return OrderedDict(
-#             chr=pl.Utf8,
-#             start=pl.UInt64,
-#             end=pl.UInt64,
-#             density=pl.Float64
-#         )
-#
-#     @classmethod
-#     def from_full(cls, full_batch: FullSchemaBatch):
-#         converted = (
-#             full_batch.data
-#             .filter(pl.col("count_total") != 0)
-#             .select([
-#                 "chr",
-#                 (pl.col("position")).alias("start"),
-#                 (pl.col("position")).alias("end"),
-#                 (pl.col("count_m"))
-#             ])
-#         )
-#         return cls(converted)
-
-# todo write other
-
-
 class FullSchemaBatch(BaseBatch):
     @classmethod
     def pl_schema(cls) -> OrderedDict:
@@ -101,15 +92,61 @@ class FullSchemaBatch(BaseBatch):
             context=pl.Utf8,
             trinuc=pl.Utf8,
             count_m=pl.UInt32,
-            count_total=pl.UInt32
+            count_total=pl.UInt32,
+            density=pl.Float64
         )
 
     def __init__(self, data: pl.DataFrame):
         super().__init__(data)
 
-    # def to_coverage(self):
-    #     return CoverageBatch.from_full(self)
+    def to_bismark(self):
+        converted = (
+            self.data
+            .select([
+                "chr", "position", "strand", "count_m",
+                (pl.col("count_total") - pl.col("count_m")).alias("count_um"),
+                "context", "trinuc"
+            ])
+        )
+        return converted
+
+    def to_cgmap(self):
+        converted = (
+            self.data
+            .select([
+                "chr",
+                pl.when(strand="+").then(pl.lit("C")).otherwise(pl.lit("G")).alias("nuc"),
+                "position", "context",
+                pl.col("trinuc").str.slice(0, 2).alias("dinuc"),
+                "density", "count_m", "count_total"
+            ])
+        )
+        return converted
+
+    def to_coverage(self):
+        converted = (
+            self.data
+            .filter(pl.col("count_total") != 0)
+            .select([
+                "chr",
+                (pl.col("position")).alias("start"),
+                (pl.col("position") + 1).alias("end"),
+                "density",
+                "count_m",
+                (pl.col("count_total") - pl.col("count_m")).alias("count_um")
+            ])
+        )
+        return converted
 
     def to_bedGraph(self):
-        return BedGraphBatch.from_full(self)
-
+        converted = (
+            self.data
+            .filter(pl.col("count_total") != 0)
+            .select([
+                "chr",
+                (pl.col("position") - 1).alias("start"),
+                (pl.col("position")).alias("end"),
+                (pl.col("count_m") / pl.col("count_total")).alias("density")
+            ])
+        )
+        return converted

@@ -2,24 +2,46 @@ from __future__ import annotations
 
 import gc
 import gzip
+import os
 import shutil
+import sys
 import tempfile
 from abc import ABC, abstractmethod
+from fractions import Fraction
 from pathlib import Path
 from typing import Literal
 
+import func_timeout
+import numpy as np
 import polars as pl
 import pyarrow as pa
 from pyarrow import csv as pcsv, parquet as pq
 
 from .SeqMapper import Sequence
-from .UniversalReader_batches import FullSchemaBatch
+from .UniversalReader_batches import FullSchemaBatch, ARROW_SCHEMAS
 from .utils import ReportBar
 
 
 def invalid_row_handler(row):
     print(f"Got invalid row: {row}")
     return("skip")
+
+
+@func_timeout.func_set_timeout(20)
+def open_csv(
+        file : str | Path,
+        read_options: pcsv.ReadOptions = None,
+        parse_options: pcsv.ParseOptions = None,
+        convert_options: pcsv.ConvertOptions = None,
+        memory_pool=None
+):
+    return pcsv.open_csv(
+            file,
+            read_options,
+            parse_options,
+            convert_options,
+            memory_pool
+    )
 
 
 class ArrowReaderBase(ABC, object):
@@ -29,8 +51,16 @@ class ArrowReaderBase(ABC, object):
     def __iter__(self):
         return self
 
+
+    def _mutate_next(self, batch: pa.RecordBatch):
+        return batch
+
     def __next__(self) -> pa.RecordBatch:
-        return self.next_raw()
+        raw = self.next_raw()
+        if raw is not None:
+            batch = self._mutate_next(raw)
+            return batch
+        return raw
 
     def __init__(self, file: str | Path):
         self.file = Path(file).expanduser().absolute()
@@ -78,7 +108,7 @@ class ArrowReaderCSV(ArrowReaderBase):
     ) -> pcsv.CSVStreamingReader:
 
         try:
-            reader = pcsv.open_csv(
+            reader = open_csv(
                 self.file,
                 read_options,
                 parse_options,
@@ -88,6 +118,9 @@ class ArrowReaderCSV(ArrowReaderBase):
         except pa.ArrowInvalid as e:
             print(f"Error opening file: {self.file}")
             raise e
+        except func_timeout.exceptions.FunctionTimedOut:
+            print("Time for oppening file exceeded. Check if input type is correct or try making your batch size smaller.")
+            os._exit(0)
 
         return reader
 
@@ -107,17 +140,7 @@ class ArrowReaderCSV(ArrowReaderBase):
 
 
 class BismarkReader(ArrowReaderCSV):
-    @property
-    def pa_schema(self):
-        return pa.schema([
-            ("chr", pa.utf8()),
-            ("position", pa.uint64()),
-            ("strand", pa.utf8()),
-            ("count_m", pa.uint32()),
-            ("count_um", pa.uint32()),
-            ("context", pa.utf8()),
-            ("trinuc", pa.utf8())
-        ])
+    pa_schema = ARROW_SCHEMAS["bismark"]
 
     def convert_options(self):
         return pcsv.ConvertOptions(
@@ -150,7 +173,6 @@ class BismarkReader(ArrowReaderCSV):
             block_size_mb: int = 50,
             memory_pool: pa.MemoryPool = None
     ):
-
         super().__init__(file, block_size_mb)
         self.reader = self.get_reader(
             self.read_options(use_threads=use_threads, block_size=self.batch_size),
@@ -161,31 +183,11 @@ class BismarkReader(ArrowReaderCSV):
 
 
 class CGMapReader(BismarkReader):
-    @property
-    def pa_schema(self):
-        return pa.schema([
-            ("chr", pa.utf8()),
-            ("nuc", pa.utf8()),  # G/C
-            ("position", pa.uint64()),
-            ("context", pa.utf8()),
-            ("dinuc", pa.utf8()),
-            ("density", pa.float32()),
-            ("count_m", pa.uint32()),
-            ("count_um", pa.uint32()),
-        ])
+    pa_schema = ARROW_SCHEMAS["cgmap"]
 
 
 class CoverageReader(ArrowReaderCSV):
-    @property
-    def pa_schema(self):
-        return pa.schema([
-            ("chr", pa.utf8()),
-            ("position", pa.uint64()),
-            ("end", pa.uint64()),
-            ("density", pa.float32()),
-            ("count_m", pa.uint32()),
-            ("count_um", pa.uint32()),
-        ])
+    pa_schema = ARROW_SCHEMAS["coverage"]
 
     read_options = BismarkReader.read_options
     parse_options = BismarkReader.parse_options
@@ -211,7 +213,7 @@ class CoverageReader(ArrowReaderCSV):
         self._sequence_rows_read = 0
         self._sequence_metadata = sequence.get_metadata()
 
-    def __align(self, pa_batch: pa.RecordBatch):
+    def _align(self, pa_batch: pa.RecordBatch):
         batch = pl.from_arrow(pa_batch)
 
         # get batch stats
@@ -223,16 +225,14 @@ class CoverageReader(ArrowReaderCSV):
         output = None
 
         for chrom in batch_stats["chr"]:
-            chrom_min, chrom_max = [batch_stats.filter(pl.col("chr") == chrom)[stat][0] for stat in
-                                    ["min", "max"]]
+            chrom_min, chrom_max = batch_stats.filter(chr=chrom).select(["min", "max"]).row(0)
 
+            # Read and filter sequence
             filters = [
                 ("chr", "=", chrom),
                 ("position", ">=", chrom_min),
                 ("position", "<=", chrom_max)
             ]
-
-            # Read and filter sequence
             pa_filtered_sequence = pq.read_table(self.sequence.cytosine_file, filters=filters)
 
             modified_schema = pa_filtered_sequence.schema
@@ -271,41 +271,98 @@ class CoverageReader(ArrowReaderCSV):
 
         return output
 
-    def __next__(self) -> pl.DataFrame:
-        raw = self.next_raw()
-        if raw is None:
-            return None
-        aligned = self.__align(raw)
-        return aligned
+    def _mutate_next(self, batch: pa.RecordBatch):
+        aligned = self._align(batch)
+        return aligned.to_arrow()
+
+
+class BedGraphReader(CoverageReader):
+    pa_schema = ARROW_SCHEMAS["bedgraph"]
+
+    read_options = BismarkReader.read_options
+    parse_options = BismarkReader.parse_options
+    convert_options = BismarkReader.convert_options
+
+    def __init__(self, file: str | Path, sequence: Sequence, max_count=100, **kwargs):
+        super().__init__(file, sequence, **kwargs)
+        self.max_count = max_count
+
+    def _get_fraction(self, df: pl.DataFrame):
+        def fraction(n, limit):
+            f = Fraction(n).limit_denominator(limit)
+            return (f.numerator, f.denominator)
+
+        fraction_v = np.vectorize(fraction)
+        converted = fraction_v((df["density"] / 100).to_list(), self.max_count)
+
+        final = (
+            df.with_columns([
+                pl.lit(converted[0]).alias("count_m"),
+                pl.lit(converted[1]).alias("count_total")
+            ])
+        )
+
+        return final
+
+    def _mutate_next(self, batch: pa.RecordBatch):
+        aligned = self._align(batch)
+        fractioned = self._get_fraction(aligned)
+        full = fractioned.with_columns(pl.col("context").alias("trinuc"))
+
+        return full.to_arrow()
 
 
 def cast2full_batch(
-        batch: pa.RecordBatch | pa.Table,
+        batch: pa.RecordBatch | pa.Table | pl.DataFrame,
         from_type: str
 ) -> FullSchemaBatch:
-    if from_type == "bismark":
+    if not isinstance(batch, pl.DataFrame):
         pl_df = pl.from_arrow(batch)
+    else:
+        pl_df = batch
+    mutated = pl_df
+
+    if from_type == "bismark":
+        mutated = (
+            pl_df
+            .with_columns((pl.col("count_m") + pl.col("count_um")).alias("count_total"))
+            .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
+        )
+
+    elif from_type == "cgmap":
         mutated = (
             pl_df
             .with_columns([
-                (pl.col("count_m") + pl.col("count_um")).alias("count_total")
+                pl.when(pl.col("nuc") == "C").then(pl.lit("+")).otherwise(pl.lit("-")).alias("strand"),
+                pl.when(pl.col("dinuc") == "CG")
+                # if dinuc == "CG" => trinuc = "CG"
+                .then(pl.col("dinuc"))
+                # otherwise trinuc = dinuc + context_last
+                .otherwise(pl.concat_str([pl.col("dinuc"), pl.col("context").str.slice(-1)]))
+                .alias("trinuc")
             ])
-            .select(list(FullSchemaBatch.pl_schema().keys()))
-            .cast(FullSchemaBatch.pl_schema())
         )
-
-        return FullSchemaBatch(mutated)
-
-    if from_type == "cgmap":
-        pass
-    if from_type == "bedgraph":
-        pass
-    if from_type == "coverage":
-        pass
-    if from_type == "parquet":
+    elif from_type == "bedgraph":
+        mutated = (
+            pl_df
+            .with_columns(pl.col("context").alias("trinuc"))
+        )
+    elif from_type == "coverage":
+        mutated = (
+            pl_df
+            .with_columns([
+                (pl.col("count_m") + pl.col("count_um")).alias("count_total"),
+                pl.col("context").alias("trinuc")
+            ])
+            .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
+        )
+    elif from_type == "parquet":
+        # TODO finish
         pass
     else:
-        raise KeyError()
+        raise KeyError(from_type)
+
+    return FullSchemaBatch(mutated)
 
 
 class UniversalReader(object):
@@ -327,7 +384,7 @@ class UniversalReader(object):
         elif report_type == "cgmap":
             self.reader = CGMapReader(file, use_threads, **kwargs)
         elif report_type == "bedgraph":
-            pass
+            self.reader = BedGraphReader(file, use_threads=use_threads, **kwargs)
         elif report_type == "coverage":
             self.reader = CoverageReader(file, use_threads=use_threads, **kwargs)
         elif report_type == "parquet":

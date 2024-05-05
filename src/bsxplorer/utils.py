@@ -278,6 +278,7 @@ def merge_replicates(
     print("\nDONE")
     return temp_parquet
 
+
 polars2arrow = {
     pl.Int8: pa.int8(),
     pl.Int16: pa.int16(),
@@ -296,6 +297,7 @@ polars2arrow = {
 
 arrow2polars = {value: key for key, value in polars2arrow.items()}
 
+
 def polars2arrow_convert(pl_schema: OrderedDict):
     if pl.Categorical in pl_schema.values():
         raise ValueError("You should write schema for Categorical manually")
@@ -303,5 +305,18 @@ def polars2arrow_convert(pl_schema: OrderedDict):
         (key, polars2arrow[value]) for key, value in pl_schema.items()
     ])
     return pa_schema
+
+
+def arrow2polars_convert(pa_schema: pa.Schema):
+    pl_schema = OrderedDict()
+
+    if not all(pa_type in arrow2polars.keys() for pa_type in pa_schema.types):
+        raise KeyError("Not all field types have match in polars.")
+
+    for name, pa_type in zip(pa_schema.names, pa_schema.types):
+        pl_schema[name] = arrow2polars[pa_type]
+
+    return pl_schema
+
 
 CONTEXTS = ["CG", "CHG", "CHH"]

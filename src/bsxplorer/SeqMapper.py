@@ -95,7 +95,7 @@ class Sequence:
         self.cytosine_file = Path(cytosine_file)
 
     @classmethod
-    def from_fasta(cls, path: str | Path, temp_dir: str = "./", name: str = None, delete: bool = True):
+    def from_fasta(cls, path: str | Path, temp_dir: str = Path.cwd(), name: str = None, delete: bool = True):
         """
         :param path: path to fasta sequence
         :param temp_dir: directory, where temporary file will be created
