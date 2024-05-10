@@ -459,7 +459,7 @@ class CategoryScript(ConsoleScript):
                 decompressed = decompress(merged_path)
                 merged_path = decompressed.name
 
-            binom = BinomialData.preprocess(
+            binom = BinomialData.from_report(
                 file=merged_path,
                 report_type=merged_type,
                 block_size_mb=self.args.block_mb,

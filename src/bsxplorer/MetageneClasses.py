@@ -10,20 +10,23 @@ import plotly.express as px
 import polars as pl
 import seaborn as sns
 
-from .Plots import LinePlot, LinePlotFiles, HeatMap, HeatMapFiles
+from .Plots import (
+    LinePlot,
+    LinePlotFiles,
+    HeatMap,
+    HeatMapFiles
+)
 from .SeqMapper import Mapper, Sequence
 from .Base import (
     MetageneBase,
     MetageneFilesBase,
-
-    BismarkReportReader,
-    ParquetReportReader,
-    BinomReportReader,
-    CGmapReportReader
+    read_metagene,
+    validate_metagene_args
 )
 from .Clusters import ClusterSingle, ClusterMany
 from .utils import MetageneSchema
 from .GenomeClass import Genome
+from .UniversalReader_classes import UniversalReader
 
 pl.enable_string_cache(True)
 
@@ -83,23 +86,15 @@ class Metagene(MetageneBase):
         >>> metagene = Metagene.from_bismark(path, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
 
-        report_reader = BismarkReportReader(
-            report_file=file,
-            genome=genome,
-            upstream_windows=up_windows,
-            body_windows=body_windows,
-            downstream_windows=down_windows,
-            use_threads=use_threads,
-            sumfunc=sumfunc,
-            block_size_mb=block_size_mb
-        )
+        reader = UniversalReader(**(locals() | dict(report_type="bismark")))
 
-        report_df = report_reader.read()
+        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
+        report_df = read_metagene(**(locals() | args))
 
         return cls(report_df,
-                   upstream_windows=report_reader.upstream_windows,
-                   gene_windows=report_reader.body_windows,
-                   downstream_windows=report_reader.downstream_windows)
+                   upstream_windows=args["upstream_windows"],
+                   gene_windows=args["body_windows"],
+                   downstream_windows=args["downstream_windows"])
 
     @classmethod
     def from_cgmap(
@@ -147,23 +142,15 @@ class Metagene(MetageneBase):
         >>> metagene = Metagene.from_cgmap(path, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
 
-        report_reader = CGmapReportReader(
-            report_file=file,
-            genome=genome,
-            upstream_windows=up_windows,
-            body_windows=body_windows,
-            downstream_windows=down_windows,
-            use_threads=use_threads,
-            sumfunc=sumfunc,
-            block_size_mb=block_size_mb
-        )
+        reader = UniversalReader(**(locals() | dict(report_type="cgmap")))
 
-        report_df = report_reader.read()
+        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
+        report_df = read_metagene(**(locals() | args))
 
         return cls(report_df,
-                   upstream_windows=report_reader.upstream_windows,
-                   gene_windows=report_reader.body_windows,
-                   downstream_windows=report_reader.downstream_windows)
+                   upstream_windows=args["upstream_windows"],
+                   gene_windows=args["body_windows"],
+                   downstream_windows=args["downstream_windows"])
 
     @classmethod
     def from_parquet(
@@ -216,22 +203,7 @@ class Metagene(MetageneBase):
         >>> metagene = Metagene.from_parquet(save_name, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
 
-        report_reader = ParquetReportReader(
-            report_file=file,
-            genome=genome,
-            upstream_windows=up_windows,
-            body_windows=body_windows,
-            downstream_windows=down_windows,
-            use_threads=use_threads,
-            sumfunc=sumfunc,
-        )
-
-        report_df = report_reader.read()
-
-        return cls(report_df,
-                   upstream_windows=report_reader.upstream_windows,
-                   gene_windows=report_reader.body_windows,
-                   downstream_windows=report_reader.downstream_windows)
+        raise NotImplementedError()
 
     @classmethod
     def from_binom(
@@ -278,23 +250,8 @@ class Metagene(MetageneBase):
         >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
         >>> metagene = Metagene.from_binom(save_name, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
-        report_reader = BinomReportReader(
-            report_file=file,
-            genome=genome,
-            upstream_windows=up_windows,
-            body_windows=body_windows,
-            downstream_windows=down_windows,
-            use_threads=use_threads,
-            sumfunc="mean",
-            p_value=p_value
-        )
+        raise NotImplementedError()
 
-        report_df = report_reader.read()
-
-        return cls(report_df,
-                   upstream_windows=report_reader.upstream_windows,
-                   gene_windows=report_reader.body_windows,
-                   downstream_windows=report_reader.downstream_windows)
 
     @classmethod
     def from_bedGraph(
@@ -308,7 +265,7 @@ class Metagene(MetageneBase):
             sumfunc: str = "wmean",
             block_size_mb: int = 30,
             use_threads: bool = True,
-            save_preprocessed: str = None,
+            save_preprocessed: bool = False,
             temp_dir: str = "./"
     ):
         """
@@ -333,7 +290,7 @@ class Metagene(MetageneBase):
         temp_dir
             Directory for temporary files.
         save_preprocessed
-            Does preprocessed file need to be saved
+            Does preprocessed sequence file need to be saved
         block_size_mb
             Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
         use_threads
@@ -351,15 +308,17 @@ class Metagene(MetageneBase):
         >>> sequence = 'path/to/sequence.fa'
         >>> metagene = Metagene.from_bedGraph(path, genome, sequence, up_windows=500, body_windows=1000, down_windows=500)
         """
-        if isinstance(genome, Genome):
-            raise TypeError("Genome must be converted into DataFrame (e.g. via Genome.gene_body()).")
 
-        sequence = Sequence.from_fasta(sequence, temp_dir)
-        mapped = Mapper.bedGraph(file, sequence, temp_dir,
-                                 save_preprocessed, True if save_preprocessed is None else False,
-                                 block_size_mb, use_threads)
+        sequence = Sequence.from_fasta(sequence, temp_dir, delete=not save_preprocessed)
+        reader = UniversalReader(**(locals() | dict(report_type="bedgraph")))
 
-        return cls.from_parquet(mapped.report_file, genome, up_windows, body_windows, down_windows, sumfunc)
+        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
+        report_df = read_metagene(**(locals() | args))
+
+        return cls(report_df,
+                   upstream_windows=args["upstream_windows"],
+                   gene_windows=args["body_windows"],
+                   downstream_windows=args["downstream_windows"])
 
     @classmethod
     def from_coverage(
@@ -373,7 +332,7 @@ class Metagene(MetageneBase):
             sumfunc: str = "wmean",
             block_size_mb: int = 30,
             use_threads: bool = True,
-            save_preprocessed: str = None,
+            save_preprocessed: bool = False,
             temp_dir: str = "./"
     ):
         """
@@ -398,7 +357,7 @@ class Metagene(MetageneBase):
         temp_dir
             Directory for temporary files.
         save_preprocessed
-            Does preprocessed file need to be saved
+            Does preprocessed sequence file need to be saved
         block_size_mb
             Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
         use_threads
@@ -418,15 +377,17 @@ class Metagene(MetageneBase):
         >>> sequence = 'path/to/sequence.fa'
         >>> metagene = Metagene.from_coverage(path, genome, sequence, up_windows=500, body_windows=1000, down_windows=500)
         """
-        if isinstance(genome, Genome):
-            raise TypeError("Genome must be converted into DataFrame (e.g. via Genome.gene_body()).")
 
-        sequence = Sequence.from_fasta(sequence, temp_dir)
-        mapped = Mapper.coverage(file, sequence, temp_dir,
-                                 save_preprocessed, True if save_preprocessed is None else False,
-                                 block_size_mb, use_threads)
+        sequence = Sequence.from_fasta(sequence, temp_dir, delete=not save_preprocessed)
+        reader = UniversalReader(**(locals() | dict(report_type="bedgraph")))
 
-        return cls.from_parquet(mapped.report_file, genome, up_windows, body_windows, down_windows, sumfunc)
+        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
+        report_df = read_metagene(**(locals() | args))
+
+        return cls(report_df,
+                   upstream_windows=args["upstream_windows"],
+                   gene_windows=args["body_windows"],
+                   downstream_windows=args["downstream_windows"])
 
     def filter(
             self,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import OrderedDict
+from typing import Literal
 
 import polars as pl
 import pyarrow as pa
@@ -41,8 +42,18 @@ ARROW_SCHEMAS = {
         ("count_um", pa.uint32()),
         ("context", pa.utf8()),
         ("trinuc", pa.utf8())
+    ]),
+    "binom": pa.schema([
+        ("chr", pa.utf8()),
+        ("strand", pa.utf8()),
+        ("position", pa.uint64()),
+        ("context", pa.utf8()),
+        ("p_value", pa.float64()),
     ])
 }
+
+ReportTypes = Literal["bismark", "cgmap", "bedgraph", "coverage", "binom"]
+REPORT_TYPES_LIST = ["bismark", "cgmap", "bedgraph", "coverage", "parquet"]
 
 
 class BaseBatch(ABC):
@@ -99,6 +110,12 @@ class FullSchemaBatch(BaseBatch):
     def __init__(self, data: pl.DataFrame):
         super().__init__(data)
 
+    def __len__(self):
+        return len(self.data)
+
+    def filter_not_none(self):
+        self.data = self.data.filter(pl.col("density").is_not_nan())
+
     def to_bismark(self):
         converted = (
             self.data
@@ -150,3 +167,5 @@ class FullSchemaBatch(BaseBatch):
             ])
         )
         return converted
+
+

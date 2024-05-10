@@ -58,9 +58,9 @@ class LinePlot(PlotBase):
         res = (
             df
             .group_by(["context", "fragment"]).agg([
+                stat_expr.alias("density"),
                 pl.col("sum"),
-                pl.col("count").cast(MetageneSchema.count),
-                stat_expr.alias("density")
+                pl.col("count").cast(MetageneSchema.count)
             ])
             .sort("fragment")
         )

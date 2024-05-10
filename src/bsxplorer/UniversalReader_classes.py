@@ -4,12 +4,10 @@ import gc
 import gzip
 import os
 import shutil
-import sys
 import tempfile
 from abc import ABC, abstractmethod
 from fractions import Fraction
 from pathlib import Path
-from typing import Literal
 
 import func_timeout
 import numpy as np
@@ -18,7 +16,7 @@ import pyarrow as pa
 from pyarrow import csv as pcsv, parquet as pq
 
 from .SeqMapper import Sequence
-from .UniversalReader_batches import FullSchemaBatch, ARROW_SCHEMAS
+from .UniversalReader_batches import FullSchemaBatch, ARROW_SCHEMAS, ReportTypes, REPORT_TYPES_LIST
 from .utils import ReportBar
 
 
@@ -44,40 +42,78 @@ def open_csv(
     )
 
 
-class ArrowReaderBase(ABC, object):
+class ArrowParquetReader:
+    def __init__(self,
+                 file: str | Path,
+                 use_cols: list = None,
+                 use_threads: bool = True):
+        self.file = Path(file).expanduser().absolute()
+        if not self.file.exists():
+            raise FileNotFoundError()
+
+        self.reader = pq.ParquetFile(file)
+        self.__current_group = 0
+
+        self.__use_cols = use_cols
+        self.__use_threads = use_threads
+
+        self.__bar = ReportBar(f"Reading from {file}", max=self.reader.num_row_groups)
+
+    def __len__(self):
+        return self.reader.num_row_groups
+
     def __enter__(self):
         return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.__bar.finish()
+        self.reader.close()
 
     def __iter__(self):
         return self
 
-
     def _mutate_next(self, batch: pa.RecordBatch):
         return batch
 
-    def __next__(self) -> pa.RecordBatch:
-        raw = self.next_raw()
-        if raw is not None:
-            batch = self._mutate_next(raw)
-            return batch
-        return raw
+    def __next__(self) -> pa.Table:
+        old_group = self.__current_group
+        # Check if it is the last row group
+        if old_group < self.reader.num_row_groups:
+            self.__current_group += 1
+            self.__bar.next()
 
-    def __init__(self, file: str | Path):
-        self.file = Path(file).expanduser().absolute()
-        if not self.file.exists():
-            raise FileNotFoundError()
-        self._current_batch = None
+            batch = self.reader.read_row_group(
+                old_group,
+                columns=self.__use_cols,
+                use_threads=self.__use_threads
+            )
 
-    @abstractmethod
-    def next_raw(self) -> pa.RecordBatch:
-        ...
-
-    @abstractmethod
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        ...
+            mutated = self._mutate_next(batch)
+            return mutated
+        raise StopIteration()
 
 
-class ArrowReaderCSV(ArrowReaderBase):
+class BinomReader(ArrowParquetReader):
+    def __init__(self, file: str | Path, methylation_pvalue=.05, **kwargs):
+        super().__init__(file, **kwargs)
+        self.methylation_pvalue = methylation_pvalue
+
+    def _mutate_next(self, batch: pa.RecordBatch):
+        df = pl.from_arrow(batch)
+
+        mutated = (
+            df.with_columns([
+                pl.col("context").alias("trinuc"),
+                (pl.col("p_value") <= self.methylation_pvalue).cast(pl.UInt8).alias("count_m"),
+                pl.lit(1).alias("count_total"),
+                pl.col("count_m").cast(pl.Float64).alias("density")
+            ])
+        )
+
+        return mutated
+
+
+class ArrowReaderCSV:
     @property
     @abstractmethod
     def pa_schema(self):
@@ -98,6 +134,12 @@ class ArrowReaderCSV(ArrowReaderBase):
     def __init__(self, file, block_size_mb):
         super().__init__(file)
         self.batch_size = block_size_mb  * 1024**2
+
+    def __enter__(self):
+        return self
+
+    def __iter__(self):
+        return self
 
     def get_reader(
             self,
@@ -135,6 +177,17 @@ class ArrowReaderCSV(ArrowReaderBase):
             return old_batch
         raise StopIteration()
 
+    def _mutate_next(self, batch: pa.RecordBatch):
+        return batch
+
+    def __next__(self) -> pa.RecordBatch:
+        raw = self.next_raw()
+        if raw is not None:
+            batch = self._mutate_next(raw)
+            return batch
+        return raw
+
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.reader.close()
 
@@ -171,7 +224,8 @@ class BismarkReader(ArrowReaderCSV):
             file: str | Path,
             use_threads: bool = True,
             block_size_mb: int = 50,
-            memory_pool: pa.MemoryPool = None
+            memory_pool: pa.MemoryPool = None,
+            **kwargs
     ):
         super().__init__(file, block_size_mb)
         self.reader = self.get_reader(
@@ -199,7 +253,8 @@ class CoverageReader(ArrowReaderCSV):
             sequence: Sequence,
             use_threads: bool = True,
             block_size_mb: int = 50,
-            memory_pool: pa.MemoryPool = None
+            memory_pool: pa.MemoryPool = None,
+            **kwargs
     ):
         super().__init__(file, block_size_mb)
         self.reader = self.get_reader(
@@ -278,10 +333,6 @@ class CoverageReader(ArrowReaderCSV):
 
 class BedGraphReader(CoverageReader):
     pa_schema = ARROW_SCHEMAS["bedgraph"]
-
-    read_options = BismarkReader.read_options
-    parse_options = BismarkReader.parse_options
-    convert_options = BismarkReader.convert_options
 
     def __init__(self, file: str | Path, sequence: Sequence, max_count=100, **kwargs):
         super().__init__(file, sequence, **kwargs)
@@ -369,7 +420,7 @@ class UniversalReader(object):
     def __init__(
             self,
             file: str | Path,
-            report_type: Literal["bismark", "cgmap", "bedgraph", "coverage", "parquet"],
+            report_type: ReportTypes,
             use_threads: bool = True,
             **kwargs
     ):
@@ -387,21 +438,22 @@ class UniversalReader(object):
             self.reader = BedGraphReader(file, use_threads=use_threads, **kwargs)
         elif report_type == "coverage":
             self.reader = CoverageReader(file, use_threads=use_threads, **kwargs)
-        elif report_type == "parquet":
-            pass
+        elif report_type == "binom":
+            raise NotImplementedError()
+        else:
+            raise KeyError()
 
         self.bar = None
 
     def __validate(self, file, report_type):
         file = Path(file).expanduser().absolute()
         if not file.exists():
-            raise FileNotFoundError()
+            raise FileNotFoundError(file)
         if not file.is_file():
-            raise IsADirectoryError()
+            raise IsADirectoryError(file)
         self.file = file
 
-        allowed_types = ["bismark", "cgmap", "bedgraph", "coverage", "parquet"]
-        if report_type not in allowed_types:
+        if report_type not in REPORT_TYPES_LIST:
             raise KeyError(report_type)
         self.report_type: str = report_type
 
@@ -421,6 +473,8 @@ class UniversalReader(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.__decompressed is not None:
             self.__decompressed.close()
+        if self.bar is not None:
+            self.bar.finish()
         self.reader.__exit__(exc_type, exc_val, exc_tb)
 
     def __iter__(self):
@@ -440,3 +494,5 @@ class UniversalReader(object):
     @property
     def batch_size(self):
         return self.reader.batch_size
+
+

@@ -144,6 +144,19 @@ MetageneSchema = dotdict(dict(
 ))
 
 
+MetageneJoinedSchema = dotdict(dict(
+    chr=pl.Categorical,
+    strand=pl.Categorical,
+    gene=pl.Categorical,
+    start=pl.UInt64,
+    id=pl.Categorical,
+    context=pl.Categorical,
+    fragment=pl.UInt32,
+    sum=pl.Float32,
+    count=pl.UInt32,
+))
+
+
 class ReportBar(Bar):
     suffix = "%(progress2mb)d/%(max2mb)d Mb [%(elapsed_fmt)s | ETA: %(eta_fmt)s]"
     fill = "@"
@@ -292,7 +305,7 @@ polars2arrow = {
     pl.Float64: pa.float64(),
     pl.Boolean: pa.bool_(),
     pl.Binary: pa.binary(),
-    pl.Utf8: pa.utf8()
+    pl.Utf8: pa.utf8(),
 }
 
 arrow2polars = {value: key for key, value in polars2arrow.items()}
@@ -320,3 +333,4 @@ def arrow2polars_convert(pa_schema: pa.Schema):
 
 
 CONTEXTS = ["CG", "CHG", "CHH"]
+CYTOSINE_SUMFUNC = ["wmean", "mean", "min", "max", "median", "1pgeom"]

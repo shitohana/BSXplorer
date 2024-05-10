@@ -77,22 +77,20 @@ inf_merged = merge_replicates(
     report_type="bismark"
 )
 
-
 p_value_kwargs = dict(
     genome=annot,
     methylation_pvalue=.05
 )
 
-mock_binom = bsxplorer.BinomialData.preprocess(
+mock_binom = bsxplorer.BinomialData.from_report(
     mock_merged.name, report_type="parquet", min_coverage=2
 )
 mock_pstat = mock_binom.region_pvalue(**p_value_kwargs)
 
-inf_binom = bsxplorer.BinomialData.preprocess(
+inf_binom = bsxplorer.BinomialData.from_report(
     inf_merged.name, report_type="parquet", min_coverage=2
 )
 inf_pstat = inf_binom.region_pvalue(**p_value_kwargs)
-
 
 categorise_kwargs = dict(
     context="CG", p_value=.05, min_n=5

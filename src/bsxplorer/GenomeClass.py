@@ -85,7 +85,7 @@ class Genome:
             pl.col(cols[start_col]).cast(MetageneSchema.position).alias("start"),
             pl.col(cols[end_col]).cast(MetageneSchema.position).alias("end"),
             (pl.col(cols[strand_col]) if strand_col is not None else pl.lit(".")).alias("strand"),
-            (pl.col(cols[id_col]) if id_col is not None else pl.lit("")).cast(pl.Categorical).alias("id"),
+            (pl.col(cols[id_col]) if id_col is not None else pl.lit("")).alias("id"),
         ]
 
         genes = genes.with_columns(select_cols).select(["chr", "type", "start", "end", "strand", "id"]).sort(["chr", "start"])
@@ -196,8 +196,7 @@ class Genome:
         └─────────────┴────────┴────────┴────────┴──────────┴────────────┴────────────────┘
 
         """
-        genes = self.__filter_genes(
-            self.genome, 'gene', min_length, flank_length).collect()
+        genes = self.__filter_genes(self.genome, 'gene', min_length, flank_length).collect()
         genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
@@ -554,7 +553,7 @@ class Genome:
                 .select(forward.columns)
             )
 
-            genes = pl.concat([forward, reverse]).sort(["chr", "start"]).cast({"strand": pl.Categorical})
+            genes = pl.concat([forward, reverse]).sort(["chr", "start"])
 
         trimmed = (
             genes
