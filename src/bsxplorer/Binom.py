@@ -94,7 +94,7 @@ class BinomialData:
                 for batch in reader:
                     filtered = batch.data.filter(pl.col("count_total") >= min_coverage)
                     # Binomial test for cytosine methylation
-                    cdf_col = 1 - binom.cdf(filtered["count_m"] - 1, filtered["count_total"], total_probability)
+                    cdf_col = 1 - binom.cdf(filtered["count_m"].cast(pl.Int64) - 1, filtered["count_total"], total_probability)
                     # Write to p_valued file
                     p_valued = (
                         filtered.with_columns(pl.lit(cdf_col).cast(pl.Float64).alias("p_value"))
@@ -182,29 +182,24 @@ class BinomialData:
         )
 
         gene_stats = None
-        with ArrowParquetReader(self.preprocessed_path, use_threads=use_threads) as reader:
-            for arrow_batch in reader:
-                batch = pl.from_arrow(arrow_batch)
-
-                # Define methylated
-                methylated = (
-                    batch.with_columns(
-                        (pl.col("p_value") <= methylation_pvalue).alias("methylated").cast(pl.Boolean)
-                    )
-                    .drop("p_value")
-                )
-
+        with UniversalReader(
+                self.preprocessed_path,
+                "binom",
+                use_threads,
+                methylation_pvalue=methylation_pvalue
+        ) as reader:
+            for full_batch in reader:
                 # Extend context metadata
                 context_metadata.extend(
-                    methylated.group_by("context").agg([
-                        pl.sum("methylated").alias("count_m").cast(pl.Int64).alias("count_m"),
-                        pl.count("position").alias("count_total").cast(pl.Int64)
+                    full_batch.data.group_by("context").agg([
+                        pl.sum("count_m").cast(pl.Int64),
+                        pl.sum("count_total").cast(pl.Int64)
                     ])
                 )
 
                 # Map on genome
                 mapped = (
-                    methylated.lazy()
+                    full_batch.data.lazy()
                     .join_asof(
                         genome.lazy(), left_on="position", right_on="start", strategy="backward", by="chr"
                     )
@@ -220,8 +215,8 @@ class BinomialData:
                         pl.first("gene_strand"),
                         pl.first("end"),
                         pl.first("id"),
-                        pl.sum("methylated").alias("count_m"),
-                        pl.count("position").alias("count_total")
+                        pl.sum("count_m"),
+                        pl.sum("count_total")
                     ])
                     .rename({"gene_strand": "strand"})
                     .collect()
@@ -240,7 +235,7 @@ class BinomialData:
             total_probability = metadata_row["count_m"] / metadata_row["count_total"]
 
             filtered = gene_stats.filter(pl.col("context") == metadata_row["context"])
-            cdf = 1 - binom.cdf(filtered["count_m"] - 1, filtered["count_total"], total_probability)
+            cdf = 1 - binom.cdf(filtered["count_m"].cast(pl.Int64) - 1, filtered["count_total"], total_probability)
             result.extend(filtered.with_columns(pl.lit(cdf, pl.Float64).alias("p_value")))
 
             print(f"{metadata_row['context']}\tTotal sites: {metadata_row['count_total']}, methylated: {metadata_row['count_m']}\t({round(total_probability * 100, 2)}%)")
@@ -414,7 +409,7 @@ class RegionStat:
         return self.__class__(
             self.data
             .filter(expr)
-            .filter(pl.col(f"total_context_{context}") >= min_n)
+            .filter(pl.col(f"count_total_context_{context}") >= min_n)
         )
 
     def save(self, path: str | Path):
@@ -463,23 +458,16 @@ class RegionStat:
         tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]
             BM, IM, UM :class:`pl.DataFrame`
         """
-        other_contexts = list({"CG", "CHG", "CHH"} - {context})
-        bm = (
-            self.filter(context, "<", p_value, min_n)
-            .filter(other_contexts[0], ">=", 1 - p_value)
-            .filter(other_contexts[1], ">=", 1 - p_value)
-        )
-        im = (
-            self.filter(context, ">=", p_value, min_n)
-            .filter(context, "<", 1 - p_value, min_n)
-            .filter(other_contexts[0], ">=", 1 - p_value)
-            .filter(other_contexts[1], ">=", 1 - p_value)
-        )
-        um = (
-            self.filter(context, ">=", p_value, 1 - min_n)
-            .filter(other_contexts[0], ">=", 1 - p_value)
-            .filter(other_contexts[1], ">=", 1 - p_value)
-        )
+        other_contexts = list(map(lambda name: name.replace("p_value_context_", ""), self.data.select("^p_value_context_.+$").columns))
+
+        def filter_other(df):
+            for c in other_contexts:
+                df = df.filter(c, ">=", 1 - p_value)
+            return df
+
+        bm = filter_other(self.filter(context, "<", p_value, min_n))
+        im = filter_other(self.filter(context, ">=", p_value, min_n))
+        um = filter_other(self.filter(context, ">=", p_value, 1 - min_n))
 
         if save is not None:
             for df, df_type in zip([bm, im, um], ["BM", "IM", "UM"]):

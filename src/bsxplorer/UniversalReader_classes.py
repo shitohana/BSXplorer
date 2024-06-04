@@ -5,7 +5,9 @@ import gzip
 import os
 import shutil
 import tempfile
+import warnings
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from fractions import Fraction
 from pathlib import Path
 
@@ -46,7 +48,8 @@ class ArrowParquetReader:
     def __init__(self,
                  file: str | Path,
                  use_cols: list = None,
-                 use_threads: bool = True):
+                 use_threads: bool = True,
+                 **kwargs):
         self.file = Path(file).expanduser().absolute()
         if not self.file.exists():
             raise FileNotFoundError()
@@ -57,8 +60,6 @@ class ArrowParquetReader:
         self.__use_cols = use_cols
         self.__use_threads = use_threads
 
-        self.__bar = ReportBar(f"Reading from {file}", max=self.reader.num_row_groups)
-
     def __len__(self):
         return self.reader.num_row_groups
 
@@ -66,7 +67,6 @@ class ArrowParquetReader:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.__bar.finish()
         self.reader.close()
 
     def __iter__(self):
@@ -80,7 +80,6 @@ class ArrowParquetReader:
         # Check if it is the last row group
         if old_group < self.reader.num_row_groups:
             self.__current_group += 1
-            self.__bar.next()
 
             batch = self.reader.read_row_group(
                 old_group,
@@ -92,25 +91,37 @@ class ArrowParquetReader:
             return mutated
         raise StopIteration()
 
+    @property
+    def batch_size(self):
+        return int(self.file.stat().st_size / self.reader.num_row_groups)
+
 
 class BinomReader(ArrowParquetReader):
     def __init__(self, file: str | Path, methylation_pvalue=.05, **kwargs):
         super().__init__(file, **kwargs)
-        self.methylation_pvalue = methylation_pvalue
+
+        if 0 < methylation_pvalue <= 1:
+            self.methylation_pvalue = methylation_pvalue
+        else:
+            self.methylation_pvalue = 0.05
+            warnings.warn(f"P-value needs to be in (0;1] interval, not {methylation_pvalue}. Setting to default ({self.methylation_pvalue})")
 
     def _mutate_next(self, batch: pa.RecordBatch):
         df = pl.from_arrow(batch)
 
         mutated = (
-            df.with_columns([
+            df
+            .with_columns(
+                (pl.col("p_value") <= self.methylation_pvalue).cast(pl.UInt8).alias("count_m")
+            )
+            .with_columns([
                 pl.col("context").alias("trinuc"),
-                (pl.col("p_value") <= self.methylation_pvalue).cast(pl.UInt8).alias("count_m"),
                 pl.lit(1).alias("count_total"),
                 pl.col("count_m").cast(pl.Float64).alias("density")
             ])
         )
 
-        return mutated
+        return FullSchemaBatch(mutated, batch)
 
 
 class ArrowReaderCSV:
@@ -132,8 +143,9 @@ class ArrowReaderCSV:
         ...
 
     def __init__(self, file, block_size_mb):
-        super().__init__(file)
+        self.file = file
         self.batch_size = block_size_mb  * 1024**2
+        self._current_batch = None
 
     def __enter__(self):
         return self
@@ -148,7 +160,10 @@ class ArrowReaderCSV:
             convert_options: pcsv.ConvertOptions = None,
             memory_pool=None
     ) -> pcsv.CSVStreamingReader:
-
+        """
+        This function is needed, because if Arrow tries to open CSV with wrong schema, it gets stuck on it forever.
+        This function makes a timout on initializing reader
+        """
         try:
             reader = open_csv(
                 self.file,
@@ -157,6 +172,8 @@ class ArrowReaderCSV:
                 convert_options,
                 memory_pool
             )
+
+            return reader
         except pa.ArrowInvalid as e:
             print(f"Error opening file: {self.file}")
             raise e
@@ -164,28 +181,19 @@ class ArrowReaderCSV:
             print("Time for oppening file exceeded. Check if input type is correct or try making your batch size smaller.")
             os._exit(0)
 
-        return reader
+    def _mutate_next(self, batch: pa.RecordBatch) -> FullSchemaBatch:
+        return FullSchemaBatch(pl.from_arrow(batch), batch)
 
-    def next_raw(self) -> pa.RecordBatch:
-        old_batch = self._current_batch
+    def __next__(self):
         try:
-            self._current_batch = self.reader.read_next_batch()
-        except pa.ArrowInvalid as e:
-            print(e)
-            return self.next_raw()
-        if self._current_batch.num_rows != 0:
-            return old_batch
-        raise StopIteration()
-
-    def _mutate_next(self, batch: pa.RecordBatch):
-        return batch
-
-    def __next__(self) -> pa.RecordBatch:
-        raw = self.next_raw()
-        if raw is not None:
+            raw = self.reader.read_next_batch()
             batch = self._mutate_next(raw)
             return batch
-        return raw
+        except pa.ArrowInvalid as e:
+            print(e)
+            return self.__next__()
+        except StopIteration:
+            raise StopIteration
 
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -235,9 +243,32 @@ class BismarkReader(ArrowReaderCSV):
             memory_pool=memory_pool
         )
 
+    def _mutate_next(self, batch: pa.RecordBatch):
+        mutated = (
+            pl.from_arrow(batch)
+            .with_columns((pl.col("count_m") + pl.col("count_um")).alias("count_total"))
+            .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
+        )
+        return FullSchemaBatch(mutated, batch)
+
 
 class CGMapReader(BismarkReader):
     pa_schema = ARROW_SCHEMAS["cgmap"]
+
+    def _mutate_next(self, batch: pa.RecordBatch):
+        mutated = (
+            pl.from_arrow(batch)
+            .with_columns([
+                pl.when(pl.col("nuc") == "C").then(pl.lit("+")).otherwise(pl.lit("-")).alias("strand"),
+                pl.when(pl.col("dinuc") == "CG")
+                # if dinuc == "CG" => trinuc = "CG"
+                .then(pl.col("dinuc"))
+                # otherwise trinuc = dinuc + context_last
+                .otherwise(pl.concat_str([pl.col("dinuc"), pl.col("context").str.slice(-1)]))
+                .alias("trinuc")
+            ])
+        )
+        return FullSchemaBatch(mutated, batch)
 
 
 class CoverageReader(ArrowReaderCSV):
@@ -327,8 +358,15 @@ class CoverageReader(ArrowReaderCSV):
         return output
 
     def _mutate_next(self, batch: pa.RecordBatch):
-        aligned = self._align(batch)
-        return aligned.to_arrow()
+        mutated = (
+            self._align(batch)
+            .with_columns([
+                (pl.col("count_m") + pl.col("count_um")).alias("count_total"),
+                pl.col("context").alias("trinuc")
+            ])
+            .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
+        )
+        return FullSchemaBatch(mutated, batch)
 
 
 class BedGraphReader(CoverageReader):
@@ -360,60 +398,7 @@ class BedGraphReader(CoverageReader):
         fractioned = self._get_fraction(aligned)
         full = fractioned.with_columns(pl.col("context").alias("trinuc"))
 
-        return full.to_arrow()
-
-
-def cast2full_batch(
-        batch: pa.RecordBatch | pa.Table | pl.DataFrame,
-        from_type: str
-) -> FullSchemaBatch:
-    if not isinstance(batch, pl.DataFrame):
-        pl_df = pl.from_arrow(batch)
-    else:
-        pl_df = batch
-    mutated = pl_df
-
-    if from_type == "bismark":
-        mutated = (
-            pl_df
-            .with_columns((pl.col("count_m") + pl.col("count_um")).alias("count_total"))
-            .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
-        )
-
-    elif from_type == "cgmap":
-        mutated = (
-            pl_df
-            .with_columns([
-                pl.when(pl.col("nuc") == "C").then(pl.lit("+")).otherwise(pl.lit("-")).alias("strand"),
-                pl.when(pl.col("dinuc") == "CG")
-                # if dinuc == "CG" => trinuc = "CG"
-                .then(pl.col("dinuc"))
-                # otherwise trinuc = dinuc + context_last
-                .otherwise(pl.concat_str([pl.col("dinuc"), pl.col("context").str.slice(-1)]))
-                .alias("trinuc")
-            ])
-        )
-    elif from_type == "bedgraph":
-        mutated = (
-            pl_df
-            .with_columns(pl.col("context").alias("trinuc"))
-        )
-    elif from_type == "coverage":
-        mutated = (
-            pl_df
-            .with_columns([
-                (pl.col("count_m") + pl.col("count_um")).alias("count_total"),
-                pl.col("context").alias("trinuc")
-            ])
-            .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
-        )
-    elif from_type == "parquet":
-        # TODO finish
-        pass
-    else:
-        raise KeyError(from_type)
-
-    return FullSchemaBatch(mutated)
+        return FullSchemaBatch(full, batch)
 
 
 class UniversalReader(object):
@@ -421,29 +406,29 @@ class UniversalReader(object):
             self,
             file: str | Path,
             report_type: ReportTypes,
-            use_threads: bool = True,
+            use_threads: bool = False,
+            bar: bool = True,
             **kwargs
     ):
         super().__init__()
         self.__validate(file, report_type)
         self.__decompressed = self.__decompress()
         if self.__decompressed is not None:
-            self.file = self.__decompressed.name
+            self.file = Path(self.__decompressed.name)
 
-        if report_type == "bismark":
-            self.reader = BismarkReader(file, use_threads, **kwargs)
-        elif report_type == "cgmap":
-            self.reader = CGMapReader(file, use_threads, **kwargs)
-        elif report_type == "bedgraph":
-            self.reader = BedGraphReader(file, use_threads=use_threads, **kwargs)
-        elif report_type == "coverage":
-            self.reader = CoverageReader(file, use_threads=use_threads, **kwargs)
-        elif report_type == "binom":
-            raise NotImplementedError()
-        else:
-            raise KeyError()
-
+        self.memory_pool = pa.system_memory_pool()
+        self.reader = self.__readers[report_type](file, use_threads=use_threads, memory_pool=self.memory_pool, **kwargs)
+        self.report_type = report_type
+        self._bar_on = bar
         self.bar = None
+
+    __readers = {
+        "bismark": BismarkReader,
+        "cgmap": CGMapReader,
+        "bedgraph": BedGraphReader,
+        "coverage": CoverageReader,
+        "binom": BinomReader
+    }
 
     def __validate(self, file, report_type):
         file = Path(file).expanduser().absolute()
@@ -453,7 +438,7 @@ class UniversalReader(object):
             raise IsADirectoryError(file)
         self.file = file
 
-        if report_type not in REPORT_TYPES_LIST:
+        if report_type not in self.__readers.keys():
             raise KeyError(report_type)
         self.report_type: str = report_type
 
@@ -474,25 +459,229 @@ class UniversalReader(object):
         if self.__decompressed is not None:
             self.__decompressed.close()
         if self.bar is not None:
+            self.bar.goto(self.bar.max)
             self.bar.finish()
         self.reader.__exit__(exc_type, exc_val, exc_tb)
+        self.memory_pool.release_unused()
+
 
     def __iter__(self):
-        self.reader.__next__()
-        self.bar = ReportBar(max=Path(self.file).stat().st_size)
+        if self._bar_on:
+            self.bar = ReportBar(max=self.file_size)
         return self
 
     def __next__(self) -> FullSchemaBatch:
-        next_batch = self.reader.__next__()
-        converted = cast2full_batch(next_batch, self.report_type)
+        full_batch = self.reader.__next__()
 
         if self.bar is not None:
             self.bar.next(self.batch_size)
 
-        return converted
+        return full_batch
 
     @property
     def batch_size(self):
         return self.reader.batch_size
 
+    @property
+    def file_size(self):
+        return self.file.stat().st_size
 
+
+class UniversalReplicatesReader(object):
+    def __init__(
+            self,
+            readers: list[UniversalReader]
+    ):
+        self.readers = readers
+        self.haste_limit = 1e9
+        self.bar = None
+
+        if any(map(lambda reader: reader.report_type in ["bedgraph"], self.readers)):
+            warnings.warn("Merging bedGraph may lead to incorrect results. Please, use other report types.")
+
+    def __iter__(self):
+        self.bar = ReportBar(max=self.full_size)
+        self.bar.start()
+
+        self._seen_chroms = []
+        self._unfinished = None
+
+        self._readers_data = {idx: dict(iterator=iter(reader), read_rows=0, haste=0, finished=False, name=reader.file, chr=None, pos=None) for reader, idx in zip(self.readers, range(len(self.readers)))}
+
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for reader in self.readers:
+            reader.__exit__(exc_type, exc_val, exc_tb)
+        if self.bar is not None:
+            self.bar.goto(self.bar.max)
+            self.bar.finish()
+
+    def __next__(self):
+        # Key is readers' index
+        reading_from = [key for key, value in self._readers_data.items() if (value["haste"] < self.haste_limit and not value["finished"])]
+
+
+        # Read batches from not hasting readers
+        batches_data = {}
+        for key in reading_from:
+            # If batch is present, drop "density" col and set "chr" and "position" sorted for further sorted merge
+            try:
+                batch = next(self._readers_data[key]["iterator"])
+                batches_data[key] = (
+                    batch.data
+                    .set_sorted(["chr", "position"])
+                    .drop("density")
+                    .with_columns(pl.lit([np.uint8(key)]).alias("group_idx"))
+                )
+                # Upd metadata
+                self._readers_data[key]["read_rows"] += len(batch)
+                self._readers_data[key] |= dict(chr=batch.data[-1]["chr"].to_list()[0],
+                                                pos=batch.data[-1]["position"].to_list()[0])
+            # Else mark reader as finished
+            except StopIteration:
+                self._readers_data[key]["finished"] = True
+
+        if not batches_data and len(self._unfinished) == 0:
+            raise StopIteration
+        elif batches_data:
+            self.haste_limit = sum(len(batch) for batch in batches_data.values()) // 3
+
+        # We assume that input file is sorted in some way
+        # So we gather chromosomes order in the input files to understand which is last
+        if self._unfinished is not None:
+            batches_data[-1] = self._unfinished
+
+        pack_seen_chroms = []
+        for key in batches_data.keys():
+            batch_chrs = batches_data[key]["chr"].unique(maintain_order=True).to_list()
+            [pack_seen_chroms.append(chrom) for chrom in batch_chrs if chrom not in pack_seen_chroms]
+        [self._seen_chroms.append(chrom) for chrom in pack_seen_chroms if chrom not in self._seen_chroms]
+
+        # Merge read batches and unfinished data with each other and then group
+        merged = []
+        for chrom in pack_seen_chroms:
+            # Retrieve first batch (order doesn't matter) with which we will merge
+            chr_merged = batches_data[list(batches_data.keys())[0]].filter(chr=chrom)
+            # Get keys of other batches
+            other = [key for key in batches_data.keys() if key != list(batches_data.keys())[0]]
+            for key in other:
+                chr_merged = chr_merged.merge_sorted(batches_data[key].filter(chr=chrom), key="position")
+            merged.append(chr_merged)
+        merged = pl.concat(merged).set_sorted(["chr", "position"])
+
+        # Group merged rows by chromosome and position and check indexes that have merged
+        grouped = (
+            merged.lazy()
+            .group_by(["chr", "position"], maintain_order=True)
+            .agg([
+                pl.first("strand", "context", "trinuc"),
+                pl.sum("count_m", "count_total"),
+                pl.col("group_idx").explode()
+            ])
+            .with_columns(pl.col("group_idx").list.len().alias("group_count"))
+        )
+
+        # Finished rows are those which have grouped among all readers
+        min_chr_idx = min(self._seen_chroms.index(reader_data["chr"]) for reader_data in self._readers_data.values())
+        min_position = min(reader_data["pos"] for reader_data in self._readers_data.values() if reader_data["chr"] == self._seen_chroms[min_chr_idx])
+
+        # Finished if all readers have grouped or there is no chance to group because position is already skipped
+        marked = (
+            grouped
+            .with_columns([
+                pl.col("chr").replace(self._seen_chroms, list(range(len(self._seen_chroms)))).cast(pl.Int8).alias("chr_idx"),
+                pl.lit(min_position).alias("min_pos")
+            ])
+            .with_columns(
+                pl.when(
+                    (pl.col("group_count") == len(self._readers_data)) | ((pl.col("chr_idx") < min_chr_idx) | (pl.col("chr_idx") == min_chr_idx) & (pl.col("position") < pl.col("min_pos")))
+                ).then(pl.lit(True)).otherwise(pl.lit(False)).alias("finished")
+            ).collect()
+        )
+
+        self._unfinished = marked.filter(finished=False).select(merged.columns)
+
+        hasting_stats = defaultdict(int)
+        if len(self._unfinished) > 0:
+            group_idx_stats = self._unfinished.select(pl.col("group_idx").list.to_struct()).unnest("group_idx")
+            for col in group_idx_stats.columns:
+                hasting_stats[group_idx_stats[col].drop_nulls().item(0)] += group_idx_stats[col].count()
+
+        for key in self._readers_data.keys():
+            self._readers_data[key]["haste"] = hasting_stats[key]
+
+        # Update bar
+        if reading_from:
+            self.bar.next(sum(self.readers[idx].batch_size for idx in reading_from))
+
+        out = marked.filter(finished=True)
+        return FullSchemaBatch(self._convert_to_full(out), out)
+
+    def _convert_to_full(self, df: pl.DataFrame):
+        return (
+            df.with_columns((pl.col("count_m") / pl.col("count_total")).alias("density")).select(FullSchemaBatch.colnames())
+        )
+
+
+    @property
+    def full_size(self):
+        return sum(map(lambda reader: reader.file_size, self.readers))
+
+
+class UniversalWriter:
+    def __init__(
+            self,
+            file: str | Path,
+            report_type: ReportTypes,
+    ):
+        file = Path(file).expanduser().absolute()
+        self.file = file
+
+        if report_type not in REPORT_TYPES_LIST:
+            raise KeyError(report_type)
+        self.report_type: str = report_type
+
+        self.memory_pool = pa.system_memory_pool()
+        self.writer = None
+
+    def __enter__(self):
+        write_options = pcsv.WriteOptions(
+            delimiter="\t",
+            include_header=False,
+            quoting_style="none"
+        )
+
+        self.writer = pcsv.CSVWriter(
+            self.file,
+            ARROW_SCHEMAS[self.report_type],
+            write_options=write_options,
+            memory_pool=self.memory_pool
+        )
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.writer.close()
+        self.memory_pool.release_unused()
+
+    def write(self, fullschema_batch: FullSchemaBatch):
+        if self.writer is None:
+            self.__enter__()
+
+        if self.report_type == "bismark":
+            fmt_df = fullschema_batch.to_bismark()
+        elif self.report_type == "cgmap":
+            fmt_df = fullschema_batch.to_cgmap()
+        elif self.report_type == "bedgraph":
+            fmt_df = fullschema_batch.to_bedGraph()
+        elif self.report_type == "coverage":
+            fmt_df = fullschema_batch.to_coverage()
+        else:
+            raise KeyError(f"{self.report_type} not supported")
+
+
+        self.writer.write(fmt_df.to_arrow().cast(ARROW_SCHEMAS[self.report_type]))

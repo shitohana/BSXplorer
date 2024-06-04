@@ -112,25 +112,6 @@ def interval(sum_density: list[int], sum_counts: list[int], alpha=.95, weighted:
     return {"lower": i[0], "upper": i[1]}
 
 
-def interval_chr(sum_density: list[int], sum_counts: list[int], alpha=.95):
-    """
-    Evaluate confidence interval for point
-
-    :param sum_density: Sums of methylated counts in fragment
-    :param sum_counts: Sums of all read cytosines in fragment
-    :param alpha: Probability for confidence band
-    """
-    sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
-    average = sum_density.sum() / len(sum_counts)
-
-    variance = np.average((sum_density - average) ** 2)
-
-    n = sum(sum_counts) - 1
-    i = stats.t.interval(alpha, df=n, loc=average, scale=np.sqrt(variance / n))
-
-    return {"lower": i[0], "upper": i[1]}
-
-
 MetageneSchema = dotdict(dict(
     chr=pl.Categorical,
     strand=pl.Categorical,
@@ -334,3 +315,4 @@ def arrow2polars_convert(pa_schema: pa.Schema):
 
 CONTEXTS = ["CG", "CHG", "CHH"]
 CYTOSINE_SUMFUNC = ["wmean", "mean", "min", "max", "median", "1pgeom"]
+AvailableSumfunc = Literal["wmean", "mean", "min", "max", "median", "1pgeom"]

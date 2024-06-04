@@ -24,7 +24,7 @@ from .Base import (
     validate_metagene_args
 )
 from .Clusters import ClusterSingle, ClusterMany
-from .utils import MetageneSchema
+from .utils import MetageneSchema, AvailableSumfunc
 from .GenomeClass import Genome
 from .UniversalReader_classes import UniversalReader
 
@@ -50,7 +50,7 @@ class Metagene(MetageneBase):
             down_windows: int = 0,
             block_size_mb: int = 100,
             use_threads: bool = True,
-            sumfunc: str = "wmean"
+            sumfunc: AvailableSumfunc = "wmean"
     ):
         """
         Constructor for Metagene class from Bismark ``coverage2cytosine`` report.
@@ -106,7 +106,7 @@ class Metagene(MetageneBase):
             down_windows: int = 0,
             block_size_mb: int = 100,
             use_threads: bool = True,
-            sumfunc: str = "wmean"
+            sumfunc: AvailableSumfunc = "wmean"
     ):
         """
         Constructor for Metagene class from BSSeeker2 CGmap file.
@@ -161,7 +161,7 @@ class Metagene(MetageneBase):
             body_windows: int = 2000,
             down_windows: int = 0,
             use_threads=True,
-            sumfunc: str = "wmean"
+            sumfunc: AvailableSumfunc = "wmean"
     ):
         """
         Constructor for Metagene class from converted ``.bedGraph`` or ``.cov`` (via :class:`Mapper`).
@@ -214,7 +214,8 @@ class Metagene(MetageneBase):
             body_windows: int = 2000,
             down_windows: int = 0,
             p_value: float = .05,
-            use_threads=True
+            use_threads=True,
+            sumfunc: AvailableSumfunc = "wmean"
     ):
         """
         Constructor for Metagene class from :meth:`BinomialData.preprocess` ``.parquet`` file.
@@ -250,8 +251,15 @@ class Metagene(MetageneBase):
         >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
         >>> metagene = Metagene.from_binom(save_name, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
-        raise NotImplementedError()
+        reader = UniversalReader(file, "binom", methylation_pvalue=p_value, use_threads=use_threads)
 
+        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
+        report_df = read_metagene(**(locals() | args))
+
+        return cls(report_df,
+                   upstream_windows=args["upstream_windows"],
+                   gene_windows=args["body_windows"],
+                   downstream_windows=args["downstream_windows"])
 
     @classmethod
     def from_bedGraph(
@@ -262,7 +270,7 @@ class Metagene(MetageneBase):
             up_windows: int = 0,
             body_windows: int = 2000,
             down_windows: int = 0,
-            sumfunc: str = "wmean",
+            sumfunc: AvailableSumfunc = "wmean",
             block_size_mb: int = 30,
             use_threads: bool = True,
             save_preprocessed: bool = False,
@@ -329,7 +337,7 @@ class Metagene(MetageneBase):
             up_windows: int = 0,
             body_windows: int = 2000,
             down_windows: int = 0,
-            sumfunc: str = "wmean",
+            sumfunc: AvailableSumfunc = "wmean",
             block_size_mb: int = 30,
             use_threads: bool = True,
             save_preprocessed: bool = False,
@@ -795,7 +803,7 @@ class MetageneFiles(MetageneFilesBase):
             report_type: Literal["bismark", "parquet", "binom", "bedGraph", "coverage"] = "bismark",
             block_size_mb: int = 50,
             use_threads: bool = True,
-            sumfunc: str = "wmean",
+            sumfunc: AvailableSumfunc = "wmean",
             **kwargs
     ) -> MetageneFiles:
         """

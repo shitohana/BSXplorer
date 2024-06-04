@@ -17,7 +17,9 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 import warnings
 
-from .utils import interval, decompress, ReportBar, interval_chr
+from .UniversalReader_classes import UniversalReader
+from .utils import interval, decompress, ReportBar, dotdict
+from .Base import interval_chr, read_chromosomes, validate_chromosome_args
 from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader, CGmapOptions
 
 
@@ -233,7 +235,7 @@ class ChrLevels:
 
     @staticmethod
     def __calculate_plot_data(df: pl.DataFrame):
-        group_cols = [pl.sum("sum"), pl.sum("count"), pl.first("chr_pos")]
+        group_cols = [pl.sum("sum"), pl.sum("count"), pl.min("start").alias("chr_pos")]
         mut_cols = [(pl.col("sum") / pl.col("count")).alias("density")]
 
         if "upper" in df.columns:
@@ -242,9 +244,12 @@ class ChrLevels:
         return (
             df
             .sort(["chr", "window"])
-            .group_by(["chr", "window"], maintain_order=True)
+            .group_by(["chr", "window", "context"], maintain_order=True)
             .agg(group_cols)
+            .group_by(["chr", "window"], maintain_order=True)
+            .agg(pl.all().exclude(["chr", "window"]))
             .with_row_count("fragment")
+            .explode(pl.all().exclude(["chr", "window", "fragment"]))
             .with_columns(mut_cols)
         )
 
@@ -257,7 +262,7 @@ class ChrLevels:
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
             use_threads: bool = True,
-            confidence: int = None
+            confidence: float = None
     ):
         """
         Initialize ChrLevels with CX_report file
@@ -266,15 +271,11 @@ class ChrLevels:
         :param chr_min_length: Minimum length of chromosome to be analyzed
         :param window_length: Length of windows in bp
         """
-        chr_reader = ChrBismarkReader(
-            file=file,
-            chr_min_length=chr_min_length,
-            window_length=window_length,
-            block_size_mb=block_size_mb,
-            use_threads=use_threads,
-            confidence=confidence
-        )
-        report_df = chr_reader.read()
+
+        reader = UniversalReader(**(locals() | dict(report_type="bismark")))
+        args = validate_chromosome_args(chr_min_length, window_length, confidence)
+
+        report_df = read_chromosomes(**(locals() | args))
 
         return cls(report_df)
 
@@ -286,7 +287,7 @@ class ChrLevels:
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
             use_threads: bool = True,
-            confidence: int = None
+            confidence: float = None
     ):
         """
         Initialize ChrLevels with CGmap file
@@ -295,15 +296,10 @@ class ChrLevels:
         :param chr_min_length: Minimum length of chromosome to be analyzed
         :param window_length: Length of windows in bp
         """
-        chr_reader = ChrCGmapReader(
-            file=file,
-            chr_min_length=chr_min_length,
-            window_length=window_length,
-            block_size_mb=block_size_mb,
-            use_threads=use_threads,
-            confidence=confidence
-        )
-        report_df = chr_reader.read()
+        reader = UniversalReader(**(locals() | dict(report_type="cgmap")))
+        args = validate_chromosome_args(chr_min_length, window_length, confidence)
+
+        report_df = read_chromosomes(**(locals() | args))
 
         return cls(report_df)
 
@@ -313,7 +309,7 @@ class ChrLevels:
             file: str | Path,
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
-            confidence: int = None
+            confidence: float = None
     ):
         """
         Initialize ChrLevels with parquet file
@@ -322,14 +318,21 @@ class ChrLevels:
         :param chr_min_length: Minimum length of chromosome to be analyzed
         :param window_length: Length of windows in bp
         """
-        chr_reader = ChrParquetReader(
-            file=file,
-            chr_min_length=chr_min_length,
-            window_length=window_length,
-            confidence=confidence
-        )
+        raise NotImplementedError()
 
-        report_df = chr_reader.read()
+    @classmethod
+    def from_binom(
+            cls,
+            file: str | Path,
+            chr_min_length=10 ** 6,
+            window_length: int = 10 ** 6,
+            confidence: float = None,
+            p_value: float = .05
+    ):
+        reader = UniversalReader(**(locals() | dict(report_type="binom", methylation_pvalue=p_value)))
+        args = validate_chromosome_args(chr_min_length, window_length, confidence)
+
+        report_df = read_chromosomes(**(locals() | args))
 
         return cls(report_df)
 
@@ -408,53 +411,15 @@ class ChrLevels:
         for tick in x_lines:
             figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
 
-    def draw_mpl(
-            self,
-            fig_axes: tuple = None,
-            smooth: int = 10,
-            label: str = None,
-            linewidth: float = 1.0,
-            linestyle: str = '-'
-    ) -> Figure:
-        """
-        Draws line-plot on given axis.
 
-        Parameters
-        ----------
-        fig_axes
-            Tuple of (`matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_, `matplotlib.axes.Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes>`_). New are created if ``None``
-        smooth
-            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
-        label
-            Label of line on line-plot
-        linewidth
-            Width of the line
-        linestyle
-            Style of the line
-
-        Returns
-        -------
-            ``matplotlib.pyplot.Figure``
-
-        See Also
-        --------
-        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
-
-        `matplotlib.pyplot.subplot() <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplot.html#matplotlib.pyplot.subplot>`_ : To create fig, axes
-
-        `Linestyles <https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html>`_ : For possible linestyles.
-        """
-        if fig_axes is None:
-            fig, axes = plt.subplots()
-        else:
-            fig, axes = fig_axes
-
-        data = self.plot_data["density"].to_numpy()
+    def __get_points(self, df, smooth):
+        data = df["density"].to_numpy()
 
         upper, lower = None, None
         if "upper" in self.plot_data.columns and np.isnan(data).sum() == 0:
-            upper = self.plot_data["upper"].to_numpy() # convert to percents
-            lower = self.plot_data["lower"].to_numpy()
+            not_nan_data = df.filter(pl.col("upper").is_not_nan())
+            upper = not_nan_data["upper"].to_numpy()
+            lower = not_nan_data["lower"].to_numpy()
 
         polyorder = 3
         window = smooth if smooth > polyorder else polyorder + 1
@@ -467,15 +432,69 @@ class ChrLevels:
             data = np.concatenate(data_ranges)
 
             if upper is not None:
-                upper = np.concatenate([savgol_filter(r, window, 3, mode="nearest") for r in [upper[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]])
-                lower = np.concatenate([savgol_filter(r, window, 3, mode="nearest") for r in [lower[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]])
+                upper = np.concatenate([savgol_filter(r, window, 3, mode="nearest") for r in
+                                        [upper[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]])
+                lower = np.concatenate([savgol_filter(r, window, 3, mode="nearest") for r in
+                                        [lower[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]])
 
         x = np.arange(len(data))
-        data = data * 100  # convert to percents
-        axes.plot(x, data, label=label,
-                  linestyle=linestyle, linewidth=linewidth)
+
+        # Convert to percents
+        data = data * 100
         if upper is not None:
-            axes.fill_between(x, lower * 100, upper * 100, alpha=.2)
+            upper, lower = upper * 100, lower * 100
+
+        return x, data, upper, lower
+
+
+    def draw_mpl(
+            self,
+            fig_axes: tuple = None,
+            smooth: int = 10,
+            label: str = None,
+            draw_ci: bool = True,
+            **kwargs
+    ) -> Figure:
+        """
+        Draws line-plot on given axis.
+
+        Parameters
+        ----------
+        fig_axes
+            Tuple of (`matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_, `matplotlib.axes.Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes>`_). New are created if ``None``
+        smooth
+            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
+        label
+            Label of line on line-plot
+        draw_ci
+            Draw confidence intervals
+        kwargs
+            kwargs to pass to `matplotlib.plot <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.plot.html>`_
+
+        Returns
+        -------
+            ``matplotlib.pyplot.Figure``
+
+        See Also
+        --------
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+
+        `matplotlib.pyplot.subplot() <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplot.html#matplotlib.pyplot.subplot>`_ : To create fig, axes
+        """
+        if fig_axes is None:
+            fig, axes = plt.subplots()
+        else:
+            fig, axes = fig_axes
+
+        for context in self.plot_data["context"].unique():
+            filtered = self.plot_data.filter(context=context)
+            x, y, upper, lower = self.__get_points(filtered, smooth)
+
+            current_label = label + f"_{context}" if label is not None else context
+
+            axes.plot(x, y, label=current_label, **kwargs)
+            if upper is not None and draw_ci:
+                axes.fill_between(x, lower, upper, alpha=.2)
 
         axes.legend()
         axes.set_ylabel('Methylation density, %')
@@ -487,11 +506,14 @@ class ChrLevels:
 
         return fig
 
-    def draw_plotly(self,
-                    figure: Figure = None,
-                    smooth: int = 10,
-                    label: str = None
-                    ):
+    def draw_plotly(
+            self,
+            figure: Figure = None,
+            smooth: int = 10,
+            label: str = None,
+            draw_ci: bool = True,
+            **kwargs
+    ):
         """
         Draws line-plot on given figure.
 
@@ -504,6 +526,10 @@ class ChrLevels:
             Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
         label
             Label of line on line-plot
+        draw_ci
+            Draw confidence intervals
+        kwargs
+            kwargs to pass to `plotly.graph_objects.Scatter <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Scatter.html>`_
 
         Returns
         -------
@@ -513,62 +539,78 @@ class ChrLevels:
         --------
         `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
-        if figure is None:
-            figure = go.Figure()
 
-        y_data = self.plot_data["density"].to_numpy()
+        figure = go.Figure() if figure is None else figure
 
-        polyorder = 3
-        window = smooth if smooth > polyorder else polyorder + 1
+        for context in self.plot_data["context"].unique():
+            filtered = self.plot_data.filter(context=context)
+            x, y, upper, lower = self.__get_points(filtered, smooth)
 
-        if smooth:
-            _, _, lines = self.__ticks_data
-            lines[-1] = lines[-1] + 1
-            data_ranges = [y_data[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]
-            data_ranges = [savgol_filter(r, window, 3, mode='nearest') for r in data_ranges]
+            label_current = label + f"_{context}" if label is not None else context
 
-            y_data = np.concatenate(data_ranges)
+            traces = [go.Scatter(x=x, y=y, name=label_current, mode="lines", **kwargs)]
 
-        y_data = y_data * 100  # convert to percents
-        plot_df = (
-            self.plot_data
-            .drop("density")
-            .with_columns(pl.lit(y_data).alias("density"))
-        )
+            if upper is not None and draw_ci:
+                ci_kwargs = dict(
+                    mode="lines",
+                    line_color='rgba(0,0,0,0)',
+                    name=f"{label_current}_CI"
+                )
 
-        # trace = go.Scatter(x=x, y=y_data, mode="lines", name=label)
-        trace_fig = px.line(
-            plot_df.to_pandas(),
-            x="fragment",
-            y="density",
-            hover_data={
-                "fragment": False,
-                "chr": True,
-                "chr_pos": True,
-                "density": ":.4f"
-            }
-        )
+                traces += [
+                    go.Scatter(x=x, y=upper, showlegend=False, **ci_kwargs),
+                    go.Scatter(x=x, y=lower, fill="tonexty", showlegend=True, **ci_kwargs)
+                ]
 
-        figure.add_traces(trace_fig.data)
-
-        if label is not None:
-            curent_fig_i = len(figure.data) - 1
-
-            figure.data[curent_fig_i].name = label
-            figure.data[curent_fig_i].showlegend = True
-            figure.data[curent_fig_i].line.color = PALETTE.Dark24[curent_fig_i]
-            figure.data[curent_fig_i].hovertemplate = re.sub(
-                '^<b>.+?</b>',
-                f'<b>{label}</b>',
-                figure.data[curent_fig_i].hovertemplate
-            )
+            figure.add_traces(data=traces)
 
         figure.update_layout(
             xaxis_title="Position",
-            yaxis_title="Methylation density, %",
-            hovermode="x unified"
+            yaxis_title="Methylation density, %"
         )
 
         self.__add_flank_lines_plotly(figure)
 
         return figure
+
+    def bar_plot(self):
+        bismark = self.bismark
+        class ChrBarPlot:
+            def draw_mpl(self):
+                pd_df = (
+                    bismark
+                    .group_by(["chr", "context"])
+                    .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
+                    .sort("chr", "context")
+                    .pivot(values="density", index="chr", columns="context")
+                    .to_pandas()
+                    .set_index("chr")
+                )
+
+                fig, axes = plt.subplots()
+                pd_df.plot.barh(ax=axes, figsize=(12, 9))
+                fig.subplots_adjust(left=0.2)
+                return fig
+
+            def draw_plotly(self):
+                pd_df = (
+                    bismark
+                    .group_by(["chr", "context"])
+                    .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
+                    .sort("chr", "context")
+                    .to_pandas()
+                )
+
+                figure = px.histogram(
+                    pd_df,
+                    x="chr", y="density",
+                    color="context",
+                    barmode="group",
+                    histfunc="avg"
+                )
+
+                figure.update_layout(bargap=.05)
+
+                return figure
+
+        return ChrBarPlot()

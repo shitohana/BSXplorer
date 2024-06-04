@@ -107,14 +107,17 @@ class FullSchemaBatch(BaseBatch):
             density=pl.Float64
         )
 
-    def __init__(self, data: pl.DataFrame):
+    def __init__(self, data: pl.DataFrame, raw: pa.Table | pa.RecordBatch):
         super().__init__(data)
+
+        self.raw = raw
 
     def __len__(self):
         return len(self.data)
 
     def filter_not_none(self):
         self.data = self.data.filter(pl.col("density").is_not_nan())
+        return self
 
     def to_bismark(self):
         converted = (

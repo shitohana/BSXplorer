@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import gzip
+import warnings
 from typing import Literal
 
+import numpy as np
 import plotly.graph_objects as go
 import polars as pl
 from matplotlib.axes import Axes
 from pyreadr import write_rds
+from scipy import stats
 
 from .UniversalReader_batches import FullSchemaBatch
 from .UniversalReader_classes import UniversalReader
-from .utils import remove_extension, prepare_labels, CYTOSINE_SUMFUNC, MetageneJoinedSchema
+from .utils import remove_extension, prepare_labels, CYTOSINE_SUMFUNC, MetageneJoinedSchema, AvailableSumfunc
 
 
 class MetageneBase:
@@ -245,7 +248,7 @@ def validate_metagene_args(
         upstream_windows: int = 0,
         body_windows: int = 2000,
         downstream_windows: int = 0,
-        sumfunc: Literal["wmean", "mean", "min", "max", "median", "1pgeom"] = "wmean",
+        sumfunc: AvailableSumfunc = "wmean",
 ):
     # VALIDATION
     # Windows
@@ -260,6 +263,110 @@ def validate_metagene_args(
         raise NotImplementedError("This summary function is not implemented yet")
 
     return locals()
+
+def validate_chromosome_args(
+        chr_min_length=10 ** 6,
+        window_length: int = 10 ** 6,
+        confidence: int = None
+):
+    if chr_min_length < 0:
+        warnings.warn("Minimum length of chromosomes should be positive value. Setting it to 0.")
+        chr_min_length = 0
+    if window_length < 0:
+        warnings.warn("Window length should be positive value. Setting it to 1e6.")
+        window_length = 10 ** 6
+    if confidence is None:
+        confidence = 0
+    else:
+        if not (0 <= confidence < 1):
+            warnings.warn("Confidence value needs to be in [0;1) interval, not {}. Disabling confidence bands.")
+            confidence = 0
+
+    return locals()
+
+
+def read_chromosomes(
+        reader: UniversalReader,
+        chr_min_length=10 ** 6,
+        window_length: int = 10 ** 6,
+        confidence: float = None,
+        **kwargs
+):
+    # Validate confidence param
+    if confidence is None:
+        confidence = 0
+    else:
+        if not (0 <= confidence < 1):
+            warnings.warn("Confidence value needs to be in [0;1) interval, not {}. Disabling confidence bands.".format(confidence))
+            confidence = 0
+
+    def process_batch(df: pl.DataFrame, unfinished_windows_df, last=False):
+        last_chr, last_position = df.select("chr", "position").row(-1)
+        windows_df = (
+            df.with_columns(
+                (pl.col("position") / window_length).floor().cast(pl.Int32).alias("window"),
+            )
+        )
+
+        if unfinished_windows_df is not None:
+            windows_df = unfinished_windows_df.vstack(windows_df)
+
+        last_window, = windows_df.filter(chr=last_chr).select("window").row(-1)
+
+        if not last:
+            unfinished_windows_df = windows_df.filter(chr=last_chr, window=last_window)
+            finished_windows_df = windows_df.filter((pl.col("chr") != last_chr) | (pl.col("window") != last_window))
+        else:
+            finished_windows_df = windows_df
+            unfinished_windows_df = None
+
+        AGG_COLS = [
+            pl.sum('density').alias('sum'),
+            pl.count('density').alias('count'),
+            pl.min("position").alias("start"),
+            pl.max("position").alias("end")
+        ]
+        if confidence is not None and confidence > 0:
+            AGG_COLS.append(
+                pl.struct(["density", "count_total"])
+                .map_elements(lambda x: interval_chr(x.struct.field("density"), x.struct.field("count_total"), confidence))
+                .alias("interval")
+            )
+
+        finished_group = (
+            finished_windows_df
+            .group_by(["chr", "strand", "context", "window"])
+            .agg(AGG_COLS)
+        )
+
+        if confidence is not None and confidence > 0:
+            finished_group = finished_group.unnest("interval")
+
+        return finished_group, unfinished_windows_df
+
+    print("Reading report from", reader.file)
+    report_df = None
+    unfinished = None
+    for batch in reader:
+        batch.filter_not_none()
+        processed, unfinished = process_batch(batch.data, unfinished)
+
+        if report_df is None:
+            report_df = processed
+        else:
+            report_df.extend(processed)
+
+    # Add last unfinished
+    report_df.extend(process_batch(unfinished, None, last=True)[0])
+
+    # Filter by chromosome lengths
+    chr_stats = report_df.group_by("chr").agg(pl.min("start"), pl.max("end"))
+    chr_short_list = chr_stats.filter((pl.col("end") - pl.col("start")) < chr_min_length)["chr"].to_list()
+
+    report_df = report_df.filter(~pl.col("chr").is_in(chr_short_list))
+
+    return report_df
+
 
 
 def read_metagene(
@@ -373,3 +480,24 @@ def read_metagene(
 
     print("DONE\n")
     return report_df
+
+
+def interval_chr(sum_density: list[int], sum_counts: list[int], alpha=.95):
+    """
+    Evaluate confidence interval for point
+
+    :param sum_density: Sums of methylated counts in fragment
+    :param sum_counts: Sums of all read cytosines in fragment
+    :param alpha: Probability for confidence band
+    """
+    with np.errstate(invalid='ignore'):
+        sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
+        average = sum_density.sum() / len(sum_counts)
+
+        variance = np.average((sum_density - average) ** 2)
+
+        n = sum(sum_counts) - 1
+
+        i = stats.t.interval(alpha, df=n, loc=average, scale=np.sqrt(variance / n))
+
+        return {"lower": i[0], "upper": i[1]}
