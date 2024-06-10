@@ -403,7 +403,8 @@ class Metagene(MetageneBase):
             strand: Literal["+", "-", None] = None,
             chr: str = None,
             genome: pl.DataFrame = None,
-            id: list[str] = None
+            id: list[str] = None,
+            coords: list[str] = None
     ) -> Metagene:
         """
         Method for filtering metagene.
@@ -466,10 +467,9 @@ class Metagene(MetageneBase):
 
         if genome is not None:
             def genome_filter(df: pl.DataFrame):
-                if all(char in ["-", "+"] for char in genome["strand"].unique()):
-                    return df.cast({"chr": pl.Utf8}).join(genome.cast({"chr": pl.Utf8}).select(["chr", "strand", "start"]), on=["chr", "strand", "start"])
-                else:
-                    return df.cast({"chr": pl.Utf8}).join(genome.cast({"chr": pl.Utf8}).select(["chr", "start"]), on=["chr", "start"])
+                cast_dtypes = {"chr": pl.Utf8, "strand": pl.Utf8}
+                cast_cat_dtypes = {"chr": pl.Categorical, "strand": pl.Categorical}
+                return df.cast(cast_dtypes).join(genome.cast(cast_dtypes).select(["chr", "start"]), on=["chr", "start"]).cast(cast_cat_dtypes)
         else:
             genome_filter = lambda df: df
 
@@ -479,11 +479,17 @@ class Metagene(MetageneBase):
         else:
             id_filter = lambda df: df
 
+        if id is not None:
+            def coords_filter(df: pl.DataFrame):
+                return df.filter(pl.col("gene").is_in(coords))
+        else:
+            coords_filter = lambda df: df
+
         if context_filter is None and strand_filter is None and chr_filter is None:
             return self
         else:
             return self.__class__(
-                id_filter(genome_filter(self.bismark.filter(context_filter & strand_filter & chr_filter))),
+                coords_filter(id_filter(genome_filter(self.bismark.filter(context_filter & strand_filter & chr_filter)))),
                 **metadata)
 
     def resize(self, to_fragments: int = None) -> Metagene:
@@ -908,7 +914,7 @@ class MetageneFiles(MetageneFilesBase):
         return cls(samples, labels)
 
     def filter(self, context: str = None, strand: str = None, chr: str = None, genome: pl.DataFrame = None,
-               id: list[str] = None):
+               id: list[str] = None, coords: list[str] = None):
         """
         :meth:`Metagene.filter` all metagenes.
 
@@ -931,7 +937,7 @@ class MetageneFiles(MetageneFilesBase):
         --------
         Metagene.filter : For examples.
         """
-        return self.__class__([sample.filter(context, strand, chr, genome, id) for sample in self.samples], self.labels)
+        return self.__class__([sample.filter(context, strand, chr, genome, id, coords) for sample in self.samples], self.labels)
 
     def trim_flank(self, upstream=True, downstream=True):
         """

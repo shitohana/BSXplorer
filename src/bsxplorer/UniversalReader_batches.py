@@ -53,7 +53,7 @@ ARROW_SCHEMAS = {
 }
 
 ReportTypes = Literal["bismark", "cgmap", "bedgraph", "coverage", "binom"]
-REPORT_TYPES_LIST = ["bismark", "cgmap", "bedgraph", "coverage", "parquet"]
+REPORT_TYPES_LIST = ["bismark", "cgmap", "bedgraph", "coverage", "binom"]
 
 
 class BaseBatch(ABC):

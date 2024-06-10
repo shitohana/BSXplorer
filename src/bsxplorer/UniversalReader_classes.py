@@ -468,6 +468,7 @@ class UniversalReader(object):
     def __iter__(self):
         if self._bar_on:
             self.bar = ReportBar(max=self.file_size)
+            self.bar.start()
         return self
 
     def __next__(self) -> FullSchemaBatch:

@@ -10,14 +10,18 @@ from dataclasses import dataclass, field, asdict
 from gc import collect
 from io import BytesIO
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import polars as pl
 from jinja2 import Template
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from plotly import graph_objs as go
+from plotly.subplots import make_subplots
 
 from . import Genome, Metagene, PCA, MetageneFiles, BinomialData, ChrLevels
+from .SeqMapper import init_tempfile
+from .UniversalReader_classes import UniversalWriter, UniversalReader, UniversalReplicatesReader
 from .utils import merge_replicates, decompress
 
 
@@ -120,7 +124,7 @@ def metagene_parser():
 
     parser.add_argument('--separate_strands', help='Do strands need to be processed separately', action='store_true')
     parser.add_argument('--export',           help='Export format for plots (set none to disable)', type=str, default='pdf', choices=['pdf', 'svg', 'none'])
-    parser.add_argument('--ticks',            help='Names of ticks (5 labels with ; separator in " brackets)', type=_ticks, nargs=5)
+    parser.add_argument('--ticks',            help='Names of ticks (- character should be escaped with double reverse slash)', type=_ticks, nargs=5)
 
     return parser
 
@@ -415,10 +419,10 @@ class CategoryScript(ConsoleScript):
             f"Threads: {args.threads}\n"
             f"\nUpstream | Body | Downstream (bins): {args.ubin} | {args.bbin} | {args.dbin}\n\n"
             
-            f"P-value for cytosines: {args.cytosine_p}"
-            f"P-value for region: {args.region_p}"
-            f"Minimal coverage: {args.min_cov}"
-            f"Save categories? - {args.save_cat}"
+            f"P-value for cytosines: {args.cytosine_p}\n"
+            f"P-value for region: {args.region_p}\n"
+            f"Minimal coverage: {args.min_cov}\n"
+            f"Save categories? - {args.save_cat}\n\n"
             
             f"Clustermap variance filtering quantile: {args.quantile}\n"
             f"Confidence band alpha for line_plot: {args.confidence}\n"
@@ -446,25 +450,31 @@ class CategoryScript(ConsoleScript):
             decompressed = None
 
             if len(report_files) > 1:
-                temp = merge_replicates(report_files, report_types[0], _config["MERGE_BATCH_SIZE"])
+                temp = init_tempfile(self.args.dir, row["name"] + "_merged", delete=False, suffix=".txt")
+                print(f"Merged replicates will be saved as {temp}")
 
-                merged_path = Path(temp.name)
-                merged_type = "parquet"
+                with UniversalWriter(temp, report_types[0]) as writer:
+                    readers = [UniversalReader(file, report_type, self.args.threads,
+                                               block_size_mb=self.args.block_mb, bar=False)
+                               for file, report_type in zip(report_files, report_types)]
+
+                    with UniversalReplicatesReader(readers) as reader:
+                        for batch in reader:
+                            writer.write(batch)
+
+                merged_path = Path(temp)
+                merged_type = report_types[0]
             else:
                 merged_path = Path(report_files[0])
                 merged_type = report_types[0]
-
-            # todo move decomompress to BinomalData constructor
-            if merged_path.suffix == ".gz":
-                decompressed = decompress(merged_path)
-                merged_path = decompressed.name
 
             binom = BinomialData.from_report(
                 file=merged_path,
                 report_type=merged_type,
                 block_size_mb=self.args.block_mb,
                 use_threads=self.args.threads,
-                min_coverage=self.args.min_cov
+                min_coverage=self.args.min_cov,
+                dir=self.args.dir
             )
 
             region_pvalues = binom.region_pvalue(
@@ -474,7 +484,7 @@ class CategoryScript(ConsoleScript):
             )
 
             metagene = Metagene.from_binom(
-                file=binom.path,
+                file=binom.preprocessed_path,
                 genome=genome_mapping[row["name"]],
                 up_windows=self.args.ubin,
                 body_windows=self.args.bbin,
@@ -487,8 +497,8 @@ class CategoryScript(ConsoleScript):
             sample_metagenes.append(metagene)
             sample_names.append(row["name"])
 
-            if temp is not None: temp.close()
-            if decompressed is not None: decompressed.close()
+            if decompressed is not None:
+                decompressed.close()
 
         metagene_files = MetageneFiles(sample_metagenes, sample_names)
 
@@ -627,6 +637,61 @@ class Renderer:
         else:
             return f"{filters['context']}"
 
+    def category_context_block(self, bm, other, um, filters):
+        filter_name = self._format_filters(filters)
+
+        context_block = TemplateContext(
+            heading=f"Context {filter_name}"
+        )
+
+        tick_args = dict(
+            major_labels=[self.args.ticks[i] for i in [1, 3]],
+            minor_labels=[self.args.ticks[i] for i in [0, 2, 4]]
+        )
+
+        # Matplotlib block
+        if self.args.export not in ["none"]:
+            for mfiles, mtype in zip([bm, other, um], ["BM", "other", "UM"]):
+                line_plot = mfiles.line_plot(merge_strands=not self.args.separate_strands)
+                heat_map = mfiles.heat_map(nrow=self.args.vresolution, ncol=self.args.hresolution)
+
+                name = filter_name + f"_{mtype}"
+
+                fig = line_plot.draw_mpl(smooth=self.args.smooth, confidence=self.args.confidence, **tick_args)
+                self._save_mpl(fig, name.format(type="line_plot"))
+
+                fig = heat_map.draw_mpl(**tick_args)
+                self._save_mpl(fig, name.format(type="heat-map"))
+
+                fig = mfiles.box_plot()
+                self._save_mpl(fig, name.format(type="box"))
+
+                fig = mfiles.trim_flank().box_plot()
+                self._save_mpl(fig, name.format(type="box_trimmed"))
+
+                plt.close()
+
+        # Plotly block
+        fig = make_subplots(rows=1, cols=3, subplot_titles=["BM", "other", "UM"], shared_yaxes=True, horizontal_spacing=.05)
+
+        for mfiles, plot_idx in zip([bm, other, um], range(1, 4)):
+            lp = mfiles.line_plot().draw_plotly()
+
+            for data in lp.data:
+                fig.add_trace(data, row=1, col=plot_idx)
+            fig.update_layout({f"xaxis{plot_idx if plot_idx != 1 else ''}": lp.layout["xaxis"]})
+            fig.update_layout({f"xaxis{plot_idx if plot_idx != 1 else ''}": {"anchor": f"y{plot_idx if plot_idx != 1 else ''}"}})
+
+        [fig.add_trace(data, row=1, col=1) for data in bm.line_plot().draw_plotly().data]
+        [fig.add_trace(data, row=1, col=2) for data in other.line_plot().draw_plotly().data]
+        [fig.add_trace(data, row=1, col=3) for data in um.line_plot().draw_plotly().data]
+
+        pass
+
+
+
+
+
     def metagene_context_block(self, filtered: MetageneFiles, filters: dict, draw_cm: bool = True):
 
         filter_name = self._format_filters(filters)
@@ -747,7 +812,7 @@ class Renderer:
             filtered_metagenes = metagene_files.filter(**filters)
 
             # Get categorised
-            bm_metagenes, um_metagenes = [], []
+            bm_metagenes, um_metagenes, other_metagenes = [], [], []
 
             for sample, label in zip(filtered_metagenes.samples, filtered_metagenes.labels):
                 save_name = self.args.dir / (label + self._format_filters(filters)) if self.args.save_cat else None
@@ -762,15 +827,21 @@ class Renderer:
                 bm_metagenes.append(sample.filter(genome=bm_ids))
                 um_metagenes.append(sample.filter(genome=um_ids))
 
+                other_genes = set(sample.bismark["gene"].to_list()) - set(bm_metagenes[-1].bismark["gene"].to_list() + um_metagenes[-1].bismark["gene"].to_list())
+                other_metagenes.append(sample.filter(coords=other_genes))
+
             bm_metagene_files = MetageneFiles(bm_metagenes, filtered_metagenes.labels)
             um_metagene_files = MetageneFiles(um_metagenes, filtered_metagenes.labels)
+            other_metagene_files = MetageneFiles(other_metagenes, filtered_metagenes.labels)
 
-            for categorised, name in zip([bm_metagene_files, um_metagene_files], ["BM", "UM"]):
+            html_body.context_reports.append(self.category_context_block(bm_metagene_files, other_metagene_files, um_metagene_files, filters))
 
-                context_block = self.metagene_context_block(categorised, filters, draw_cm=False)
-                context_block.caption = f"Category: {name}"
-
-                html_body.context_reports.append(context_block)
+            # for categorised, name in zip([bm_metagene_files, um_metagene_files], ["BM", "UM"]):
+            #
+            #     context_block = self.metagene_context_block(categorised, filters, draw_cm=False)
+            #     context_block.caption = f"Category: {name}"
+            #
+            #     html_body.context_reports.append(context_block)
 
         return asdict(html_body)
 
