@@ -159,6 +159,24 @@ class ReportBar(Bar):
         return str(datetime.timedelta(seconds=self.eta))
 
 
+class BAMBar(Bar):
+    def __init__(self, name, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+
+
+    suffix = "%(index)d/%(max)d %(name)s [%(elapsed_fmt)s | ETA: %(eta_fmt)s]"
+    fill = "@"
+
+    @property
+    def elapsed_fmt(self):
+        return str(datetime.timedelta(seconds=self.elapsed))
+
+    @property
+    def eta_fmt(self):
+        return str(datetime.timedelta(seconds=self.eta))
+
+
 def decompress(path: str | Path):
     if path.suffix == ".gz":
         temp_file = tempfile.NamedTemporaryFile()

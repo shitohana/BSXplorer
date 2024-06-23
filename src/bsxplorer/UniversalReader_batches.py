@@ -67,7 +67,7 @@ class BaseBatch(ABC):
             except Exception as e:
                 raise pl.SchemaError(e)
         else:
-            raise KeyError("Not all columns from schema in batch")
+            raise KeyError(f"Not all columns from schema in batch (missing {list(set(self.colnames()) - set(df.columns))})")
 
     @classmethod
     @abstractmethod

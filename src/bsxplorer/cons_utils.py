@@ -581,7 +581,6 @@ class ChrLevelsScript(ConsoleScript):
                 chr_min_length=self.args.min_length,
                 window_length=self.args.window,
                 confidence=self.args.confidence
-                # todo add threads parameter to ChrLevels from parquet
                 # threads = self.args.threads
             )
 
@@ -679,8 +678,8 @@ class Renderer:
 
             for data in lp.data:
                 fig.add_trace(data, row=1, col=plot_idx)
-            fig.update_layout({f"xaxis{plot_idx if plot_idx != 1 else ''}": lp.layout["xaxis"]})
-            fig.update_layout({f"xaxis{plot_idx if plot_idx != 1 else ''}": {"anchor": f"y{plot_idx if plot_idx != 1 else ''}"}})
+            # fig.update_layout({f"xaxis{plot_idx if plot_idx != 1 else ''}": lp.layout["xaxis"]})
+            # fig.update_layout({f"xaxis{plot_idx if plot_idx != 1 else ''}": {"anchor": f"y{plot_idx if plot_idx != 1 else ''}"}})
 
         [fig.add_trace(data, row=1, col=1) for data in bm.line_plot().draw_plotly().data]
         [fig.add_trace(data, row=1, col=2) for data in other.line_plot().draw_plotly().data]

@@ -35,6 +35,26 @@ def convert_trinuc(trinuc, reverse=False):
         elif trinuc[2] == "G": return "CHG"
         else:                  return "CHH"
 
+@njit
+def convert_reverse(trinuc):
+    out = ""
+    for nuc in trinuc:
+        if nuc == "C": out += "G"
+        if nuc == "G": out += "C"
+        if nuc == "A": out += "T"
+        if nuc == "T": out += "A"
+        if nuc == "U": out += "R"
+        if nuc == "R": out += "U"
+        if nuc == "Y": out += "K"
+        if nuc == "K": out += "Y"
+        if nuc == "S": out += "S"
+        if nuc == "W": out += "W"
+        if nuc == "B": out += "N"
+        if nuc == "D": out += "N"
+        if nuc == "H": out += "N"
+        if nuc == "V": out += "N"
+        if nuc == "N": out += "N"
+    return out
 
 @njit
 def get_trinuc(record_seq: str, reverse=False):
@@ -46,6 +66,7 @@ def get_trinuc(record_seq: str, reverse=False):
     """
     positions = []
     trinucs = []
+    contexts = []
 
     record_seq = record_seq.upper()
 
@@ -57,9 +78,13 @@ def get_trinuc(record_seq: str, reverse=False):
         if record_seq[position] == nuc:
             positions.append(position + 1)
             trinuc = record_seq[position + down_shift:position + up_shift]
-            trinucs.append(convert_trinuc(trinuc, reverse))
+            if reverse:
+                trinucs.append(convert_reverse(trinuc))
+            else:
+                trinucs.append(trinuc)
+            contexts.append(convert_trinuc(trinuc, reverse))
 
-    return positions, trinucs
+    return positions, trinucs, contexts
 
 
 def init_tempfile(temp_dir, name, delete, suffix=".bedGraph.parquet") -> Path:
@@ -131,10 +156,11 @@ class Sequence:
     @property
     def cytosine_file_schema(self):
         return pa.schema([
-            ("position", pa.int32()),
-            ("context", pa.dictionary(pa.int16(), pa.utf8())),
             ("chr", pa.dictionary(pa.int8(), pa.utf8())),
-            ("strand", pa.bool_())
+            ("position", pa.int32()),
+            ("strand", pa.bool_()),
+            ("context", pa.dictionary(pa.int16(), pa.utf8())),
+            ("trinuc", pa.dictionary(pa.int16(), pa.utf8()))
         ])
 
     def __infer_schema_table(self, handle: io.TextIOBase):
@@ -167,7 +193,7 @@ class Sequence:
         strand = [True] * len(chrom_ids)
 
         schema_table = pa.Table.from_arrays(
-            arrays=[positions, contexts, chrom_ids, strand],
+            arrays=[chrom_ids, positions, strand, contexts, possible_trinuc],
             schema=schema
         )
 
@@ -187,11 +213,11 @@ class Sequence:
         for record in seqio.parse(handle, "fasta"):
             # POSITIVE
             # parse sequence and get all trinucleotide positions and contexts
-            positions, trinuc = get_trinuc(str(record.seq))
+            positions, trinucs, contexts = get_trinuc(str(record.seq))
 
             # convert into arrow  table
             arrow_table = pa.Table.from_arrays(
-                arrays=[positions, trinuc, [record.id] * len(positions), [True] * len(positions)],
+                arrays=[[record.id] * len(positions), positions, [True] * len(positions), contexts, trinucs],
                 schema=self.cytosine_file_schema
             )
             # unify dictionary keys with dummy table
@@ -203,10 +229,10 @@ class Sequence:
             print(f"Read chromosome: {record.id}\t+", end="\r")
 
             # NEGATIVE
-            positions, trinuc = get_trinuc(str(record.seq), reverse=True)
+            positions, trinucs, contexts = get_trinuc(str(record.seq), reverse=True)
 
             arrow_table = pa.Table.from_arrays(
-                arrays=[positions, trinuc, [record.id] * len(positions), [False for _ in positions]],
+                arrays=[[record.id] * len(positions), positions, [False] * len(positions), contexts, trinucs],
                 schema=schema_table.schema
             )
 
