@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import OrderedDict
+from copy import deepcopy
 from typing import Literal
 
 import polars as pl
@@ -13,7 +14,7 @@ ARROW_SCHEMAS = {
     "bedgraph": pa.schema([
         ("chr", pa.utf8()),
         ("start", pa.uint64()),
-        ("position", pa.uint64()),
+        ("end", pa.uint64()),
         ("density", pa.float32()),
     ]),
     "coverage": pa.schema([
@@ -170,5 +171,10 @@ class FullSchemaBatch(BaseBatch):
             ])
         )
         return converted
+
+    def filter_data(self, **kwargs):
+        new = deepcopy(self)
+        new.data = new.data.filter(**kwargs)
+        return new
 
 

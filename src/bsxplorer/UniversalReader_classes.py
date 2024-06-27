@@ -650,6 +650,14 @@ class UniversalWriter:
         self.writer = None
 
     def __enter__(self):
+        self.open()
+        return self
+
+    def close(self):
+        self.writer.close()
+        self.memory_pool.release_unused()
+
+    def open(self):
         write_options = pcsv.WriteOptions(
             delimiter="\t",
             include_header=False,
@@ -663,11 +671,8 @@ class UniversalWriter:
             memory_pool=self.memory_pool
         )
 
-        return self
-
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.writer.close()
-        self.memory_pool.release_unused()
+        self.close()
 
     def write(self, fullschema_batch: FullSchemaBatch):
         if self.writer is None:
