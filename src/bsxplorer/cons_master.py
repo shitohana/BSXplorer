@@ -10,13 +10,13 @@ def _save(script: ConsoleScript):
 
 
 def metagene(script: str = None):
-    _save(MetageneScript(script.split()))
+    _save(MetageneScript(script.split() if script is not None else None))
 
 
 def category(script: str = None):
-    _save(CategoryScript(script.split()))
+    _save(CategoryScript(script.split() if script is not None else None))
 
 
 def chr_levels(script: str = None):
-    _save(ChrLevelsScript(script.split()))
+    _save(ChrLevelsScript(script.split() if script is not None else None))
 
