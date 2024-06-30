@@ -9,14 +9,14 @@ def _save(script: ConsoleScript):
     render_template(package_path / "html/MetageneTemplate.html", html, savepath)
 
 
-def metagene():
-    _save(MetageneScript())
+def metagene(script: str = None):
+    _save(MetageneScript(script.split()))
 
 
-def category():
-    _save(CategoryScript())
+def category(script: str = None):
+    _save(CategoryScript(script.split()))
 
 
-def chr_levels():
-    _save(ChrLevelsScript())
+def chr_levels(script: str = None):
+    _save(ChrLevelsScript(script.split()))
 

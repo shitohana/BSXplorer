@@ -137,7 +137,7 @@ def chr_parser():
     parser.add_argument('--dir', help='Output and working dir', default=str(Path.cwd()), metavar='DIR', type=_working_dir)
 
     parser.add_argument('-m', '--block_mb', help='Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)', type=int, default=50)
-    parser.add_argument('-t', '--threads', help='Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`', type=int, default=True)
+    parser.add_argument('-t', '--threads', help='Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`', action='store_true')
     parser.add_argument('-w', '--window', help="Length of windows in bp", type=int, default=10**6)
     parser.add_argument('-l', '--min_length', help="Minimum length of chromosome to be analyzed", type=int, default=10**6)
     parser.add_argument('-C', '--confidence', help='Probability for confidence bands for line-plot. 0 if disabled', type=_quantile, default=.95)
@@ -578,7 +578,7 @@ class ChrLevelsScript(ConsoleScript):
             if merged_type not in ["parquet"]:
                 kwargs |= dict(
                     block_size_mb=self.args.block_mb,
-                    threads=self.args.threads
+                    use_threads=self.args.threads
                 )
 
             levels = self._constructors[merged_type](**kwargs)
