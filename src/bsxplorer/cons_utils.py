@@ -553,7 +553,7 @@ class ChrLevelsScript(ConsoleScript):
 
     _constructors = {
         "bismark": ChrLevels.from_bismark,
-        "parquet": ChrLevels.from_parquet,
+        "binom": ChrLevels.from_binom,
         "cgmap": ChrLevels.from_cgmap
     }
 

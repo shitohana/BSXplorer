@@ -475,11 +475,11 @@ class Metagene(MetageneBase):
 
         if id is not None:
             def id_filter(df: pl.DataFrame):
-                return df.filter(pl.col("id").is_in(id))
+                return df.filter(pl.col("id").cast(pl.String).is_in(id))
         else:
             id_filter = lambda df: df
 
-        if id is not None:
+        if coords is not None:
             def coords_filter(df: pl.DataFrame):
                 return df.filter(pl.col("gene").is_in(coords))
         else:

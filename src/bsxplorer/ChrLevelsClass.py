@@ -1,29 +1,25 @@
 from __future__ import annotations
 
-import os
-import re
+from pathlib import Path
 
 import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 import polars as pl
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from pyreadr import write_rds
 from scipy.signal import savgol_filter
-import pyarrow as pa
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.express.colors import qualitative as PALETTE
-from pathlib import Path
-from abc import ABC, abstractmethod
-import warnings
 
+from .Base import read_chromosomes, validate_chromosome_args
+from .SeqMapper import Sequence
 from .UniversalReader_classes import UniversalReader
-from .utils import interval, decompress, ReportBar, dotdict
-from .Base import interval_chr, read_chromosomes, validate_chromosome_args
-from .ArrowReaders import CsvReader, BismarkOptions, ParquetReader, CGmapOptions
 
 
 class ChrLevels:
+    """
+    Read report and visualize chromosome methylation levels
+    """
     def __init__(self, df: pl.DataFrame) -> None:
         """
         Read report and visualize chromosome methylation levels
@@ -32,7 +28,7 @@ class ChrLevels:
         ----------
         df
         """
-        self.bismark = df
+        self.report = df
 
         # delete this in future and change to calculation of plot data
         # when plot is drawn
@@ -58,7 +54,6 @@ class ChrLevels:
             .with_columns(mut_cols)
         )
 
-
     @classmethod
     def from_bismark(
             cls,
@@ -66,15 +61,26 @@ class ChrLevels:
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
-            use_threads: bool = True,
+            threads: bool = False,
             confidence: float = None
     ):
         """
         Initialize ChrLevels with CX_report file
 
-        :param file: Path to file
-        :param chr_min_length: Minimum length of chromosome to be analyzed
-        :param window_length: Length of windows in bp
+        Parameters
+        ----------
+        file
+            Path to the report file.
+        chr_min_length
+            Minimum length of chromosome to be analyzed
+        window_length
+            Length of windows in bp
+        block_size_mb
+            Size of batch in bytes, which will be read from report file (for report types other than "binom").
+        threads
+            Will reading be multithreaded.
+        confidence
+            Pvalue for confidence bands of the LinePlot.
         """
 
         reader = UniversalReader(**(locals() | dict(report_type="bismark")))
@@ -91,15 +97,26 @@ class ChrLevels:
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
-            use_threads: bool = True,
+            threads: bool = False,
             confidence: float = None
     ):
         """
-        Initialize ChrLevels with CGmap file
+        Initialize ChrLevels with CGMap file
 
-        :param file: Path to file
-        :param chr_min_length: Minimum length of chromosome to be analyzed
-        :param window_length: Length of windows in bp
+        Parameters
+        ----------
+        file
+            Path to the report file.
+        chr_min_length
+            Minimum length of chromosome to be analyzed
+        window_length
+            Length of windows in bp
+        block_size_mb
+            Size of batch in bytes, which will be read from report file (for report types other than "binom").
+        threads
+            Will reading be multithreaded.
+        confidence
+            Pvalue for confidence bands of the LinePlot.
         """
         reader = UniversalReader(**(locals() | dict(report_type="cgmap")))
         args = validate_chromosome_args(chr_min_length, window_length, confidence)
@@ -109,21 +126,80 @@ class ChrLevels:
         return cls(report_df)
 
     @classmethod
-    def from_parquet(
+    def from_bedGraph(
             cls,
             file: str | Path,
+            sequence: Sequence,
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
+            block_size_mb: int = 100,
+            threads: bool = False,
             confidence: float = None
     ):
         """
-        Initialize ChrLevels with parquet file
+        Initialize ChrLevels with CGMap file
 
-        :param file: Path to file
-        :param chr_min_length: Minimum length of chromosome to be analyzed
-        :param window_length: Length of windows in bp
+        Parameters
+        ----------
+        file
+            Path to the report file.
+        sequence
+            Instance of :class:`Sequence` for reading bedGraph or .coverage reports.
+        chr_min_length
+            Minimum length of chromosome to be analyzed
+        window_length
+            Length of windows in bp
+        block_size_mb
+            Size of batch in bytes, which will be read from report file (for report types other than "binom").
+        threads
+            Will reading be multithreaded.
+        confidence
+            Pvalue for confidence bands of the LinePlot.
         """
-        raise NotImplementedError()
+        reader = UniversalReader(**(locals() | dict(report_type="bedgraph")))
+        args = validate_chromosome_args(chr_min_length, window_length, confidence)
+
+        report_df = read_chromosomes(**(locals() | args))
+
+        return cls(report_df)
+
+    @classmethod
+    def from_coverage(
+            cls,
+            file: str | Path,
+            sequence: Sequence,
+            chr_min_length=10 ** 6,
+            window_length: int = 10 ** 6,
+            block_size_mb: int = 100,
+            threads: bool = False,
+            confidence: float = None
+    ):
+        """
+        Initialize ChrLevels with CGMap file
+
+        Parameters
+        ----------
+        file
+            Path to the report file.
+        sequence
+            Instance of :class:`Sequence` for reading bedGraph or .coverage reports.
+        chr_min_length
+            Minimum length of chromosome to be analyzed
+        window_length
+            Length of windows in bp
+        block_size_mb
+            Size of batch in bytes, which will be read from report file (for report types other than "binom").
+        threads
+            Will reading be multithreaded.
+        confidence
+            Pvalue for confidence bands of the LinePlot.
+        """
+        reader = UniversalReader(**(locals() | dict(report_type="coverage")))
+        args = validate_chromosome_args(chr_min_length, window_length, confidence)
+
+        report_df = read_chromosomes(**(locals() | args))
+
+        return cls(report_df)
 
     @classmethod
     def from_binom(
@@ -134,6 +210,22 @@ class ChrLevels:
             confidence: float = None,
             p_value: float = .05
     ):
+        """
+        Initialize ChrLevels with .parquet file from :class:`Binom`.
+
+        Parameters
+        ----------
+        file
+            Path to the report file.
+        chr_min_length
+            Minimum length of chromosome to be analyzed
+        window_length
+            Length of windows in bp
+        confidence
+            Pvalue for confidence bands of the LinePlot.
+        p_value
+            Pvalue with which cytosine will be considered methylated.
+        """
         reader = UniversalReader(**(locals() | dict(report_type="binom", methylation_pvalue=p_value)))
         args = validate_chromosome_args(chr_min_length, window_length, confidence)
 
@@ -171,14 +263,14 @@ class ChrLevels:
         -------
             :class:`ChrLevels`
         """
-        context_filter = self.bismark["context"] == context if context is not None else True
-        strand_filter = self.bismark["strand"] == strand if strand is not None else True
-        chr_filter = self.bismark["chr"] == chr if chr is not None else True
+        context_filter = self.report["context"] == context if context is not None else True
+        strand_filter = self.report["strand"] == strand if strand is not None else True
+        chr_filter = self.report["chr"] == chr if chr is not None else True
 
         if context_filter is None and strand_filter is None and chr_filter is None:
             return self
         else:
-            return self.__class__(self.bismark.filter(context_filter & strand_filter & chr_filter))
+            return self.__class__(self.report.filter(context_filter & strand_filter & chr_filter))
 
     @property
     def __ticks_data(self):
@@ -207,7 +299,7 @@ class ChrLevels:
         x_ticks, x_labels, x_lines = self.__ticks_data
 
         figure.update_layout(
-            xaxis = dict(
+            xaxis=dict(
                 tickmode='array',
                 tickvals=x_ticks,
                 ticktext=x_labels)
@@ -215,7 +307,6 @@ class ChrLevels:
 
         for tick in x_lines:
             figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
-
 
     def __get_points(self, df, smooth):
         data = df["density"].to_numpy()
@@ -250,7 +341,6 @@ class ChrLevels:
             upper, lower = upper * 100, lower * 100
 
         return x, data, upper, lower
-
 
     def draw_mpl(
             self,
@@ -379,43 +469,71 @@ class ChrLevels:
         return figure
 
     def bar_plot(self):
-        bismark = self.bismark
-        class ChrBarPlot:
-            def draw_mpl(self):
-                pd_df = (
-                    bismark
-                    .group_by(["chr", "context"])
-                    .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
-                    .sort("chr", "context")
-                    .pivot(values="density", index="chr", columns="context")
-                    .to_pandas()
-                    .set_index("chr")
-                )
+        return ChrBarPlot(self.report)
 
-                fig, axes = plt.subplots()
-                pd_df.plot.barh(ax=axes, figsize=(12, 9))
-                fig.subplots_adjust(left=0.2)
-                return fig
 
-            def draw_plotly(self):
-                pd_df = (
-                    bismark
-                    .group_by(["chr", "context"])
-                    .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
-                    .sort("chr", "context")
-                    .to_pandas()
-                )
+class ChrBarPlot:
+    """
+    Class for plotting ChrLevels as bar plot
+    """
+    def __init__(self, report: pl.DataFrame):
+        self.report = report
 
-                figure = px.histogram(
-                    pd_df,
-                    x="chr", y="density",
-                    color="context",
-                    barmode="group",
-                    histfunc="avg"
-                )
+    def draw_mpl(self):
+        """
+        Draw chromosome methylation levels with matplotlib.
 
-                figure.update_layout(bargap=.05)
+        Returns
+        -------
+            ``matplotlib.pyplot.Figure``
 
-                return figure
+        See Also
+        --------
+        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
+        """
+        pd_df = (
+            self.report
+            .group_by(["chr", "context"])
+            .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
+            .sort("chr", "context")
+            .pivot(values="density", index="chr", columns="context")
+            .to_pandas()
+            .set_index("chr")
+        )
 
-        return ChrBarPlot()
+        fig, axes = plt.subplots()
+        pd_df.plot.barh(ax=axes, figsize=(12, 9))
+        fig.subplots_adjust(left=0.2)
+        return fig
+
+    def draw_plotly(self):
+        """
+        Draw chromosome methylation levels with Plotly.
+
+        Returns
+        -------
+        ``plotly.graph_objects.Figure``
+
+        See Also
+        --------
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        """
+        pd_df = (
+            self.report
+            .group_by(["chr", "context"])
+            .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
+            .sort("chr", "context")
+            .to_pandas()
+        )
+
+        figure = px.histogram(
+            pd_df,
+            x="chr", y="density",
+            color="context",
+            barmode="group",
+            histfunc="avg"
+        )
+
+        figure.update_layout(bargap=.05)
+
+        return figure
