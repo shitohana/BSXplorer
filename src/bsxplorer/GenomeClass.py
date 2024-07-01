@@ -22,6 +22,9 @@ class Genome:
         """
         self.genome = genome
 
+        if "id" not in genome.columns:
+            genome = genome.with_columns(pl.lit("").alias("id"))
+
     @classmethod
     def from_custom(cls,
                     file: str | Path,
@@ -29,10 +32,12 @@ class Genome:
                     start_col: int = 1,
                     end_col: int = 2,
                     id_col: int = None,
-                    strand_col: int | None = 5,
+                    strand_col: int | None = None,
                     type_col: int = None,
                     comment_char: str = "#",
-                    has_header: bool = False) -> Genome:
+                    has_header: bool = False,
+                    read_filters: pl.Expr = None
+                    ) -> Genome:
         """
         Create :class:`Genome` from custom tab separated file with genomic regions.
 
@@ -158,7 +163,7 @@ class Genome:
         genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
-    def gene_body(self, min_length: int = 4000, flank_length: int = 2000) -> pl.DataFrame:
+    def gene_body(self, min_length: int = 0, flank_length: int = 2000) -> pl.DataFrame:
         """
         Filter annotation by type == gene and calculate positions of flanking regions.
 

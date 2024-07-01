@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing
 import os
 import re
 
@@ -66,7 +67,7 @@ class ChrLevels:
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
-            use_threads: bool = True,
+            threads: int = multiprocessing.cpu_count(),
             confidence: float = None
     ):
         """
@@ -91,7 +92,7 @@ class ChrLevels:
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
-            use_threads: bool = True,
+            threads: int = multiprocessing.cpu_count(),
             confidence: float = None
     ):
         """

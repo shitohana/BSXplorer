@@ -4,6 +4,7 @@ import itertools
 import queue
 import time
 from collections import Counter, UserDict
+from copy import deepcopy
 from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
@@ -310,16 +311,38 @@ def _jit_PDR(matrix, columns, min_cyt: int, min_depth: int):
 
 
 class PivotRegion:
-    def __init__(self, df: pl.DataFrame):
-        self.df = df
+    def __init__(self, df: pl.DataFrame, calls=pl.DataFrame, chr: str = chr):
+        self.calls = calls
+        self.pivot = df
+        self.chr = chr
 
-    @property
+    @classmethod
+    def from_calls(cls, calls, chr):
+        if len(calls["strand"].unique()) > 1:
+            indexes = ["qname", "converted", "strand"]
+        else:
+            indexes = ["qname", "converted"]
+
+        pivoted = (
+            calls
+            .sort("position")
+            .cast(dict(m=pl.Int8))
+            .pivot(index=indexes, columns="position", values="m")
+            .fill_null(-1)
+        )
+
+        return cls(pivoted, calls, chr)
+
+
+    def filter(self, **kwargs):
+        return self.from_calls(self.calls.filter(**kwargs), self.chr)
+
+
     def matrix_df(self):
-        return self.df.select(pl.all().exclude(["qname", "converted", "strand"]))
+        return self.pivot.select(pl.all().exclude(["qname", "converted", "strand"]))
 
-    @property
     def _jit_compatitable(self):
-        df = self.matrix_df
+        df = self.matrix_df()
         matrix = df.to_numpy().astype(np.int8)
         columns = np.array(list(map(int, df.columns)), dtype=np.int64)
 
@@ -340,7 +363,7 @@ class PivotRegion:
         -------
             Matrix with position of cytosines from window and array with their ME values
         """
-        matrix, columns = self._jit_compatitable
+        matrix, columns = self._jit_compatitable()
         return _jit_methylation_entropy(matrix, columns, window_length, min_depth)
 
     def epipolymorphism(self, window_length: int = 4, min_depth: int = 4):
@@ -358,11 +381,11 @@ class PivotRegion:
         -------
             Matrix with position of cytosines from window and array with their ME values
         """
-        matrix, columns = self._jit_compatitable
+        matrix, columns = self._jit_compatitable()
         return _jit_epipolymorphism(matrix, columns, window_length, min_depth)
 
     def PDR(self, min_cyt: int = 5, min_depth: int = 4):
-        matrix, columns = self._jit_compatitable
+        matrix, columns = self._jit_compatitable()
         return _jit_PDR(matrix, columns, min_cyt, min_depth)
 
 
@@ -402,33 +425,25 @@ class BAMThread(Thread):
                     # Parse alignments
                     # start_time = time.time()
                     parsed = list(filter(lambda parsed: parsed is not None, iter(self.parse_alignment(alignment) for alignment in alignments)))
-                    # parsed = [
-                    #     tuple(zip(*[(i, calls[i], quals[i]) for i in range(len(calls)) if calls[i] != "."])) +
-                    #     (ref_start, qname, ''.join(tags[tag_idx][1] for tag_idx in self.options.strand_conv))
-                    #     for calls, quals, alen, ref_start, qname, tags in
-                    #     map(lambda alignment: (
-                    #         alignment.tags[2][1],
-                    #         alignment.query_alignment_qualities,
-                    #         alignment.alen,
-                    #         alignment.reference_start,
-                    #         alignment.query_name,
-                    #         alignment.tags), alignments)
-                    #     if alen != 0]
-                    # print(time.time() - start_time)
-                    data = self.calls_to_df(parsed, start, end)
+                    data_lazy = self.calls_to_df(parsed, start, end)
                     if context != "all":
-                        data = data.filter(context=context)
-                    data.collect()
+                        data_lazy = data_lazy.filter(context=context)
 
-                    filtered_regions = [data.filter(self.filters_to_expr(f)) for f in filters] if filters else data
+                    if filters:
+                        data = data_lazy.collect()
+                        filtered_regions = [data.filter(self.filters_to_expr(f)) for f in filters]
+                    else:
+                        filtered_regions = None
 
                     if self._mode == "report":
-                        merged = pl.concat(filtered_regions).lazy() if filters else data
-                        if self.sequence_ds is not None:
-                            merged = self.group_counts(chrom, start, end, context, merged.lazy())
+                        merged = pl.concat(filtered_regions).lazy() if filters else data_lazy
+                        merged = self.group_counts(chrom, start, end, context, merged.lazy())
                         final = self.mutate(merged)
                     else:
-                        final = [self.to_pivot(region) for region in filtered_regions]
+                        if filtered_regions is not None:
+                            final = [PivotRegion.from_calls(region, chrom) for region in filtered_regions]
+                        else:
+                            final = PivotRegion.from_calls(data_lazy.collect(), chrom)
                 else:
                     final = None
 
@@ -443,27 +458,10 @@ class BAMThread(Thread):
         ref_position=pl.List(pl.UInt32),
         call=pl.List(pl.String),
         qual=pl.List(pl.UInt8),
-        ref_start=pl.UInt32,
+        position=pl.List(pl.UInt32),
         qname=pl.String,
         strand_conv=pl.String
     )
-
-    @staticmethod
-    def to_pivot(df):
-        if len(df["strand"].unique()) > 1:
-            indexes = ["qname", "converted", "strand"]
-        else:
-            indexes = ["qname", "converted"]
-
-        pivoted = (
-            df
-            .sort("position")
-            .cast(dict(m=pl.Int8))
-            .pivot(index=indexes, columns="position", values="m")
-            .fill_null(-1)
-        )
-
-        return PivotRegion(pivoted)
 
     @staticmethod
     def filters_to_expr(f):
@@ -482,8 +480,7 @@ class BAMThread(Thread):
         pass
         parsed_df = (
             pl.LazyFrame(parsed, schema=self.parsed_schema_pl)
-            .explode(["ref_position", "call", "qual"])
-            .with_columns((pl.col("ref_position") + pl.col("ref_start") + 1).alias("position"))
+            .explode(["ref_position", "call", "qual", "position"])
             .filter((pl.col("position") >= start) & (pl.col("position") <= end))
             .join(self.options.strand_conv_df.lazy(), on="strand_conv", how="left")
             .drop("strand_conv")
@@ -510,7 +507,7 @@ class BAMThread(Thread):
         data = (
             parsed_df
             .sort("qual", descending=True)
-            .unique(["qname", "position"], keep="first")
+            # .unique(["qname", "position"], keep="first")
         )
 
         return data
@@ -525,23 +522,29 @@ class BAMThread(Thread):
             strand_conv += alignment.tags[tag_idx][1]
 
         # parsed: tuple (      0     ,      1   ,     2   ,       3        ,     4     ,      5     )
-        # parsed: tuple (read_pos_arr, calls_arr, qual_arr, reference_start, query_name, strand_conv)
-        parsed = self.parse_calls(calls_string, alignment.query_alignment_qualities, alignment.qlen) + (alignment.reference_start, alignment.query_name, strand_conv)
+        # parsed: tuple (read_pos_arr, calls_arr, qual_arr, reference_pos, query_name, strand_conv)
+        parsed = self.parse_calls(calls_string, alignment.query_alignment_qualities, alignment.get_reference_positions(full_length=True), alignment.qlen) + (alignment.query_name, strand_conv)
 
         return parsed
 
     @staticmethod
-    def parse_calls(calls_string: str, qual_arr: str, qlen: int):
-        positions = []
+    def parse_calls(calls_string: str, qual_arr: str, positions: list[int], qlen: int):
+        ref_positions = []
         calls = []
         quals = []
+        abs_positions = []
         for read_pos in range(qlen):
-            if calls_string[read_pos] == ".":
-                continue
-            positions.append(read_pos)
-            calls.append(calls_string[read_pos])
-            quals.append(qual_arr[read_pos])
-        return positions, calls, quals
+            try:
+                if calls_string[read_pos] == "." or positions[read_pos] is None:
+                    continue
+                ref_positions.append(read_pos)
+                calls.append(calls_string[read_pos])
+                quals.append(qual_arr[read_pos])
+                abs_positions.append(positions[read_pos] + 1)
+            except IndexError:
+                pass
+                pass
+        return ref_positions, calls, quals, abs_positions
 
     def mutate(self, batch_lazy: pl.LazyFrame):
         if self._mode == "report":
@@ -563,7 +566,7 @@ class BAMThread(Thread):
         else:
             sequence_df = None
 
-        if context != "all":
+        if context != "all" and sequence_df is not None:
             sequence_df = sequence_df.filter(context=context)
 
         new_batch = (
