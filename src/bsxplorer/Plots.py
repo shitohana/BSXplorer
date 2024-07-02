@@ -78,7 +78,7 @@ class LinePlot(PlotBase):
 
     @staticmethod
     def __get_x_y(df, smooth, confidence, stat):
-        if 0 < confidence < 1:
+        if 0 < confidence < 1 and (df["sum"].list.len() > 0).all() and (df["count"].list.len() > 0).all():
             if not (stat in ["mean", "wmean"]):
                 raise ValueError("Confidence bands available only for mean and wmean stat parameters.")
             df = (
