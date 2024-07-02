@@ -415,10 +415,10 @@ class CategoryScript(ConsoleScript):
             f"Threads: {args.threads}\n"
             f"\nUpstream | Body | Downstream (bins): {args.ubin} | {args.bbin} | {args.dbin}\n\n"
             
-            f"P-value for cytosines: {args.cytosine_p}"
-            f"P-value for region: {args.region_p}"
-            f"Minimal coverage: {args.min_cov}"
-            f"Save categories? - {args.save_cat}"
+            f"P-value for cytosines: {args.cytosine_p}\n"
+            f"P-value for region: {args.region_p}\n"
+            f"Minimal coverage: {args.min_cov}\n"
+            f"Save categories? - {args.save_cat}\n"
             
             f"Clustermap variance filtering quantile: {args.quantile}\n"
             f"Confidence band alpha for line_plot: {args.confidence}\n"
@@ -627,7 +627,7 @@ class Renderer:
         else:
             return f"{filters['context']}"
 
-    def metagene_context_block(self, filtered: MetageneFiles, filters: dict, draw_cm: bool = True):
+    def metagene_context_block(self, filtered: MetageneFiles, filters: dict, draw_cm: bool = True, line_plot_kwargs: dict = dict()):
 
         filter_name = self._format_filters(filters)
 
@@ -640,7 +640,7 @@ class Renderer:
             minor_labels=[self.args.ticks[i] for i in [0, 2, 4]]
         )
 
-        line_plot = filtered.line_plot(merge_strands=not self.args.separate_strands)
+        line_plot = filtered.line_plot(merge_strands=not self.args.separate_strands, **line_plot_kwargs)
         heat_map = filtered.heat_map(nrow=self.args.vresolution, ncol=self.args.hresolution)
 
         # Matplotlib block
@@ -766,8 +766,8 @@ class Renderer:
             um_metagene_files = MetageneFiles(um_metagenes, filtered_metagenes.labels)
 
             for categorised, name in zip([bm_metagene_files, um_metagene_files], ["BM", "UM"]):
-
-                context_block = self.metagene_context_block(categorised, filters, draw_cm=False)
+                line_plot_kwargs = {"stat": "mean"}
+                context_block = self.metagene_context_block(categorised, filters, draw_cm=False, line_plot_kwargs=line_plot_kwargs)
                 context_block.caption = f"Category: {name}"
 
                 html_body.context_reports.append(context_block)

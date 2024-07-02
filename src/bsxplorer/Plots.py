@@ -90,6 +90,8 @@ class LinePlot(PlotBase):
                 )
                 .unnest("interval")
                 .select(["fragment", "lower", "density", "upper"])
+                .fill_nan(0)
+                .with_columns(pl.when(pl.col("lower") < 0).then(0).otherwise(pl.col("lower")).alias("lower"))
             )
 
         data = df["density"].to_numpy()
