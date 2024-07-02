@@ -1159,10 +1159,15 @@ class MetageneFiles(MetageneFilesBase):
 
         .. image:: ../../images/boxplot/vp_ara_bradi_mpl.png
         """
-        data = LinePlotFiles([sample.line_plot()
-                              for sample in self.samples], self.labels)
-        data = [sample.plot_data.sort(
-            "fragment")["density"].to_numpy() for sample in data.samples]
+
+        def calc_data(sample: Metagene) -> pl.DataFrame:
+            return (
+                sample.bismark
+                .group_by(["chr", "start"])
+                .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
+            )
+
+        data = [calc_data(sample)["density"].to_numpy() for sample in self.samples]
 
         if fig_axes is None:
             plt.clf()
@@ -1208,8 +1213,9 @@ class MetageneFiles(MetageneFilesBase):
         def sample_convert(sample, label):
             return (
                 sample
-                .line_plot()
-                .plot_data
+                .bismark
+                .group_by(["chr", "start", "context"])
+                .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
                 .with_columns([
                     pl.col("density") * 100,  # convert to %
                     pl.lit(label).alias("label")
@@ -1260,10 +1266,19 @@ class MetageneFiles(MetageneFilesBase):
 
         .. image:: ../../images/boxplot/bp_ara_bradi_mpl.png
         """
-        data = LinePlotFiles([sample.line_plot()
-                              for sample in self.samples], self.labels)
-        data = [sample.plot_data.sort(
-            "fragment")["density"].to_numpy() for sample in data.samples]
+        # data = LinePlotFiles([sample.line_plot()
+        #                       for sample in self.samples], self.labels)
+        # data = [sample.plot_data.sort(
+        #     "fragment")["density"].to_numpy() for sample in data.samples]
+
+        def calc_data(sample: Metagene) -> pl.DataFrame:
+            return (
+                sample.bismark
+                .group_by(["chr", "start"])
+                .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
+            )
+
+        data = [calc_data(sample)["density"].to_numpy() for sample in self.samples]
 
         if fig_axes is None:
             plt.clf()
@@ -1309,8 +1324,9 @@ class MetageneFiles(MetageneFilesBase):
         def sample_convert(sample, label):
             return (
                 sample
-                .line_plot()
-                .plot_data
+                .bismark
+                .group_by(["chr", "start", "context"])
+                .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
                 .with_columns([
                     pl.col("density") * 100,  # convert to %
                     pl.lit(label).alias("label")
