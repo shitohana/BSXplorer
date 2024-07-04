@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import itertools
 import re
+from dataclasses import dataclass, field
 
+import matplotlib.cbook
 import numpy as np
 import packaging.version
 import polars as pl
@@ -19,133 +21,117 @@ from .Base import PlotBase, MetageneFilesBase
 from .utils import MetageneSchema, interval, remove_extension, prepare_labels
 
 
-class LinePlot(PlotBase):
-    """
-    Line-plot single metagene
-    """
+def savgol_line(data: np.ndarray | None, window, polyorder=3, mode="nearest"):
+    if window and data is not None:
+        if np.isnan(data).sum() == 0:
+            window = window if window > polyorder else polyorder + 1
+            return savgol_filter(data, window, polyorder, mode=mode)
+    return data
 
-    def __init__(self, bismark_df: pl.DataFrame, stat="wmean", merge_strands: bool = True, **kwargs):
-        """
-        Calculates plot data for line-plot.
-        """
-        super().__init__(bismark_df, **kwargs)
 
-        self.stat = stat
+def plot_stat_expr(stat):
+    if stat == "log":
+        stat_expr = (pl.col("sum") / pl.col("count")).log1p().mean().exp() - 1
+    elif stat == "wlog":
+        stat_expr = (((pl.col("sum") / pl.col("count")).log1p() * pl.col("count")).sum() / pl.sum("count")).exp() - 1
+    elif stat == "mean":
+        stat_expr = (pl.col("sum") / pl.col("count")).mean()
+    elif re.search("^q(\d+)", stat):
+        quantile = re.search("q(\d+)", stat).group(1)
+        stat_expr = (pl.col("sum") / pl.col("count")).quantile(int(quantile) / 100)
+    else:
+        stat_expr = pl.sum("sum") / pl.sum("count")
+    return stat_expr
 
-        if merge_strands:
-            bismark_df = self._merge_strands(bismark_df)
-        plot_data = self.__calculate_plot_data(bismark_df, stat, self.total_windows)
 
-        if not merge_strands:
-            if self.strand == '-':
-                plot_data = self._strand_reverse(plot_data)
-        self.plot_data = plot_data
+def lp_ticks(ticks: dict, major_labels: list, minor_labels: list):
+    labels = dict(
+        up_mid="Upstream",
+        body_start="TSS",
+        body_mid="Body",
+        body_end="TES",
+        down_mid="Downstream"
+    )
 
-    @staticmethod
-    def __calculate_plot_data(df: pl.DataFrame, stat, total_windows):
-        if stat == "log":
-            stat_expr = (pl.col("sum") / pl.col("count")).log1p().mean().exp() - 1
-        elif stat == "wlog":
-            stat_expr = (((pl.col("sum") / pl.col("count")).log1p() * pl.col("count")).sum() / pl.sum("count")).exp() - 1
-        elif stat == "mean":
-            stat_expr = (pl.col("sum") / pl.col("count")).mean()
-        elif re.search("^q(\d+)", stat):
-            quantile = re.search("q(\d+)", stat).group(1)
-            stat_expr = (pl.col("sum") / pl.col("count")).quantile(int(quantile) / 100)
-        else:
-            stat_expr = pl.sum("sum") / pl.sum("count")
+    if major_labels and len(major_labels) == 2:
+        labels["body_start"], labels["body_end"] = major_labels
+    elif major_labels:
+        print("Length of major tick labels != 2. Using default.")
+    else:
+        labels["body_start"], labels["body_end"] = [""] * 2
 
-        res = (
-            df
-            .group_by(["context", "fragment"]).agg([
-                stat_expr.alias("density"),
-                pl.col("sum"),
-                pl.col("count").cast(MetageneSchema.count)
-            ])
-            .sort("fragment")
-        )
+    if minor_labels and len(minor_labels) == 3:
+        labels["up_mid"], labels["body_mid"], labels["down_mid"] = minor_labels
+    elif minor_labels:
+        print("Length of minor tick labels != 3. Using default.")
+    else:
+        labels["up_mid"], labels["body_mid"], labels["down_mid"] = [""] * 3
 
-        contexts = res["context"].unique().to_list()
+    labels = prepare_labels(major_labels, minor_labels)
 
-        template = pl.DataFrame({
-            "fragment": list(range(total_windows)) * len(contexts),
-            "context": list(itertools.chain(*[[c] * (total_windows) for c in contexts])),
-        }, schema={"fragment": res.schema["fragment"], "context": res.schema["context"]})
+    if ticks["body_start"] < 1:
+        labels["down_mid"], labels["body_end"] = [""] * 2
 
-        joined = template.join(res, on=["fragment", "context"], how="left")
+    if (ticks["down_mid"] - ticks["body_end"]) < 1:
+        labels["up_mid"], labels["body_start"] = [""] * 2
 
-        return joined
+    x_ticks = [ticks[key] for key in ticks.keys()]
+    x_labels = [labels[key] for key in ticks.keys()]
 
-    @staticmethod
-    def __get_x_y(df, smooth, confidence, stat):
-        if 0 < confidence < 1:
-            if not (stat in ["mean", "wmean"]):
-                raise ValueError("Confidence bands available only for mean and wmean stat parameters.")
-            df = (
-                df
-                .with_columns(
-                    pl.struct(["sum", "count"]).map_elements(
-                        lambda x: interval(x["sum"], x["count"], confidence, True if stat in ["wmean"] else False)
-                    ).alias("interval")
-                )
-                .unnest("interval")
-                .select(["fragment", "lower", "density", "upper"])
-            )
+    return x_ticks, x_labels
 
-        data = df["density"].to_numpy()
 
-        polyorder = 3
-        window = smooth if smooth > polyorder else polyorder + 1
+def flank_lines_mpl(axes: Axes, x_ticks, x_labels: list, borders: list = None):
+    borders = list() if borders is None else borders
+    if x_labels is None or not x_labels:
+        x_labels = [""] * 5
+    axes.set_xticks(x_ticks, labels=x_labels)
 
-        if smooth and np.isnan(data).sum() == 0:
-            data = savgol_filter(data, window, 3, mode='nearest')
+    for border in borders:
+        axes.axvline(x=border, linestyle='--', color='k', alpha=.3)
 
-        lower, upper = None, None
-        data = data * 100  # convert to percents
+    return axes
 
-        if (0 < confidence < 1) and np.isnan(data).sum() == 0:
-            upper = df["upper"].to_numpy() * 100  # convert to percents
-            lower = df["lower"].to_numpy() * 100  # convert to percents
+def flank_lines_plotly(figure: go.Figure, x_ticks, x_labels, borders: list = None):
+    borders = list() if borders is None else borders
+    if x_labels is None or not x_labels:
+        x_labels = [""] * 5
+    figure.update_layout(
+        xaxis=dict(
+            tickmode='array',
+            tickvals=x_ticks,
+            ticktext=x_labels)
+    )
 
-            upper = savgol_filter(upper, window, 3, mode="nearest") if smooth else upper
-            lower = savgol_filter(lower, window, 3, mode="nearest") if smooth else lower
+    for border in borders:
+        figure.add_vline(x=border, line_dash="dash", line_color="rgba(0,0,0,0.2)")
 
-        return lower, data, upper
+    return figure
 
-    def save_plot_rds(self, path, compress: bool = False):
-        """
-        Saves plot data in a .Rds DataFrame with columns:
 
-        +----------+---------+
-        | fragment | density |
-        +==========+=========+
-        | Int      | Float   |
-        +----------+---------+
+@dataclass
+class LinePlotData:
+    x: np.ndarray
+    y: np.ndarray
+    x_ticks: list
+    borders: list
+    lower: np.ndarray | None = None
+    upper: np.ndarray | None = None,
+    label: str = ""
+    x_labels: list[str] | None = None
 
-        Parameters
-        ----------
-        path
-            Path to saved file
-        compress
-            Whether data needs to be compressed.
-        """
-        df = self.bismark.group_by("fragment").agg(
-            (pl.sum("sum") / pl.sum("count")).alias("density")
-        )
-        write_rds(path, df.to_pandas(),
-                  compress="gzip" if compress else None)
+
+class LinePlot:
+    def __init__(self, data: list[LinePlotData] | LinePlotData):
+        self.data = data if isinstance(data, list) else [data]
 
     def draw_mpl(
             self,
             fig_axes: tuple = None,
-            smooth: int = 50,
             label: str = "",
-            confidence: float = 0,
-            linewidth: float = 1.0,
-            linestyle: str = '-',
-            major_labels: list[str] = None,
-            minor_labels: list[str] = None,
-            show_border: bool = True
+            tick_labels: list[str] = None,
+            show_border: bool = True,
+            **kwargs
     ) -> Figure:
         """
         Draws line-plot on given matplotlib axes.
@@ -154,22 +140,15 @@ class LinePlot(PlotBase):
         ----------
         fig_axes
             Tuple of (`matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_, `matplotlib.axes.Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes>`_). New are created if ``None``
-        smooth
-            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
         label
             Label of line on line-plot
-        confidence
-            Probability for confidence bands (e.g. 0.95)
-        linewidth
-            Width of the line
-        linestyle
-            Style of the line
-        major_labels
-            Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
-        minor_labels
-            Labels for upstream, body and downstream regions. **Exactly 3** need to be provided. Set ``[]`` to disable.
+        tick_labels
+            Labels for upstream, body region start and end, downstream (e.g. TSS, TES).
+            **Exactly 5** need to be provided. Set ``None`` to disable.
         show_border
             Whether to draw dotted vertical line on body region borders or not
+        kwargs
+            Keyword arguments for matplotlib.plot
 
         Returns
         -------
@@ -186,29 +165,26 @@ class LinePlot(PlotBase):
         `Linestyles <https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html>`_ : For possible linestyles.
         """
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
-        major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
 
-        contexts = self.plot_data["context"].unique().to_list()
+        for line_data in self.data:
+            axes.plot(
+                line_data.x,
+                line_data.y,
+                label=line_data.label if line_data.label else label,
+                **kwargs
+            )
 
-        for context in contexts:
-            df = self.plot_data.filter(pl.col("context") == context)
+            if line_data.lower is not None:
+                axes.fill_between(line_data.x, line_data.lower, line_data.upper, alpha=.2)
 
-            lower, data, upper = self.__get_x_y(df, smooth, confidence, self.stat)
-
-            x = np.arange(len(data))
-
-            axes.plot(x, data,
-                      label=f"{context}" if not label else f"{label}_{context}",
-                      linestyle=linestyle, linewidth=linewidth)
-
-            if (0 < confidence < 1) and np.isnan(data).sum() == 0:
-                axes.fill_between(x, lower, upper, alpha=.2)
-
-        self.flank_lines(axes, major_labels, minor_labels, show_border)
+        flank_lines_mpl(
+            axes=axes,
+            x_ticks=self.data[0].x_ticks,
+            x_labels=tick_labels if tick_labels is not None else self.data[0].x_labels,
+            borders=self.data[0].borders if show_border else []
+        )
 
         axes.legend()
-
         axes.set_ylabel('Methylation density, %')
         axes.set_xlabel('Position')
 
@@ -217,12 +193,10 @@ class LinePlot(PlotBase):
     def draw_plotly(
             self,
             figure: go.Figure = None,
-            smooth: int = 50,
             label: str = "",
-            confidence: float = .0,
-            major_labels: list[str] = None,
-            minor_labels: list[str] = None,
-            show_border: bool = True
+            tick_labels: list[str] = None,
+            show_border: bool = True,
+            **kwargs
     ):
         """
         Draws line-plot on given figure.
@@ -231,18 +205,15 @@ class LinePlot(PlotBase):
         ----------
         figure
             `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_. New is created if ``None``
-        smooth
-            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
         label
             Label of line on line-plot
-        confidence
-            Probability for confidence bands (e.g. 0.95)
-        major_labels
-            Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
-        minor_labels
-            Labels for upstream, body and downstream regions. **Exactly 3** need to be provided. Set ``[]`` to disable.
+        tick_labels
+            Labels for upstream, body region start and end, downstream (e.g. TSS, TES).
+            **Exactly 5** need to be provided. Set ``None`` to disable.
         show_border
             Whether to draw dotted vertical line on body region borders or not
+        kwargs
+            Keyword arguments for plotly.graph_objects.Scatter
 
         Returns
         -------
@@ -256,73 +227,77 @@ class LinePlot(PlotBase):
         """
 
         figure = go.Figure() if figure is None else figure
-        major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
 
-        contexts = self.plot_data["context"].unique().to_list()
+        for line_data in self.data:
+            traces = []
+            name = line_data.label if line_data.label else label
+            args = dict(x=line_data.x, y=line_data.y, mode="lines")
 
-        for context in contexts:
-            df = self.plot_data.filter(pl.col("context") == context)
+            traces.append(go.Scatter(**args, name=name, **kwargs))
 
-            lower, data, upper = self.__get_x_y(df, smooth, confidence, self.stat)
+            if line_data.lower is not None:
+                ci_args = args | dict(line_color='rgba(0,0,0,0)', name=name + "_CI")
+                traces.append(go.Scatter(**ci_args, showlegend=True))
+                traces.append(go.Scatter(**ci_args, showlegend=False))
 
-            x = np.arange(len(data))
+            figure.add_traces(traces)
 
-            traces = [go.Scatter(x=x, y=data, name=f"{context}" if not label else f"{label}_{context}", mode="lines")]
-
-            if 0 < confidence < 1:
-                traces += [
-                    go.Scatter(x=x, y=upper, mode="lines", line_color='rgba(0,0,0,0)', showlegend=False,
-                               name=f"{context}_{confidence}CI" if not label else f"{label}_{context}_{confidence}CI"),
-                    go.Scatter(x=x, y=lower, mode="lines", line_color='rgba(0,0,0,0)', showlegend=True,
-                               fill="tonexty", fillcolor='rgba(0, 0, 0, 0.2)',
-                               name=f"{context}_{confidence}CI" if not label else f"{label}_{context}_{confidence}CI"),
-                ]
-
-            figure.add_traces(data=traces)
 
         figure.update_layout(
             xaxis_title="Position",
             yaxis_title="Methylation density, %"
         )
 
-        figure = self.flank_lines_plotly(figure, major_labels, minor_labels, show_border)
+        figure = flank_lines_plotly(
+            figure=figure,
+            x_ticks=self.data[0].x_ticks,
+            x_labels=tick_labels if tick_labels is not None else self.data[0].x_labels,
+            borders=self.data[0].borders if show_border else []
+        )
 
         return figure
 
 
-class LinePlotFiles(MetageneFilesBase):
-    """Line-plot multiple metagenes"""
+@dataclass
+class HeatMapData:
+    matrix: np.ndarray
+    x_ticks: list
+    borders: list
+    label: str = ""
+
+
+class HeatMapNew:
+    def __init__(self, data: list[HeatMapData] | HeatMapData):
+        self.data = data if isinstance(data, list) else [data]
 
     def draw_mpl(
-        self,
-        smooth: int = 50,
-        linewidth: float = 1.0,
-        linestyle: str = '-',
-        confidence: int = 0,
-        major_labels: list[str] = None,
-        minor_labels: list[str] = None,
-        show_border: bool = True
+            self,
+            label: str = "",
+            tick_labels: list[str] = None,
+            show_border: bool = True,
+            vmin: float = None, vmax: float = None,
+            color_scale="Viridis",
+            facet_cols: int = 4,
+            **kwargs
     ):
         """
-        Draws line-plot for all Metagenes on given axes.
+        Draws heat-map plot on given matplotlib axes.
 
         Parameters
         ----------
-        smooth
-            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
-        confidence
-            Probability for confidence bands (e.g. 0.95)
-        linewidth
-            Width of the line
-        linestyle
-            Style of the line
-        major_labels
-            Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
-        minor_labels
-            Labels for upstream, body and downstream regions. **Exactly 3** need to be provided. Set ``[]`` to disable.
+        label
+            Title for axis
+        vmin
+            Set minimum value for colorbar explicitly.
+        vmax
+            Set maximum value for colorbar explicitly.
+        color_scale
+            Name of color scale.
+        tick_labels
+            Labels for upstream, body region start and end, downstream (e.g. TSS, TES).
+            **Exactly 5** need to be provided. Set ``None`` to disable.
         show_border
-            Whether to draw dotted vertical line on body region borders or not
+            Whether to draw dotted vertical line on body region borders or not.
 
         Returns
         -------
@@ -332,44 +307,68 @@ class LinePlotFiles(MetageneFilesBase):
         --------
         `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
 
-        `matplotlib.pyplot.subplot() <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplot.html#matplotlib.pyplot.subplot>`_ : To create fig, axes
-
-        `Linestyles <https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html>`_ : For possible linestyles.
+        `Matplotlib color scales <https://matplotlib.org/stable/users/explain/colors/colormaps.html>`_: For possible colormap ``color_scale`` arguments.
         """
-
-        major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
-
         plt.clf()
-        fig, axes = plt.subplots()
-        for lp, label in zip(self.samples, self.labels):
-            assert isinstance(lp, LinePlot)
-            lp.draw_mpl((fig, axes), smooth, label, confidence, linewidth, linestyle, major_labels, minor_labels, show_border)
+        subplots_y = len(self.data) // facet_cols + 1
+        subplots_x = facet_cols if len(self.data) > facet_cols else len(self.data)
+
+        fig, axes_matrix = plt.subplots(subplots_y, subplots_x)
+        if not isinstance(axes_matrix, np.ndarray):
+            axes_matrix = np.array(axes_matrix)
+        axes_matrix = axes_matrix.reshape((subplots_x, subplots_y))
+
+        for count, hm_data in enumerate(self.data):
+            vmin = 0 if vmin is None else vmin
+            vmax = np.max(hm_data.matrix) if vmax is None else vmax
+
+            axes = axes_matrix[count % facet_cols, count // facet_cols]
+            assert isinstance(axes, Axes)
+            image = axes.imshow(
+                hm_data.matrix,
+                interpolation="nearest", aspect='auto',
+                cmap=colormaps[color_scale.lower()],
+                vmin=vmin, vmax=vmax
+            )
+
+            axes.set_title(label)
+            axes.set_xlabel('Position')
+            axes.set_ylabel('')
+
+            plt.colorbar(image, ax=axes, label='Methylation density, %')
+
+            flank_lines_mpl(axes, self.data[0].x_ticks, tick_labels, self.data[0].borders if show_border else [])
+            axes.set_yticks([])
 
         return fig
 
-    def draw_plotly(self,
-                    smooth: int = 50,
-                    confidence: int = 0,
-                    major_labels: list[str] = None,
-                    minor_labels: list[str] = None,
-                    show_border: bool = True
-                    ):
+    def draw_plotly(
+            self,
+            title: str = None,
+            vmin: float = None, vmax: float = None,
+            color_scale="Viridis",
+            tick_labels: list[str] = None,
+            show_border: bool = True,
+            facet_cols: int = 4
+    ):
         """
-        Draws line-plot for all Metagenes on given figure.
+        Draws heat-map plot on given plotly figure.
 
         Parameters
         ----------
-        smooth
-            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
-        confidence
-            Probability for confidence bands (e.g. 0.95)
-        major_labels
-            Labels for body region start and end (e.g. TSS, TES). **Exactly 2** need to be provided. Set ``[]`` to disable.
-        minor_labels
-            Labels for upstream, body and downstream regions. **Exactly 3** need to be provided. Set ``[]`` to disable.
+        title
+            Title for axis
+        vmin
+            Set minimum value for colorbar explicitly.
+        vmax
+            Set maximum value for colorbar explicitly.
+        color_scale
+            Name of color scale.
+        tick_labels
+            Labels for upstream, body region start and end, downstream (e.g. TSS, TES).
+            **Exactly 5** need to be provided. Set ``None`` to disable.
         show_border
-            Whether to draw dotted vertical line on body region borders or not
+            Whether to draw dotted vertical line on body region borders or not.
 
         Returns
         -------
@@ -377,63 +376,56 @@ class LinePlotFiles(MetageneFilesBase):
 
         See Also
         --------
+        `Plotly color scales <https://plotly.com/python/builtin-colorscales/#builtin-sequential-color-scales>`_: For possible colormap ``color_scale`` arguments.
+
         `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
-        major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
+        samples_matrix = np.stack([hm_data.matrix for hm_data in self.data])
 
-        figure = go.Figure()
+        labels = dict(
+            x="Position",
+            y="Rank",
+            color="Methylation density, %"
+        )
 
-        for lp, label in zip(self.samples, self.labels):
-            assert isinstance(lp, LinePlot)
-            lp.draw_plotly(figure, smooth, label, confidence, major_labels, minor_labels, show_border)
+        figure = px.imshow(
+            samples_matrix,
+            labels=labels,
+            title=title,
+            zmin=vmin, zmax=vmax,
+            aspect="auto",
+            color_continuous_scale=color_scale,
+            facet_col=0,
+            facet_col_wrap=facet_cols if len(self.data) > facet_cols else len(self.data)
+        )
+
+        # set facet annotations
+        hm_labels = [hm_data.label for hm_data in self.data]
+        figure.for_each_annotation(lambda l: l.update(text=hm_labels[int(l.text.split("=")[1])]))
+
+        # disable y ticks
+        figure.update_layout(
+            yaxis=dict(
+                showticklabels=False
+            )
+        )
+
+        figure = flank_lines_plotly(figure, self.data[0].x_ticks, tick_labels, self.data[0].borders if show_border else [])
 
         return figure
-
-    def save_plot_rds(self, base_filename, compress: bool = False, merge: bool = False):
-        """
-        Saves plot data in a set of .Rds DataFrames with columns:
-
-        +----------+---------+
-        | fragment | density |
-        +==========+=========+
-        | Int      | Float   |
-        +----------+---------+
-
-        Parameters
-        ----------
-        base_filename
-            Base name for output files. Final will be ``[base_filename]_[label].rds``
-        compress
-            Whether data needs to be compressed.
-        merge
-            Merge all plots data into single DataFrame with additional column label.
-
-        """
-        if merge:
-            merged = pl.concat(
-                [sample.plot_data.lazy().with_columns(pl.lit(label).alias("label"))
-                 for sample, label in zip(self.samples, self.labels)]
-            )
-            write_rds(base_filename, merged.to_pandas(),
-                      compress="gzip" if compress else None)
-        if not merge:
-            for sample, label in zip(self.samples, self.labels):
-                sample.save_plot_rds(f"{remove_extension(base_filename)}_{label}.rds",
-                                     compress="gzip" if compress else None)
 
 
 class HeatMap(PlotBase):
     """Heat-map single metagene"""
 
-    def __init__(self, bismark_df: pl.DataFrame, nrow, order=None, stat="wmean", merge_strands: bool = True, **kwargs):
-        super().__init__(bismark_df, **kwargs)
+    def __init__(self, report_df: pl.DataFrame, nrow, order=None, stat="wmean", merge_strands: bool = True, **kwargs):
+        super().__init__(report_df, **kwargs)
 
         if merge_strands:
-            bismark_df = self._merge_strands(bismark_df)
+            report_df = self._merge_strands(report_df)
 
-        plot_data = self.__calculcate_plot_data(bismark_df, nrow, order, stat)
+        plot_data = self.__calculcate_plot_data(report_df, nrow, order, stat)
 
         if not merge_strands:
             # switch to base strand reverse
@@ -692,7 +684,7 @@ class HeatMapFiles(MetageneFilesBase):
         if self.samples[0].upstream_windows < 1:
             labels["up_mid"], labels["body_start"] = [""] * 2
 
-        ticks = self.samples[0].tick_positions
+        ticks = self.samples[0]._tick_positions
 
         names = list(ticks.keys())
         x_ticks = [ticks[key] for key in names]
@@ -906,7 +898,7 @@ class PCA:
         >>> pca.append_metagene(metagene, 'control-1', 'control')
         """
         self.region_density.append(
-            metagene.bismark
+            metagene.report_df
             .group_by("gene")
             .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
             .with_columns([
@@ -1015,3 +1007,62 @@ class PCA:
         axes.legend()
 
         return fig
+
+
+@dataclass
+class BoxPlotData:
+    values: list
+    label: str
+    locus: list = None
+    id: list = None
+
+
+class BoxPlot:
+    def __init__(self, data: list[BoxPlotData] | BoxPlotData):
+        self.data = data if isinstance(data, list) else [data]
+        self.values = [bp_data.values for bp_data in data]
+        self.labels = [bp_data.label for bp_data in data]
+        self.n_boxes = len(self.labels)
+
+    def draw_mpl(
+            self,
+            fig_axes: tuple = None,
+            showfliers=False,
+            title: str = None,
+            violin: bool = False
+    ):
+        if fig_axes is None:
+            plt.clf()
+            fig, axes = plt.subplots()
+        else:
+            fig, axes = fig_axes
+
+        if violin:
+            axes.violinplot(self.values, showmeans=False, showmedians=True)
+        else:
+            axes.boxplot(self.values, showfliers=showfliers)
+        axes.set_xticks(np.arange(1, self.n_boxes + 1), labels=self.labels)
+        axes.set_title(title)
+        axes.set_ylabel('Methylation density')
+
+        return fig
+
+    def draw_plotly(self, title="", violin: bool = False):
+        figure = go.Figure()
+
+        for data, label in zip(self.values, self.labels):
+            args = dict(y=data, name=label)
+            trace = go.Violin(**args) if violin else go.Box(**args)
+            figure.add_trace(trace)
+
+        figure.update_layout(
+            title=title,
+            yaxis_title="Methylation density"
+        )
+
+        return figure
+
+    def mpl_box_data(self):
+        return {hm_data.label: matplotlib.cbook.boxplot_stats(hm_data.values) for hm_data in self.data}
+
+

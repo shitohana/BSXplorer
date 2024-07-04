@@ -17,8 +17,7 @@ import polars as pl
 import pyarrow as pa
 from pyarrow import csv as pcsv, parquet as pq
 
-from .SeqMapper import Sequence
-from .UniversalReader_batches import FullSchemaBatch, ARROW_SCHEMAS, ReportTypes, REPORT_TYPES_LIST
+from .UniversalReader_batches import UniversalBatch, ARROW_SCHEMAS, ReportTypes, REPORT_TYPES_LIST
 from .utils import ReportBar
 
 
@@ -137,7 +136,7 @@ class BinomReader(ArrowParquetReader):
             ])
         )
 
-        return FullSchemaBatch(mutated, batch)
+        return UniversalBatch(mutated, batch)
 
 
 # noinspection PyMissingOrEmptyDocstring
@@ -199,8 +198,8 @@ class ArrowReaderCSV:
                 "Time for oppening file exceeded. Check if input type is correct or try making your batch size smaller.")
             os._exit(0)
 
-    def _mutate_next(self, batch: pa.RecordBatch) -> FullSchemaBatch:
-        return FullSchemaBatch(pl.from_arrow(batch), batch)
+    def _mutate_next(self, batch: pa.RecordBatch) -> UniversalBatch:
+        return UniversalBatch(pl.from_arrow(batch), batch)
 
     def __next__(self):
         try:
@@ -267,7 +266,7 @@ class BismarkReader(ArrowReaderCSV):
             .with_columns((pl.col("count_m") + pl.col("count_um")).alias("count_total"))
             .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
         )
-        return FullSchemaBatch(mutated, batch)
+        return UniversalBatch(mutated, batch)
 
 
 # noinspection PyMissingOrEmptyDocstring
@@ -287,7 +286,7 @@ class CGMapReader(BismarkReader):
                 .alias("trinuc")
             ])
         )
-        return FullSchemaBatch(mutated, batch)
+        return UniversalBatch(mutated, batch)
 
 
 # noinspection PyMissingOrEmptyDocstring
@@ -301,7 +300,7 @@ class CoverageReader(ArrowReaderCSV):
     def __init__(
             self,
             file: str | Path,
-            sequence: Sequence,
+            cytosine_file: str | Path,
             use_threads: bool = True,
             block_size_mb: int = 50,
             memory_pool: pa.MemoryPool = None,
@@ -315,9 +314,9 @@ class CoverageReader(ArrowReaderCSV):
             memory_pool=memory_pool
         )
 
-        self.sequence = sequence
+        self.cytosine_file = cytosine_file
         self._sequence_rows_read = 0
-        self._sequence_metadata = sequence.get_metadata()
+        self._sequence_metadata = pq.read_metadata(cytosine_file)
 
     def _align(self, pa_batch: pa.RecordBatch):
         batch = pl.from_arrow(pa_batch)
@@ -339,7 +338,7 @@ class CoverageReader(ArrowReaderCSV):
                 ("position", ">=", chrom_min),
                 ("position", "<=", chrom_max)
             ]
-            pa_filtered_sequence = pq.read_table(self.sequence.cytosine_file, filters=filters)
+            pa_filtered_sequence = pq.read_table(self.cytosine_file, filters=filters)
 
             modified_schema = pa_filtered_sequence.schema
             modified_schema = modified_schema.set(1, pa.field("context", pa.utf8()))
@@ -386,15 +385,15 @@ class CoverageReader(ArrowReaderCSV):
             ])
             .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
         )
-        return FullSchemaBatch(mutated, batch)
+        return UniversalBatch(mutated, batch)
 
 
 # noinspection PyMissingOrEmptyDocstring
 class BedGraphReader(CoverageReader):
     pa_schema = ARROW_SCHEMAS["bedgraph"]
 
-    def __init__(self, file: str | Path, sequence: Sequence, max_count=100, **kwargs):
-        super().__init__(file, sequence, **kwargs)
+    def __init__(self, file: str | Path, cytosine_file: str | Path, max_count=100, **kwargs):
+        super().__init__(file, cytosine_file, **kwargs)
         self.max_count = max_count
 
     def _get_fraction(self, df: pl.DataFrame):
@@ -419,7 +418,7 @@ class BedGraphReader(CoverageReader):
         fractioned = self._get_fraction(aligned)
         full = fractioned.with_columns(pl.col("context").alias("trinuc"))
 
-        return FullSchemaBatch(full, batch)
+        return UniversalBatch(full, batch)
 
 
 class UniversalReader(object):
@@ -431,7 +430,7 @@ class UniversalReader(object):
     file
         Path to the methylation report file.
     report_type
-        Type of the methylation report. Allowed types: "bismark", "cgmap", "bedgraph", "coverage", "binom"
+        Type of the methylation report. Possible types: "bismark", "cgmap", "bedgraph", "coverage", "binom"
     use_threads
         Will reading be multithreaded.
     bar
@@ -441,7 +440,7 @@ class UniversalReader(object):
 
     Other Parameters
     ----------------
-    sequence: Sequence
+    cytosine_file: str | Path
         Instance of :class:`Sequence` for reading bedGraph or .coverage reports.
     methylation_pvalue: float
         Pvalue with which cytosine will be considered methylated.
@@ -524,7 +523,7 @@ class UniversalReader(object):
             self.bar.start()
         return self
 
-    def __next__(self) -> FullSchemaBatch:
+    def __next__(self) -> UniversalBatch:
         full_batch = self.reader.__next__()
 
         if self.bar is not None:
@@ -712,13 +711,13 @@ class UniversalReplicatesReader(object):
             self.bar.next(sum(self.readers[idx].batch_size for idx in reading_from))
 
         out = marked.filter(finished=True)
-        return FullSchemaBatch(self._convert_to_full(out), out)
+        return UniversalBatch(self._convert_to_full(out), out)
 
     @staticmethod
     def _convert_to_full(df: pl.DataFrame):
         return (
             df.with_columns((pl.col("count_m") / pl.col("count_total")).alias("density")).select(
-                FullSchemaBatch.colnames())
+                UniversalBatch.colnames())
         )
 
     @property
@@ -742,7 +741,7 @@ class UniversalWriter:
     file
         Path where the file will be written.
     report_type
-        Type of the methylation report. Allowed types: "bismark", "cgmap", "bedgraph", "coverage", "binom"
+        Type of the methylation report. Possible types: "bismark", "cgmap", "bedgraph", "coverage", "binom"
     """
 
     def __init__(
@@ -791,7 +790,7 @@ class UniversalWriter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def write(self, fullschema_batch: FullSchemaBatch):
+    def write(self, fullschema_batch: UniversalBatch):
         """
         Method for writing batch to the report file.
         """

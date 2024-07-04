@@ -3,16 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
 import polars as pl
-from matplotlib import pyplot as plt
-from matplotlib.figure import Figure
 from pyreadr import write_rds
-from scipy.signal import savgol_filter
 
 from .Base import read_chromosomes, validate_chromosome_args
-from .SeqMapper import Sequence
+from .Plots import savgol_line, LinePlotData, LinePlot, BoxPlotData, BoxPlot
 from .UniversalReader_classes import UniversalReader
 
 
@@ -61,7 +56,7 @@ class ChrLevels:
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
-            threads: bool = False,
+            use_threads: bool = False,
             confidence: float = None
     ):
         """
@@ -77,7 +72,7 @@ class ChrLevels:
             Length of windows in bp
         block_size_mb
             Size of batch in bytes, which will be read from report file (for report types other than "binom").
-        threads
+        use_threads
             Will reading be multithreaded.
         confidence
             Pvalue for confidence bands of the LinePlot.
@@ -97,7 +92,7 @@ class ChrLevels:
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
-            threads: bool = False,
+            use_threads: bool = False,
             confidence: float = None
     ):
         """
@@ -113,7 +108,7 @@ class ChrLevels:
             Length of windows in bp
         block_size_mb
             Size of batch in bytes, which will be read from report file (for report types other than "binom").
-        threads
+        use_threads
             Will reading be multithreaded.
         confidence
             Pvalue for confidence bands of the LinePlot.
@@ -129,11 +124,11 @@ class ChrLevels:
     def from_bedGraph(
             cls,
             file: str | Path,
-            sequence: Sequence,
+            cytosine_file: str | Path,
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
-            threads: bool = False,
+            use_threads: bool = False,
             confidence: float = None
     ):
         """
@@ -143,15 +138,15 @@ class ChrLevels:
         ----------
         file
             Path to the report file.
-        sequence
-            Instance of :class:`Sequence` for reading bedGraph or .coverage reports.
+        cytosine_file
+            Path to preprocessed by :class:`Sequence` cytosine file.
         chr_min_length
             Minimum length of chromosome to be analyzed
         window_length
             Length of windows in bp
         block_size_mb
             Size of batch in bytes, which will be read from report file (for report types other than "binom").
-        threads
+        use_threads
             Will reading be multithreaded.
         confidence
             Pvalue for confidence bands of the LinePlot.
@@ -167,11 +162,11 @@ class ChrLevels:
     def from_coverage(
             cls,
             file: str | Path,
-            sequence: Sequence,
+            cytosine_file: str | Path,
             chr_min_length=10 ** 6,
             window_length: int = 10 ** 6,
             block_size_mb: int = 100,
-            threads: bool = False,
+            use_threads: bool = False,
             confidence: float = None
     ):
         """
@@ -181,15 +176,15 @@ class ChrLevels:
         ----------
         file
             Path to the report file.
-        sequence
-            Instance of :class:`Sequence` for reading bedGraph or .coverage reports.
+        cytosine_file
+            Path to preprocessed by :class:`Sequence` cytosine file.
         chr_min_length
             Minimum length of chromosome to be analyzed
         window_length
             Length of windows in bp
         block_size_mb
             Size of batch in bytes, which will be read from report file (for report types other than "binom").
-        threads
+        use_threads
             Will reading be multithreaded.
         confidence
             Pvalue for confidence bands of the LinePlot.
@@ -273,7 +268,7 @@ class ChrLevels:
             return self.__class__(self.report.filter(context_filter & strand_filter & chr_filter))
 
     @property
-    def __ticks_data(self):
+    def _ticks_data(self):
         ticks_data = self.plot_data.group_by("chr", maintain_order=True).agg(pl.min("fragment"))
 
         x_lines = ticks_data["fragment"].to_numpy()
@@ -286,254 +281,40 @@ class ChrLevels:
         x_labels = ticks_data["chr"].to_list()
         return x_ticks, x_labels, x_lines
 
-    def __add_flank_lines(self, axes):
-        x_ticks, x_labels, x_lines = self.__ticks_data
-
-        axes.set_xticks(x_ticks)
-        axes.set_xticklabels(x_labels)
-
-        for tick in x_lines:
-            axes.axvline(x=tick, linestyle='--', color='k', alpha=.1)
-
-    def __add_flank_lines_plotly(self, figure: go.Figure):
-        x_ticks, x_labels, x_lines = self.__ticks_data
-
-        figure.update_layout(
-            xaxis=dict(
-                tickmode='array',
-                tickvals=x_ticks,
-                ticktext=x_labels)
-        )
-
-        for tick in x_lines:
-            figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
-
-    def __get_points(self, df, smooth):
-        data = df["density"].to_numpy()
+    def line_plot_data(self, smooth: int = 0):
+        y = self.plot_data["density"].to_numpy()
 
         upper, lower = None, None
-        if "upper" in self.plot_data.columns and np.isnan(data).sum() == 0:
-            not_nan_data = df.filter(pl.col("upper").is_not_nan())
-            upper = not_nan_data["upper"].to_numpy()
-            lower = not_nan_data["lower"].to_numpy()
+        if "upper" in self.plot_data.columns and np.isnan(self.plot_data["upper"].to_numpy()).sum() == 0:
+            upper = savgol_line(self.plot_data["upper"].to_numpy(), smooth) * 100
+            lower = savgol_line(self.plot_data["lower"].to_numpy(), smooth) * 100
 
-        polyorder = 3
-        window = smooth if smooth > polyorder else polyorder + 1
+        y = savgol_line(y, smooth) * 100
+        x = np.arange(len(y))
 
-        if smooth:
-            _, _, lines = self.__ticks_data
-            data_ranges = [data[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]
-            data_ranges = [savgol_filter(r, window, 3, mode='nearest') for r in data_ranges]
+        x_ticks, x_labels, x_lines = self._ticks_data
+        return LinePlotData(x, y, x_ticks, x_lines, lower, upper, x_labels=x_labels)
 
-            data = np.concatenate(data_ranges)
+    def line_plot(self, smooth: int = 0):
+        return LinePlot(self.line_plot_data(smooth))
 
-            if upper is not None:
-                upper = np.concatenate([savgol_filter(r, window, 3, mode="nearest") for r in
-                                        [upper[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]])
-                lower = np.concatenate([savgol_filter(r, window, 3, mode="nearest") for r in
-                                        [lower[lines[i]: lines[i + 1]] for i in range(len(lines) - 1)]])
-
-        x = np.arange(len(data))
-
-        # Convert to percents
-        data = data * 100
-        if upper is not None:
-            upper, lower = upper * 100, lower * 100
-
-        return x, data, upper, lower
-
-    def draw_mpl(
-            self,
-            fig_axes: tuple = None,
-            smooth: int = 10,
-            label: str = None,
-            draw_ci: bool = True,
-            **kwargs
-    ) -> Figure:
-        """
-        Draws line-plot on given axis.
-
-        Parameters
-        ----------
-        fig_axes
-            Tuple of (`matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_, `matplotlib.axes.Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes>`_). New are created if ``None``
-        smooth
-            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
-        label
-            Label of line on line-plot
-        draw_ci
-            Draw confidence intervals
-        kwargs
-            kwargs to pass to `matplotlib.plot <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.plot.html>`_
-
-        Returns
-        -------
-            ``matplotlib.pyplot.Figure``
-
-        See Also
-        --------
-        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
-
-        `matplotlib.pyplot.subplot() <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplot.html#matplotlib.pyplot.subplot>`_ : To create fig, axes
-        """
-        if fig_axes is None:
-            fig, axes = plt.subplots()
-        else:
-            fig, axes = fig_axes
-
-        for context in self.plot_data["context"].unique():
-            filtered = self.plot_data.filter(context=context)
-            x, y, upper, lower = self.__get_points(filtered, smooth)
-
-            current_label = label + f"_{context}" if label is not None else context
-
-            axes.plot(x, y, label=current_label, **kwargs)
-            if upper is not None and draw_ci:
-                axes.fill_between(x, lower, upper, alpha=.2)
-
-        axes.legend()
-        axes.set_ylabel('Methylation density, %')
-        axes.set_xlabel('Position')
-
-        self.__add_flank_lines(axes)
-
-        fig.set_size_inches(12, 5)
-
-        return fig
-
-    def draw_plotly(
-            self,
-            figure: Figure = None,
-            smooth: int = 10,
-            label: str = None,
-            draw_ci: bool = True,
-            **kwargs
-    ):
-        """
-        Draws line-plot on given figure.
-
-
-        Parameters
-        ----------
-        figure
-            `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_. New is created if ``None``
-        smooth
-            Number of windows for `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter (set 0 for no smoothing)
-        label
-            Label of line on line-plot
-        draw_ci
-            Draw confidence intervals
-        kwargs
-            kwargs to pass to `plotly.graph_objects.Scatter <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Scatter.html>`_
-
-        Returns
-        -------
-        ``plotly.graph_objects.Figure``
-
-        See Also
-        --------
-        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
-        """
-
-        figure = go.Figure() if figure is None else figure
-
-        for context in self.plot_data["context"].unique():
-            filtered = self.plot_data.filter(context=context)
-            x, y, upper, lower = self.__get_points(filtered, smooth)
-
-            label_current = label + f"_{context}" if label is not None else context
-
-            traces = [go.Scatter(x=x, y=y, name=label_current, mode="lines", **kwargs)]
-
-            if upper is not None and draw_ci:
-                ci_kwargs = dict(
-                    mode="lines",
-                    line_color='rgba(0,0,0,0)',
-                    name=f"{label_current}_CI"
-                )
-
-                traces += [
-                    go.Scatter(x=x, y=upper, showlegend=False, **ci_kwargs),
-                    go.Scatter(x=x, y=lower, fill="tonexty", showlegend=True, **ci_kwargs)
-                ]
-
-            figure.add_traces(data=traces)
-
-        figure.update_layout(
-            xaxis_title="Position",
-            yaxis_title="Methylation density, %"
-        )
-
-        self.__add_flank_lines_plotly(figure)
-
-        return figure
-
-    def bar_plot(self):
-        return ChrBarPlot(self.report)
-
-
-class ChrBarPlot:
-    """
-    Class for plotting ChrLevels as bar plot
-    """
-    def __init__(self, report: pl.DataFrame):
-        self.report = report
-
-    def draw_mpl(self):
-        """
-        Draw chromosome methylation levels with matplotlib.
-
-        Returns
-        -------
-            ``matplotlib.pyplot.Figure``
-
-        See Also
-        --------
-        `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
-        """
+    def box_plot_data(self):
         pd_df = (
             self.report
-            .group_by(["chr", "context"])
-            .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
-            .sort("chr", "context")
-            .pivot(values="density", index="chr", columns="context")
-            .to_pandas()
-            .set_index("chr")
+            .group_by(["chr"])
+            .agg((pl.col("sum") / pl.col("count")).alias("density"))
+            .sort("chr")
         )
+        data = pd_df.to_dict()
+        chroms = data["chr"]
+        values = data["density"]
+        return [BoxPlotData(value, chrom) for chrom, value in zip(chroms, values)]
 
-        fig, axes = plt.subplots()
-        pd_df.plot.barh(ax=axes, figsize=(12, 9))
-        fig.subplots_adjust(left=0.2)
-        return fig
-
-    def draw_plotly(self):
+    def box_plot(self):
         """
-        Draw chromosome methylation levels with Plotly.
 
         Returns
         -------
-        ``plotly.graph_objects.Figure``
-
-        See Also
-        --------
-        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        BoxPlot
         """
-        pd_df = (
-            self.report
-            .group_by(["chr", "context"])
-            .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
-            .sort("chr", "context")
-            .to_pandas()
-        )
-
-        figure = px.histogram(
-            pd_df,
-            x="chr", y="density",
-            color="context",
-            barmode="group",
-            histfunc="avg"
-        )
-
-        figure.update_layout(bargap=.05)
-
-        return figure
+        return BoxPlot(self.box_plot_data())

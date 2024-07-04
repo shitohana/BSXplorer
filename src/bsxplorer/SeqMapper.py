@@ -1,30 +1,34 @@
 from __future__ import annotations
 
-import gc
 import gzip
 import io
 import itertools
 import os
-import shutil
 import tempfile
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-from Bio import SeqIO as seqio
+import pyarrow.dataset as pads
+from Bio import SeqIO
 from numba import njit
 
-import polars as pl
-
-from .ArrowReaders import CsvReader, ParquetReader, BismarkOptions, CoverageOptions, BedGraphOptions
 
 @njit
 def convert_trinuc(trinuc, reverse=False):
-    """
-    Get trinucleotide context from raw trinucleotide
-    :param trinuc: trinucleotide sequence
-    :param reverse: is trinucleotide from reversed sequence
-    :return: trinucleotide context
+    """Get trinucleotide context from raw trinucleotide
+
+    Parameters
+    ----------
+    trinuc
+        trinucleotide sequence
+    reverse
+        is trinucleotide from reversed sequence
+
+    Returns
+    -------
+    unknown
+        trinucleotide context
     """
     if reverse:
         if   trinuc[1] == "C": return "CG"
@@ -58,11 +62,19 @@ def convert_reverse(trinuc):
 
 @njit
 def get_trinuc(record_seq: str, reverse=False):
-    """
-    Parse sequence and extract trinucleotide contexts and positions
-    :param record_seq: sequence
-    :param reverse: does sequence need to be reversed
-    :return: tuple(positions, contexts)
+    """Parse sequence and extract trinucleotide contexts and positions
+
+    Parameters
+    ----------
+    record_seq
+        sequence
+    reverse
+        does sequence need to be reversed
+
+    Returns
+    -------
+    unknown
+        tuple(positions, contexts)
     """
     positions = []
     trinucs = []
@@ -79,7 +91,7 @@ def get_trinuc(record_seq: str, reverse=False):
             positions.append(position + 1)
             trinuc = record_seq[position + down_shift:position + up_shift]
             if reverse:
-                trinucs.append(convert_reverse(trinuc))
+                trinucs.append(convert_reverse(trinuc)[::-1])
             else:
                 trinucs.append(trinuc)
             contexts.append(convert_trinuc(trinuc, reverse))
@@ -87,13 +99,28 @@ def get_trinuc(record_seq: str, reverse=False):
     return positions, trinucs, contexts
 
 
+def possible_trinucs():
+    nuc_symbols = ["A", "C", "G", "T", "U", "R", "Y", "K", "M", "S", "W", "B", "D", "H", "V", "N"]
+    possible_trinuc = ["C" + "".join(product) for product in itertools.product(nuc_symbols, repeat=2)]
+    return possible_trinuc
+
+
 def init_tempfile(temp_dir, name, delete, suffix=".bedGraph.parquet") -> Path:
-    """
-    Init temporary cytosine file
-    :param temp_dir: directory where file will be created
-    :param name: filename
-    :param delete: does file need to be deleted after script completion
-    :return: temporary file
+    """Init temporary cytosine file
+
+    Parameters
+    ----------
+    temp_dir
+        directory where file will be created
+    name
+        filename
+    delete
+        does file need to be deleted after script completion
+
+    Returns
+    -------
+    unknown
+        temporary file
     """
     # temp cytosine file
     temp_file = tempfile.NamedTemporaryFile(dir=temp_dir, delete=delete)
@@ -108,54 +135,39 @@ def init_tempfile(temp_dir, name, delete, suffix=".bedGraph.parquet") -> Path:
     return Path(temp_file.name)
 
 
-class Sequence:
-    def __init__(self, cytosine_file: str | Path):
-        """
-        Class for extracting cytosine contexts and positions
-        :param path: path to fasta sequence
-        :param temp_dir: directory, where temporary file will be created
-        :param name: filename of temporary file
-        :param delete: does temporary file need to be deleted after script completion
-        """
-        self.cytosine_file = Path(cytosine_file)
+class SequenceFile:
+    """
+    Class for working with fasta genome sequence file.
 
-    @classmethod
-    def from_fasta(cls, path: str | Path, temp_dir: str = Path.cwd(), name: str = None, delete: bool = True):
-        """
-        :param path: path to fasta sequence
-        :param temp_dir: directory, where temporary file will be created
-        :param name: filename of temporary file
-        :param delete: does temporary file need to be deleted after script completion
-        """
-        path = Path(path).expanduser().absolute()
-
-        cytosine_file = init_tempfile(temp_dir, name, delete, suffix=".parquet")
-        sequence = cls(cytosine_file)
-
-        # read sequence into cytosine file
-        cls.__read_fasta_wrapper(sequence, fasta_path=path)
-
-        return sequence
-
-    @classmethod
-    def from_preprocessed(cls, path: str | Path):
-        """
-        :param path: path to parquet preprocessed sequence
-        """
-        path = Path(path)
-        if not path.exists():
-            raise FileNotFoundError("Parquet file not found")
-        try:
-            pq.read_metadata(path)
-
-            return cls(path)
-
-        except Exception as e:
-            raise Exception("Failed reading parquet with exception:\n", e)
+    Parameters
+    ----------
+    file
+        Path to FASTA genome sequence file.
+    """
+    def __init__(self, file: str | Path):
+        self.file = Path(file).expanduser().absolute()
 
     @property
-    def cytosine_file_schema(self):
-        return pa.schema([
+    def _handle(self):
+        if self.file.suffix == ".gz":
+            return gzip.open(self.file, 'rt')
+        else:
+            return open(self.file.absolute())
+
+    @property
+    def record_ids(self):
+        """
+
+        Returns
+        -------
+        list
+            List, containing chromosomes ids.
+        """
+        ids = [record.id for record in SeqIO.parse(self._handle, format="fasta")]
+        self._handle.seek(0)
+        return ids
+
+    cytosine_file_schema = pa.schema([
             ("chr", pa.dictionary(pa.int8(), pa.utf8())),
             ("position", pa.int32()),
             ("strand", pa.bool_()),
@@ -163,336 +175,107 @@ class Sequence:
             ("trinuc", pa.dictionary(pa.int16(), pa.utf8()))
         ])
 
-    def __infer_schema_table(self, handle: io.TextIOBase):
+    def close(self):
         """
-        Initialize dummy table with dictionary columns encoded
-        :param handle: fasta input stream
-        :return: dummy table
+        Close FASTA file.
         """
-        handle.seek(0)
-        schema = self.cytosine_file_schema
+        self._handle.close()
 
-        nuc_symbols = ["A", "C", "G", "T", "U", "R", "Y", "K", "M", "S", "W", "B", "D", "H", "V", "N"]
-        possible_trinuc = ["C" + "".join(product) for product in itertools.product(nuc_symbols, repeat=2)]
+    @staticmethod
+    def _unify_dictionaries(table: pa.Table, dummy_table: pa.Table):
+        return pa.concat_tables([dummy_table, table]).unify_dictionaries()[len(dummy_table):]
 
-        # get all chromosome names to categorise them
-        chrom_ids = [record.id for record in seqio.parse(handle, format="fasta")]
-
-        len_diff = len(possible_trinuc) - len(chrom_ids)
-        if len_diff > 0:
-            chrom_ids += [chrom_ids[0]] * len_diff
-        elif len_diff == 0:
-            pass
-        else:
-            possible_trinuc += [possible_trinuc[0]] * (-len_diff)
-
-        # init other rows of table
+    @property
+    def _dummy_table(self) -> pa.Table:
         contexts = ["CG", "CHG", "CHH"]
-        contexts += [str(contexts[0])] * (len(chrom_ids) - len(contexts))
-        positions = [-1] * len(chrom_ids)
-        strand = [True] * len(chrom_ids)
+        chrom_ids, trinucs, contexts = list(zip(*itertools.zip_longest(possible_trinucs(), self.record_ids, contexts)))
+        max_length = len(chrom_ids)
 
         schema_table = pa.Table.from_arrays(
-            arrays=[chrom_ids, positions, strand, contexts, possible_trinuc],
-            schema=schema
+            arrays=[
+                [chrom if chrom is not None else chrom_ids[0] for chrom in chrom_ids],
+                list(itertools.repeat(-1, max_length)),
+                list(itertools.repeat(True, max_length)),
+                [context if context is not None else contexts[0] for context in contexts],
+                [trinuc if trinuc is not None else trinucs[0] for trinuc in trinucs]
+            ],
+            schema=self.cytosine_file_schema
         )
 
         return schema_table
 
-    def __read_fasta(self, handle):
-        # init arrow parquet writer
-        arrow_writer = pq.ParquetWriter(self.cytosine_file, self.cytosine_file_schema)
-        # prepare dummy table with all dictionary columns already mapped
-        print("Scanning file to get chromosome ids.")
-        schema_table = self.__infer_schema_table(handle)
+    def preprocess_cytosines(self, output_file):
+        """
+        Write cytosine chromosome, position, strand, trinucleotide
+        sequence and context into parquet file for further use in BSXplorer.
 
-        print("Extracting cytosine contexts.")
-        print("Writing into", self.cytosine_file)
-        # return to start byte
-        handle.seek(0)
-        for record in seqio.parse(handle, "fasta"):
-            # POSITIVE
-            # parse sequence and get all trinucleotide positions and contexts
-            positions, trinucs, contexts = get_trinuc(str(record.seq))
+        Parameters
+        ----------
+        output_file
+            Path, where cytosine file will be written.
+        """
+        with pq.ParquetWriter(output_file, self.cytosine_file_schema) as writer:
+            for chr_record in SeqIO.index(self._handle, "fasta"):
+                sequence_region = SequenceRegion(chr_record)
+                table = sequence_region.parse_cytosines()
+                unified = self._unify_dictionaries(table, self._dummy_table)
+                writer.write(unified)
 
-            # convert into arrow  table
-            arrow_table = pa.Table.from_arrays(
-                arrays=[[record.id] * len(positions), positions, [True] * len(positions), contexts, trinucs],
-                schema=self.cytosine_file_schema
-            )
-            # unify dictionary keys with dummy table
-            # and deselect dummy rows
-            arrow_table = pa.concat_tables([schema_table, arrow_table]).unify_dictionaries()[len(schema_table):]
-            # write to file
-            arrow_writer.write(arrow_table)
+                print(f"Read chromosome: {chr_record.id}\t+", end="\r")
 
-            print(f"Read chromosome: {record.id}\t+", end="\r")
+        self._handle.seek(0)
 
-            # NEGATIVE
-            positions, trinucs, contexts = get_trinuc(str(record.seq), reverse=True)
 
-            arrow_table = pa.Table.from_arrays(
-                arrays=[[record.id] * len(positions), positions, [False] * len(positions), contexts, trinucs],
-                schema=schema_table.schema
-            )
 
-            arrow_table = pa.concat_tables([schema_table, arrow_table]).unify_dictionaries()[len(schema_table):]
-            arrow_writer.write(arrow_table)
+class SequenceRegion:
+    def __init__(self, record: SeqIO.SeqRecord):
+        self.record = record
+        self.sequence = str(record.seq)
 
-            print(f"Read chromosome: {record.id}\t+-")
+    def parse_cytosines(self):
+        positions, trinucs, contexts = zip(*[get_trinuc(self.sequence), get_trinuc(self.sequence, reverse=True)])
+        length = len(positions)
 
-        print("Done reading fasta sequence.\n")
-        arrow_writer.close()
+        arrow_table = pa.Table.from_arrays(
+            arrays=[
+                list(itertools.repeat(self.record.id, length * 2)),
+                positions,
+                list(itertools.repeat(True, length)) + list(itertools.repeat(True, length)),
+                contexts,
+                trinucs
+            ],
+            schema=SequenceFile.cytosine_file_schema
+        ).sort_by("position")
 
-    def __read_fasta_wrapper(self, fasta_path: str | Path) -> tempfile.TemporaryFile:
-        fasta_path = Path(fasta_path)
+        return arrow_table
 
-        print("Reading sequence from:", fasta_path)
-        if fasta_path.suffix == ".gz":
-            with gzip.open(fasta_path.absolute(), 'rt') as handle:
-                return self.__read_fasta(handle)
+
+class CytosinesFileCM:
+    def __init__(self, path: str | Path, temp_dir: str = Path.cwd(), save: bool = False):
+        self.path = Path(path).expanduser().absolute()
+        self.save = save
+        self.temp_dir = temp_dir
+
+        self.is_cytosine = self.check_pq(path)
+
+    @staticmethod
+    def check_pq(path):
+        try:
+            pq.read_metadata(path)
+            return True
+        except Exception:
+            return False
+
+    def __enter__(self):
+        if self.is_cytosine:
+            self.cytosine_path = self.path
         else:
-            with open(fasta_path.absolute()) as handle:
-                return self.__read_fasta(handle)
+            self.temp_file = tempfile.NamedTemporaryFile(dir=self.temp_dir, delete=not self.save)
+            self.cytosine_path = self.temp_dir / Path(self.path.name + ".parquet")
+            Path(self.temp_file.name).rename(self.cytosine_path)
 
-    def get_metadata(self):
-        return pq.read_metadata(self.cytosine_file)
+        return self
 
-
-class Mapper:
-    def __init__(self, path):
-        self.report_file = path
-
-    @staticmethod
-    def __map_with_sequence(df_lazy, sequence_df) -> pl.DataFrame:
-        file_types = [
-            pl.col("chr").cast(pl.Categorical),
-            pl.col("position").cast(pl.Int32)
-        ]
-
-        # arrow table aligned to genome
-        chrom_aligned = (
-            df_lazy
-            .with_columns(file_types)
-            .set_sorted("position")
-            .join(sequence_df.lazy(), on=["chr", "position"])
-            .collect()
-        )
-
-        return chrom_aligned
-
-    @staticmethod
-    def __read_filter_sequence(sequence: Sequence, filter: list) -> pa.Table:
-        table = pq.read_table(sequence.cytosine_file, filters=filter)
-
-        modified_schema = table.schema
-        modified_schema = modified_schema.set(1, pa.field("context", pa.utf8()))
-        modified_schema = modified_schema.set(2, pa.field("chr", pa.utf8()))
-
-        return table.cast(modified_schema)
-
-    @staticmethod
-    def __bedGraph_reader(path, batch_size, cpu, skip_rows):
-        return pl.read_csv_batched(
-            path,
-            separator='\t', has_header=False,
-            new_columns=['chr', 'position', 'count_m'],
-            columns=[0, 2, 3],
-            batch_size=batch_size,
-            n_threads=cpu,
-            skip_rows=skip_rows,
-            dtypes=[pl.Utf8, pl.Int64, pl.Float32]
-        )
-
-    @staticmethod
-    def __coverage_reader(path, batch_size, cpu, skip_rows):
-        return pl.read_csv_batched(
-            path,
-            separator='\t', has_header=False,
-            new_columns=['chr', 'position', 'count_m', 'count_um'],
-            columns=[0, 2, 4, 5],
-            batch_size=batch_size,
-            n_threads=cpu,
-            skip_rows=skip_rows,
-            dtypes=[pl.Utf8, pl.Int64, pl.Int32, pl.Int32]
-        )
-
-    @classmethod
-    def __map(cls, where, sequence, batched_reader, mutations: list[pl.Expr] = None):
-        pl.enable_string_cache()
-        genome_metadata = sequence.get_metadata()
-        genome_rows_read = 0
-
-        pq_writer = None
-
-        for df in batched_reader:
-            batch = pl.from_arrow(df)
-
-            # get batch stats
-            batch_stats = batch.group_by("chr").agg([
-                pl.col("position").max().alias("max"),
-                pl.col("position").min().alias("min")
-            ])
-
-            for chrom in batch_stats["chr"]:
-                chrom_min, chrom_max = [batch_stats.filter(pl.col("chr") == chrom)[stat][0] for stat in
-                                        ["min", "max"]]
-
-                filters = [
-                    ("chr", "=", chrom),
-                    ("position", ">=", chrom_min),
-                    ("position", "<=", chrom_max)
-                ]
-
-                chrom_genome = (
-                    pl.from_arrow(cls.__read_filter_sequence(sequence, filters))
-                    .with_columns([
-                        pl.col("context").cast(pl.Categorical),
-                        pl.col("chr").cast(pl.Categorical),
-                        pl.when(pl.col("strand") == True).then(pl.lit("+"))
-                        .otherwise(pl.lit("-"))
-                        .cast(pl.Categorical)
-                        .alias("strand")
-                    ])
-                )
-
-                # arrow table aligned to genome
-                filtered_lazy = batch.lazy().filter(pl.col("chr") == chrom)
-                filtered_aligned = cls.__map_with_sequence(filtered_lazy, chrom_genome)
-
-                if mutations is not None:
-                    filtered_aligned = filtered_aligned.with_columns(mutations)
-
-                missing_cols = set(["chr", "position", "strand", "context", "count_m", "count_total"]) - set(filtered_aligned.columns)
-
-                for column in missing_cols:
-                    filtered_aligned.with_columns(pl.lit(None).alias(column))
-
-                filtered_aligned = filtered_aligned.select(["chr", "position", "strand", "context", "count_m", "count_total"])
-
-                filtered_aligned = filtered_aligned.to_arrow()
-                if pq_writer is None:
-                    pq_writer = pa.parquet.ParquetWriter(
-                        where,
-                        schema=filtered_aligned.schema
-                    )
-
-                pq_writer.write(filtered_aligned)
-                genome_rows_read += len(chrom_genome)
-
-                print("Mapped {rows_read}/{rows_total} ({percent}%) cytosines".format(
-                    rows_read=genome_rows_read,
-                    rows_total=genome_metadata.num_rows,
-                    percent=round(genome_rows_read / genome_metadata.num_rows * 100, 2)
-                ), end="\r")
-
-        gc.collect()
-
-        pq_writer.close()
-
-    @staticmethod
-    def __check_compressed(path: str | Path, temp_dir=None):
-        path = Path(path)
-
-        if path.suffix == ".gz":
-            temp_file = tempfile.NamedTemporaryFile(dir=temp_dir)
-            print(f"Temporarily unpack {path} to {temp_file.name}")
-
-            with gzip.open(path, mode="rb") as file:
-                shutil.copyfileobj(file, temp_file)
-
-            return temp_file
-
-        else:
-            return path
-
-    @classmethod
-    def bedGraph(
-            cls,
-            path,
-            sequence: Sequence,
-            temp_dir: str = "./",
-            name: str = None,
-            delete: bool = True,
-            block_size_mb: int = 30,
-            use_threads: bool = True
-    ):
-        """
-        :param path: path to .bedGraph file
-        :param sequence: initialized Sequence object
-        :param temp_dir: directory for temporary files
-        :param name: temporary file basename
-        :param delete: save or delete temporary file
-        :param block_size_mb: Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
-        :param use_threads: Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
-        """
-        path = Path(path).expanduser().absolute()
-        if not path.exists():
-            raise FileNotFoundError()
-
-        file = cls.__check_compressed(path, temp_dir)
-        path = file.name
-
-        report_file = init_tempfile(temp_dir, name, delete, suffix=".bedGraph.parquet")
-        mapper = Mapper(report_file)
-
-        path = Path(path)
-        print(f"Started reading bedGraph file from {path}")
-
-        bedGraph_reader = CsvReader(file.name, BedGraphOptions(use_threads, block_size_mb * 1024**2))
-
-        mutations = [
-            pl.col("count_m") / 100,
-            pl.lit(1).alias("count_total")
-        ]
-
-        cls.__map(mapper.report_file, sequence, bedGraph_reader, mutations)
-
-        print(f"\nDone reading bedGraph sequence\nTable saved to {mapper.report_file}")
-
-        return mapper
-
-    @classmethod
-    def coverage(
-            cls,
-            path,
-            sequence: Sequence,
-            temp_dir: str = "./",
-            name: str = None,
-            delete: bool = True,
-            block_size_mb: int = 30,
-            use_threads: bool = True
-    ):
-        """
-        :param path: path to .cov file
-        :param sequence: initialized Sequence object
-        :param temp_dir: directory for temporary files
-        :param name: temporary file basename
-        :param delete: save or delete temporary file
-        :param block_size_mb: Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
-        :param use_threads: Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
-        """
-        path = Path(path).expanduser().absolute()
-        if not path.exists():
-            raise FileNotFoundError()
-
-        file = cls.__check_compressed(path, temp_dir)
-        path = file.name
-
-        report_file = init_tempfile(temp_dir, name, delete, suffix=".cov.parquet")
-        mapper = Mapper(report_file)
-
-        path = Path(path)
-        print(f"Started reading coverage file from {path}")
-
-        coverage_reader = CsvReader(file.name, CoverageOptions(use_threads, block_size_mb * 1024**2))
-
-        mutations = [
-            (pl.col("count_m") + pl.col("count_um")).alias("count_total")
-        ]
-
-        cls.__map(mapper.report_file, sequence, coverage_reader, mutations)
-
-        print(f"\nDone reading coverage file\nTable saved to {mapper.report_file}")
-
-        return mapper
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if not self.is_cytosine:
+            self.temp_file.close()

@@ -31,32 +31,6 @@ def remove_extension(path):
     re.sub("\.[^./]+$", "", path)
 
 
-def prepare_labels(major_labels: list, minor_labels: list):
-    labels = dict(
-        up_mid="Upstream",
-        body_start="TSS",
-        body_mid="Body",
-        body_end="c",
-        down_mid="Downstream"
-    )
-
-    if major_labels and len(major_labels) == 2:
-        labels["body_start"], labels["body_end"] = major_labels
-    elif major_labels:
-        print("Length of major tick labels != 2. Using default.")
-    else:
-        labels["body_start"], labels["body_end"] = [""] * 2
-
-    if minor_labels and len(minor_labels) == 3:
-        labels["up_mid"], labels["body_mid"], labels["down_mid"] = minor_labels
-    elif minor_labels:
-        print("Length of minor tick labels != 3. Using default.")
-    else:
-        labels["up_mid"], labels["body_mid"], labels["down_mid"] = [""] * 3
-
-    return labels
-
-
 def approx_batch_num(path, batch_size, check_lines=1000):
     size = getsize(path)
 
@@ -96,20 +70,24 @@ def interval(sum_density: list[int], sum_counts: list[int], alpha=.95, weighted:
     :param sum_counts: Sums of all read cytosines in fragment
     :param alpha: Probability for confidence band
     """
-    sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
-    average = sum_density.sum() / sum_counts.sum()
+    try:
+        sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
+        average = sum_density.sum() / sum_counts.sum()
 
-    normalized = None
-    if weighted:
-        normalized = np.divide(sum_density, sum_counts)
-        variance = np.average((normalized - average) ** 2, weights=sum_counts)
-    else:
-        variance = np.average((sum_density - average) ** 2)
+        normalized = None
+        if weighted:
+            normalized = np.divide(sum_density, sum_counts)
+            variance = np.average((normalized - average) ** 2, weights=sum_counts)
+        else:
+            variance = np.average((sum_density - average) ** 2)
 
-    n = sum(sum_counts) - 1
-    i = stats.t.interval(alpha, df=n, loc=normalized if weighted else average, scale=np.sqrt(variance / n))
+        n = sum(sum_counts) - 1
+        i = stats.t.interval(alpha, df=n, loc=normalized if weighted else average, scale=np.sqrt(variance / n))
+        return {"lower": i[0], "upper": i[1]}
 
-    return {"lower": i[0], "upper": i[1]}
+    except Exception as e:
+        print(f"Got {e} when calculating confidence inetrval")
+        return {"lower": np.nan, "upper": np.nan}
 
 
 MetageneSchema = dotdict(dict(
@@ -334,3 +312,31 @@ def arrow2polars_convert(pa_schema: pa.Schema):
 CONTEXTS = ["CG", "CHG", "CHH"]
 CYTOSINE_SUMFUNC = ["wmean", "mean", "min", "max", "median", "1pgeom"]
 AvailableSumfunc = Literal["wmean", "mean", "min", "max", "median", "1pgeom"]
+AvailableBAM = Literal["bismark"]
+AvailablePlotStats = Literal["mean", "wmean"]
+
+
+def prepare_labels(major_labels: list, minor_labels: list):
+    labels = dict(
+        up_mid="Upstream",
+        body_start="TSS",
+        body_mid="Body",
+        body_end="c",
+        down_mid="Downstream"
+    )
+
+    if major_labels and len(major_labels) == 2:
+        labels["body_start"], labels["body_end"] = major_labels
+    elif major_labels:
+        print("Length of major tick labels != 2. Using default.")
+    else:
+        labels["body_start"], labels["body_end"] = [""] * 2
+
+    if minor_labels and len(minor_labels) == 3:
+        labels["up_mid"], labels["body_mid"], labels["down_mid"] = minor_labels
+    elif minor_labels:
+        print("Length of minor tick labels != 3. Using default.")
+    else:
+        labels["up_mid"], labels["body_mid"], labels["down_mid"] = [""] * 3
+
+    return labels

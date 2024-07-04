@@ -12,7 +12,6 @@ sys.path.append(os.path.abspath('.'))
 import bsxplorer
 
 extensions = [
-    # TODO add myst_parser to dependencies
     'myst_parser',
     'sphinx.ext.intersphinx',
     'sphinx.ext.autodoc',

@@ -11,9 +11,9 @@ from matplotlib.axes import Axes
 from pyreadr import write_rds
 from scipy import stats
 
-from .UniversalReader_batches import FullSchemaBatch
+from .UniversalReader_batches import UniversalBatch
 from .UniversalReader_classes import UniversalReader
-from .utils import remove_extension, prepare_labels, CYTOSINE_SUMFUNC, MetageneJoinedSchema, AvailableSumfunc
+from .utils import remove_extension, CYTOSINE_SUMFUNC, MetageneJoinedSchema, AvailableSumfunc, prepare_labels
 
 
 class MetageneBase:
@@ -21,11 +21,11 @@ class MetageneBase:
     Base class for :class:`Metagene` and plots.
     """
 
-    def __init__(self, bismark_df: pl.DataFrame, **kwargs):
+    def __init__(self, report_df: pl.DataFrame, **kwargs):
         """
         Base class for Bismark data.
 
-        :param bismark_df: pl.DataFrame with cytosine methylation status.
+        :param report_df: pl.DataFrame with cytosine methylation status.
         :param upstream_windows: Number of upstream windows. Required.
         :param gene_windows: Number of gene windows. Required.
         :param downstream_windows: Number of downstream windows. Required.
@@ -33,7 +33,7 @@ class MetageneBase:
         :param context: Methylation context if filtered.
         :param plot_data: Data for plotting.
         """
-        self.bismark: pl.DataFrame = bismark_df
+        self.report_df: pl.DataFrame = report_df
 
         self.upstream_windows: int = kwargs.get("upstream_windows")
         self.downstream_windows: int = kwargs.get("downstream_windows")
@@ -63,7 +63,7 @@ class MetageneBase:
         :param filename: Path for file.
         :param compress: Whether to compress to gzip or not.
         """
-        write_rds(filename, self.bismark.to_pandas(),
+        write_rds(filename, self.report_df.to_pandas(),
                   compress="gzip" if compress else None)
 
     def save_tsv(self, filename, compress=False):
@@ -76,16 +76,16 @@ class MetageneBase:
         if compress:
             with gzip.open(filename + ".gz", "wb") as file:
                 # noinspection PyTypeChecker
-                self.bismark.write_csv(file, separator="\t")
+                self.report_df.write_csv(file, separator="\t")
         else:
-            self.bismark.write_csv(filename, separator="\t")
+            self.report_df.write_csv(filename, separator="\t")
 
     @property
     def total_windows(self):
         return self.upstream_windows + self.downstream_windows + self.gene_windows
 
     @property
-    def tick_positions(self):
+    def _tick_positions(self):
         return dict(
             up_mid=self.upstream_windows / 2,
             body_start=self.upstream_windows,
@@ -94,8 +94,22 @@ class MetageneBase:
             down_mid=self.total_windows - (self.downstream_windows / 2)
         )
 
+    @property
+    def _x_ticks(self):
+        return [
+            self.upstream_windows / 2,
+            self.upstream_windows,
+            self.total_windows / 2,
+            self.gene_windows + self.upstream_windows,
+            self.total_windows - (self.downstream_windows / 2)
+        ]
+
+    @property
+    def _borders(self):
+        return [self.upstream_windows, self.gene_windows + self.upstream_windows,]
+
     def __len__(self):
-        return len(self.bismark)
+        return len(self.report_df)
 
 
 class MetageneFilesBase:
@@ -125,7 +139,7 @@ class MetageneFilesBase:
         """
         if merge:
             merged = pl.concat(
-                [sample.bismark.lazy().with_columns(pl.lit(label))
+                [sample.report_df.lazy().with_columns(pl.lit(label))
                  for sample, label in zip(self.samples, self.labels)]
             )
             write_rds(base_filename, merged.to_pandas(),
@@ -150,7 +164,7 @@ class MetageneFilesBase:
         """
         if merge:
             merged = pl.concat(
-                [sample.bismark.lazy().with_columns(pl.lit(label))
+                [sample.report_df.lazy().with_columns(pl.lit(label))
                  for sample, label in zip(self.samples, self.labels)]
             )
             if compress:
@@ -167,11 +181,11 @@ class MetageneFilesBase:
     @staticmethod
     def __check_metadata(samples: list[MetageneBase]):
         upstream_check = set([sample.metadata["upstream_windows"]
-                             for sample in samples])
+                              for sample in samples])
         downstream_check = set(
             [sample.metadata["downstream_windows"] for sample in samples])
         gene_check = set([sample.metadata["gene_windows"]
-                         for sample in samples])
+                          for sample in samples])
 
         if len(upstream_check) == len(gene_check) == len(downstream_check) == 1:
             return samples
@@ -189,7 +203,7 @@ class PlotBase(MetageneBase):
         if self.upstream_windows < 1:
             labels["up_mid"], labels["body_start"] = [""] * 2
 
-        ticks = self.tick_positions
+        ticks = self._tick_positions
 
         names = list(ticks.keys())
         x_ticks = [ticks[key] for key in names]
@@ -223,7 +237,7 @@ class PlotBase(MetageneBase):
         if self.upstream_windows < 1:
             labels["up_mid"], labels["body_start"] = [""] * 2
 
-        ticks = self.tick_positions
+        ticks = self._tick_positions
 
         names = list(ticks.keys())
         x_ticks = [ticks[key] for key in names]
@@ -264,6 +278,7 @@ def validate_metagene_args(
 
     return locals()
 
+
 def validate_chromosome_args(
         chr_min_length=10 ** 6,
         window_length: int = 10 ** 6,
@@ -297,7 +312,8 @@ def read_chromosomes(
         confidence = 0
     else:
         if not (0 <= confidence < 1):
-            warnings.warn("Confidence value needs to be in [0;1) interval, not {}. Disabling confidence bands.".format(confidence))
+            warnings.warn("Confidence value needs to be in [0;1) interval, not {}. Disabling confidence bands.".format(
+                confidence))
             confidence = 0
 
     def process_batch(df: pl.DataFrame, unfinished_windows_df, last=False):
@@ -329,7 +345,8 @@ def read_chromosomes(
         if confidence is not None and confidence > 0:
             AGG_COLS.append(
                 pl.struct(["density", "count_total"])
-                .map_elements(lambda x: interval_chr(x.struct.field("density"), x.struct.field("count_total"), confidence))
+                .map_elements(
+                    lambda x: interval_chr(x.struct.field("density"), x.struct.field("count_total"), confidence))
                 .alias("interval")
             )
 
@@ -368,7 +385,6 @@ def read_chromosomes(
     return report_df
 
 
-
 def read_metagene(
         reader: UniversalReader,
         genome: pl.DataFrame,
@@ -378,7 +394,7 @@ def read_metagene(
         sumfunc: Literal["wmean", "mean", "min", "max", "median", "1pgeom"] = "wmean",
         **kwargs
 ):
-    batch_schema = FullSchemaBatch.pl_schema()
+    batch_schema = UniversalBatch.pl_schema()
     genome = (
         genome
         .cast(dict(
@@ -392,18 +408,22 @@ def read_metagene(
     )
 
     # BATCH SETUP
-    def process_batch(df: pl.DataFrame, genome: pl.DataFrame, upstream_windows, body_windows, downstream_windows, sumfunc):
+    def process_batch(df: pl.DataFrame, genome: pl.DataFrame, upstream_windows, body_windows, downstream_windows,
+                      sumfunc):
         # POLARS EXPRESSIONS
         # Region position check
-        UP_REGION   = pl.col('position') < pl.col('start')
+        UP_REGION = pl.col('position') < pl.col('start')
         BODY_REGION = (pl.col('start') <= pl.col('position')) & (pl.col('position') <= pl.col('end'))
         DOWN_REGION = (pl.col('position') > pl.col('end'))
 
         # Fragment numbers calculation
         # 1e-10 is added (position is always < end)
-        UP_FRAGMENT = (((pl.col('position') - pl.col('upstream')) / (pl.col('start') - pl.col('upstream'))) * upstream_windows).floor()
-        BODY_FRAGMENT = (((pl.col('position') - pl.col('start')) / (pl.col('end') - pl.col('start') + 1e-10)) * body_windows).floor() + upstream_windows
-        DOWN_FRAGMENT = (((pl.col('position') - pl.col('end')) / (pl.col('downstream') - pl.col('end') + 1e-10)) * downstream_windows).floor() + upstream_windows + body_windows
+        UP_FRAGMENT = (((pl.col('position') - pl.col('upstream')) / (
+                    pl.col('start') - pl.col('upstream'))) * upstream_windows).floor()
+        BODY_FRAGMENT = (((pl.col('position') - pl.col('start')) / (
+                    pl.col('end') - pl.col('start') + 1e-10)) * body_windows).floor() + upstream_windows
+        DOWN_FRAGMENT = (((pl.col('position') - pl.col('end')) / (pl.col('downstream') - pl.col(
+            'end') + 1e-10)) * downstream_windows).floor() + upstream_windows + body_windows
 
         # Firstly BismarkPlot was written so there were only one sum statistic - mean.
         # Sum and count of densities was calculated for further weighted mean analysis in respect to fragment size
@@ -444,10 +464,12 @@ def read_metagene(
             # Limit by end of region
             .filter(pl.col('position') <= pl.col('downstream'))
             # Filter by strand if it is defined
-            .filter(((pl.col("gene_strand") != ".") & (pl.col("gene_strand") == pl.col("strand"))) | (pl.col("gene_strand") == "."))
+            .filter(((pl.col("gene_strand") != ".") & (pl.col("gene_strand") == pl.col("strand"))) | (
+                        pl.col("gene_strand") == "."))
             # Calculate fragment ids
             .with_columns([
-                pl.when(UP_REGION).then(UP_FRAGMENT).when(DOWN_REGION).then(DOWN_FRAGMENT).otherwise(BODY_FRAGMENT).alias('fragment'),
+                pl.when(UP_REGION).then(UP_FRAGMENT).when(DOWN_REGION).then(DOWN_FRAGMENT).otherwise(
+                    BODY_FRAGMENT).alias('fragment'),
                 pl.concat_str(GENE_LABEL_COLS, separator=":").alias("gene")
             ])
             # Assign types

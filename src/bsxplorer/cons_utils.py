@@ -651,21 +651,21 @@ class Renderer:
         # Matplotlib block
         if self.args.export not in ["none"]:
             for mfiles, mtype in zip([bm, other, um], ["BM", "other", "UM"]):
-                line_plot = mfiles.line_plot(merge_strands=not self.args.separate_strands)
+                line_plot = mfiles.line_plot(merge_strands=not self.args.separate_strands, smooth=self.args.smooth, confidence=self.args.confidence)
                 heat_map = mfiles.heat_map(nrow=self.args.vresolution, ncol=self.args.hresolution)
 
                 name = filter_name + f"_{mtype}"
 
-                fig = line_plot.draw_mpl(smooth=self.args.smooth, confidence=self.args.confidence, **tick_args)
+                fig = line_plot.draw_mpl(**tick_args)
                 self._save_mpl(fig, name.format(type="line_plot"))
 
                 fig = heat_map.draw_mpl(**tick_args)
                 self._save_mpl(fig, name.format(type="heat-map"))
 
-                fig = mfiles.box_plot()
+                fig = mfiles.box_plot().draw_mpl()
                 self._save_mpl(fig, name.format(type="box"))
 
-                fig = mfiles.trim_flank().box_plot()
+                fig = mfiles.trim_flank().box_plot().draw_mpl()
                 self._save_mpl(fig, name.format(type="box_trimmed"))
 
                 plt.close()
@@ -717,10 +717,10 @@ class Renderer:
             fig = heat_map.draw_mpl(**tick_args)
             self._save_mpl(fig, name.format(type="heat-map"))
 
-            fig = filtered.box_plot()
+            fig = filtered.box_plot().draw_mpl()
             self._save_mpl(fig, name.format(type="box"))
 
-            fig = filtered.trim_flank().box_plot()
+            fig = filtered.trim_flank().box_plot().draw_mpl()
             self._save_mpl(fig, name.format(type="box_trimmed"))
 
             plt.close()
@@ -758,11 +758,11 @@ class Renderer:
         html_plot = TemplatePlot("Heat map", self._p2html(fig))
         context_block.plots.append(html_plot)
 
-        fig = filtered.box_plot_plotly()
+        fig = filtered.box_plot().draw_plotly()
         html_plot = TemplatePlot("Box plot with flanking regions", self._p2html(fig))
         context_block.plots.append(html_plot)
 
-        fig = filtered.trim_flank().box_plot_plotly()
+        fig = filtered.trim_flank().box_plot().draw_plotly()
         html_plot = TemplatePlot("Box plot without flanking regions", self._p2html(fig))
         context_block.plots.append(html_plot)
 
@@ -826,7 +826,7 @@ class Renderer:
                 bm_metagenes.append(sample.filter(genome=bm_ids))
                 um_metagenes.append(sample.filter(genome=um_ids))
 
-                other_genes = set(sample.bismark["gene"].to_list()) - set(bm_metagenes[-1].bismark["gene"].to_list() + um_metagenes[-1].bismark["gene"].to_list())
+                other_genes = set(sample.report_df["gene"].to_list()) - set(bm_metagenes[-1].report_df["gene"].to_list() + um_metagenes[-1].report_df["gene"].to_list())
                 other_metagenes.append(sample.filter(coords=other_genes))
 
             bm_metagene_files = MetageneFiles(bm_metagenes, filtered_metagenes.labels)

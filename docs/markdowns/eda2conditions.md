@@ -117,7 +117,7 @@ tick_kwargs = dict(
     minor_labels=["-500bp", "Body", "+500bp"]
 )
 
-metagenes.line_plot().draw_mpl(smooth=10, **tick_kwargs)
+metagenes.line_plot(smooth=10).draw_mpl(**tick_kwargs)
 metagenes.heat_map(50, 50).draw_mpl(**tick_kwargs)
 ```
 
@@ -187,15 +187,15 @@ well as heatmaps that display methylation levels in the aforementioned classes.
 
 ```python
 metagenes = bsxplorer.MetageneFiles(
-    [metagene_mock, metagene_inf, metagene_mock.filter(id=mock_inf_up), metagene_inf.filter(id=mock_inf_up)], 
+    [metagene_mock, metagene_inf, metagene_mock.filter(id=mock_inf_up), metagene_inf.filter(id=mock_inf_up)],
     ["mock_all", "inf_all", "mock_up", "inf_up"]
 )
 filtered = metagenes.filter(context="CG")
 
 ticks = {"major_labels": ["", ""], "minor_labels": ["-500bp", "Body", "+500bp"]}
-filtered.line_plot().draw_mpl(smooth=10, **ticks)
-filtered.heat_map(20, 20).draw_mpl(**ticks) 
-filtered.trim_flank().box_plot()
+filtered.line_plot(smooth=10).draw_mpl(**ticks)
+filtered.heat_map(20, 20).draw_mpl(**ticks)
+filtered.trim_flank().box_plot().draw_plotly()
 ```
 
 ![EDA2 - Cond LP](../images/eda2conditions/condition_lp.png){.doc-single-image}

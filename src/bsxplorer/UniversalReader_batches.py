@@ -8,7 +8,7 @@ from typing import Literal
 import polars as pl
 import pyarrow as pa
 
-from .utils import polars2arrow_convert, arrow2polars_convert
+from .utils import polars2arrow_convert
 
 ARROW_SCHEMAS = {
     "bedgraph": pa.schema([
@@ -57,6 +57,7 @@ ReportTypes = Literal["bismark", "cgmap", "bedgraph", "coverage", "binom"]
 REPORT_TYPES_LIST = ["bismark", "cgmap", "bedgraph", "coverage", "binom"]
 
 
+# noinspection PyMissingOrEmptyDocstring
 class BaseBatch(ABC):
     def __init__(self, df: pl.DataFrame):
         self.data = self.get_validated(df)
@@ -81,22 +82,33 @@ class BaseBatch(ABC):
 
     @classmethod
     def colnames(cls):
-        return list(FullSchemaBatch.pl_schema().keys())
+        return list(UniversalBatch.pl_schema().keys())
 
     def to_arrow(self):
         return self.data.to_arrow().cast(self.pa_schema())
 
+# noinspection PyMissingOrEmptyDocstring
 
 class ConvertedBatch(BaseBatch):
     @classmethod
     @abstractmethod
-    def from_full(cls, full_batch: FullSchemaBatch):
+    def from_full(cls, full_batch: UniversalBatch):
         ...
 
 
-class FullSchemaBatch(BaseBatch):
+class UniversalBatch(BaseBatch):
+    """
+    Class for storing and converting methylation report data.
+    """
     @classmethod
     def pl_schema(cls) -> OrderedDict:
+        """
+
+        Returns
+        -------
+        collections.OrderedDict
+            Dictionary with column names and data types for polars.
+        """
         return OrderedDict(
             chr=pl.Utf8,
             strand=pl.Utf8,
@@ -108,7 +120,7 @@ class FullSchemaBatch(BaseBatch):
             density=pl.Float64
         )
 
-    def __init__(self, data: pl.DataFrame, raw: pa.Table | pa.RecordBatch):
+    def __init__(self, data: pl.DataFrame, raw: pa.Table | pa.RecordBatch | None):
         super().__init__(data)
 
         self.raw = raw
@@ -117,10 +129,20 @@ class FullSchemaBatch(BaseBatch):
         return len(self.data)
 
     def filter_not_none(self):
+        """
+        Filter cytosines which have 0 reads.
+        """
         self.data = self.data.filter(pl.col("density").is_not_nan())
         return self
 
     def to_bismark(self):
+        """
+
+        Returns
+        -------
+        polars.DataFrame
+            DataFrame with methylation data as Bismark methylation report.
+        """
         converted = (
             self.data
             .select([
@@ -132,6 +154,13 @@ class FullSchemaBatch(BaseBatch):
         return converted
 
     def to_cgmap(self):
+        """
+
+        Returns
+        -------
+        polars.DataFrame
+            DataFrame with methylation data as CGmap.
+        """
         converted = (
             self.data
             .select([
@@ -145,6 +174,13 @@ class FullSchemaBatch(BaseBatch):
         return converted
 
     def to_coverage(self):
+        """
+
+        Returns
+        -------
+        polars.DataFrame
+            DataFrame with methylation data as coverage.
+        """
         converted = (
             self.data
             .filter(pl.col("count_total") != 0)
@@ -160,6 +196,13 @@ class FullSchemaBatch(BaseBatch):
         return converted
 
     def to_bedGraph(self):
+        """
+
+        Returns
+        -------
+        polars.DataFrame
+            DataFrame with methylation data as bedGraph.
+        """
         converted = (
             self.data
             .filter(pl.col("count_total") != 0)
@@ -173,8 +216,18 @@ class FullSchemaBatch(BaseBatch):
         return converted
 
     def filter_data(self, **kwargs):
+        """
+        Filter data by expression or keyword arguments
+
+        Parameters
+        ----------
+        kwargs
+            keywords arguements to pass to `polars.filter() <https://docs.pola.rs/api/python/version/0.20/reference/dataframe/api/polars.DataFrame.filter.html#polars.DataFrame.filter>`_
+
+        Returns
+        -------
+        UniversalBatch
+        """
         new = deepcopy(self)
         new.data = new.data.filter(**kwargs)
         return new
-
-

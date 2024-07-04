@@ -8,7 +8,7 @@ from pyarrow import parquet as pq
 from scipy.stats import binom
 
 from .UniversalReader_batches import ARROW_SCHEMAS, ReportTypes
-from .UniversalReader_classes import UniversalReader, ArrowParquetReader
+from .UniversalReader_classes import UniversalReader
 from .utils import arrow2polars_convert
 
 
@@ -26,6 +26,26 @@ class BinomialData:
             use_threads: bool = True,
             **kwargs
     ):
+        """
+        Get methylation stats from methylation reports file.
+
+        Parameters
+        ----------
+        file
+            Path to cytosine report.
+        report_type
+            Type of report. Possible types: "bismark", "cgmap", "bedgraph", "coverage".
+        block_size_mb
+            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
+        use_threads
+            Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
+        kwargs
+            Keyword agruements for reader (e.g. sequence)
+
+        Returns
+        -------
+
+        """
         with UniversalReader(file, report_type, use_threads, block_size_mb=block_size_mb, **kwargs) as reader:
             metadata = dict(cytosine_residues=0, density_sum=0)
             for batch in reader:
@@ -55,7 +75,7 @@ class BinomialData:
         file
             Path to cytosine report.
         report_type
-            Type of report. Possible types: bismark.
+            Type of report. Possible types: "bismark", "cgmap", "bedgraph", "coverage".
         save
             Name with which preprocessed file will be saved. If not provided - input file name is being used.
         min_coverage
@@ -66,6 +86,8 @@ class BinomialData:
             Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
         dir
             Path to working dir, where file will be saved.
+        kwargs
+            Keyword agruements for reader (e.g. sequence)
 
         Returns
         -------
@@ -168,7 +190,7 @@ class BinomialData:
         If preprocessed file exists:
 
         >>> preprocessed_path = "/path/to/preprocessed.binom.pq"
-        >>> c_binom = bp.BinomialData(preprocessed_path)
+        >>> c_binom = bsxplorer.BinomialData(preprocessed_path)
         >>> data = c_binom.region_pvalue(genome)
         """
         polars_pvalue_schema = arrow2polars_convert(ARROW_SCHEMAS["binom"])
@@ -249,7 +271,7 @@ class BinomialData:
         save_path = Path(dir) / filename
 
         if save:
-            result.write_csv(save_path.absolute(), has_header=False, separator="\t")
+            result.write_csv(save_path.absolute(), include_header=False, separator="\t")
             print("Saved into:", save_path)
 
         return RegionStat.from_expanded(result)
@@ -319,6 +341,15 @@ class RegionStat:
 
     @classmethod
     def from_csv(cls, file: str | Path):
+        """
+        Read RegionStat data from preprocessed and saved with :method:`RegionStat.save`
+
+        Parameters
+        ----------
+        file
+            Path to file.
+
+        """
         if not file.exists(): raise FileNotFoundError(file)
         df = pl.read_csv(file, has_header=False, separator="\t", schema=cls.schema)
         return cls.from_expanded(df)
@@ -426,7 +457,7 @@ class RegionStat:
         (
             self.data
             .select(["chr", "start", "end", "id", "strand"])
-            .write_csv(path, has_header=False, separator="\t")
+            .write_csv(path, include_header=False, separator="\t")
         )
 
     def categorise(

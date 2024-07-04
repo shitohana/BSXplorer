@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 import dataclasses
 import datetime
 import itertools
 import queue
 import time
 from collections import Counter, UserDict
-from copy import deepcopy
 from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
@@ -22,10 +23,11 @@ from numba import jit, prange
 from progress.bar import Bar
 from pyarrow import dataset as pads, compute as pc
 
-from src.bsxplorer.SeqMapper import Sequence
-from src.bsxplorer.UniversalReader_batches import FullSchemaBatch
+from src.bsxplorer.UniversalReader_batches import UniversalBatch
+from src.bsxplorer.utils import AvailableBAM
 
 
+# noinspection PyMissingOrEmptyDocstring
 def check_path(path: str | Path):
     path = Path(path).expanduser().absolute()
     if not path.exists():
@@ -33,6 +35,7 @@ def check_path(path: str | Path):
     return path
 
 
+# noinspection PyMissingOrEmptyDocstring
 class QualsCounter(UserDict):
     def __init__(self, data=None):
         UserDict.__init__(self, data if data is not None else dict())
@@ -55,6 +58,7 @@ class QualsCounter(UserDict):
         return self.weighted_sum() / self.total()
 
 
+# noinspection PyMissingOrEmptyDocstring
 @dataclass
 class ReadTask:
     chrom: str
@@ -64,6 +68,7 @@ class ReadTask:
     context: str
 
 
+# noinspection PyMissingOrEmptyDocstring
 @dataclass
 class AlignmentResult:
     data: Any
@@ -77,6 +82,7 @@ class AlignmentResult:
         return self.data is None
 
 
+# noinspection PyMissingOrEmptyDocstring
 @dataclass
 class QCResult:
     quals_count: QualsCounter
@@ -91,7 +97,7 @@ class QCResult:
 
 
 class BAMOptions:
-    def __init__(self, bamtype: Literal["bismark"]):
+    def __init__(self, bamtype: AvailableBAM):
         self._bamtype = bamtype
 
     @property
@@ -127,7 +133,6 @@ class BAMBar(Bar):
         self.reads = 0
         self.reads_total = reads_total
         super().__init__(**kwargs)
-
 
     suffix = "%(index_kb)d/%(max_kb)d kb (File reading time %(elapsed_fmt)s, ETA: %(eta_fmt)s)"
     fill = "@"
@@ -333,10 +338,8 @@ class PivotRegion:
 
         return cls(pivoted, calls, chr)
 
-
     def filter(self, **kwargs):
         return self.from_calls(self.calls.filter(**kwargs), self.chr)
-
 
     def matrix_df(self):
         return self.pivot.select(pl.all().exclude(["qname", "converted", "strand"]))
@@ -557,7 +560,7 @@ class BAMThread(Thread):
                 .collect()
             )
 
-            return FullSchemaBatch(batch, raw=None)
+            return UniversalBatch(batch, raw=None)
 
     def group_counts(self, chrom, start, end, context, data_lazy: pl.LazyFrame):
         if self.sequence_ds is not None:
@@ -620,7 +623,6 @@ class QCThread(Thread):
                 print("Got exception in QC Thread")
                 print(e)
 
-
     def finish(self):
         self.finished = True
 
@@ -643,8 +645,8 @@ class BAMReader:
             self,
             bam_filename: str | Path,
             index_filename: str | Path,
-            sequence: Sequence = None,
-            bamtype: str = "bismark",
+            cytosine_file: str | Path = None,
+            bamtype: AvailableBAM = "bismark",
             regions: pl.DataFrame = None,
             threads: int = 1,
             batch_num: int = 1e4,
@@ -661,7 +663,7 @@ class BAMReader:
         self.bamfile = pysam.AlignmentFile(filename=str(bam_filename), index_filename=str(index_filename), threads=threads, **pysam_kwargs)
 
         # Init reference path
-        self.sequence_ds = pads.dataset(sequence.cytosine_file) if sequence is not None else None
+        self.sequence_ds = pads.dataset(cytosine_file) if cytosine_file is not None else None
 
         # Init inner attributes
         self.regions = regions
@@ -808,7 +810,6 @@ class BAMReader:
 
         return quals_stat, pos_stat, reg_stat
 
-
     def plot_qc(self):
         quals_stat, pos_stat, reg_stat = self.qc_data()
 
@@ -852,34 +853,6 @@ class BAMReader:
         pos_ax.plot(y_data, 'b')
 
         return fig
-
-
-
-
-    def _upd_gui(self, qual_stat, pos_stat):
-        # Hist
-
-        # Quals
-        quals = sorted(iter((ord(qual) - 33, count) for qual, count in qual_stat.items() if qual != -1), key=lambda item: item[0])
-        x_data, y_data = list(zip(*quals))
-        self._qual_ax.hist(x_data, weights=y_data, color='b', linewidth=0.5, edgecolor="white", density=True)
-
-        # Pos
-        y_data = [sum((ord(qual) - 33) * count for qual, count in pos_count.items() if qual != -1) / pos_count.total() for pos_count in pos_stat]
-        self._pos_ax.clear()
-        self._pos_ax.plot(y_data, 'b')
-        self._pos_ax.set_title("Read quality by position")
-
-        x_ticks = list(itertools.accumulate(self.bamfile.lengths))
-        plot_positions = [(x_ticks[self.bamfile.references.index(chrom)] + end, qual) for chrom, end, qual in self.reg_qual]
-        x_data, y_data = list(zip(*plot_positions))
-        self._chr_ax.clear()
-        self._chr_ax.plot(x_data, y_data, 'b')
-        self._chr_ax.set_xticks(x_ticks, labels=self.bamfile.references, rotation=-90, fontsize=8)
-        self._chr_ax.set_title("Avg. reads quality")
-
-        self._fig.canvas.draw()
-        self._fig.canvas.flush_events()
 
     def _upd_qc(self, qc_result: QCResult):
         self.quals_count += qc_result.quals_count
