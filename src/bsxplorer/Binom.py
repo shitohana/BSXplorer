@@ -277,6 +277,51 @@ class BinomialData:
         return RegionStat.from_expanded(result)
 
 
+class Filter:
+    __slots__ = ["expr"]
+
+    def __le__(self, other):
+        self.expr = self.expr.le(other)
+        return self
+
+    def __lt__(self, other):
+        self.expr = self.expr.lt(other)
+        return self
+
+    def __ge__(self, other):
+        self.expr = self.expr.ge(other)
+        return self
+
+    def __gt__(self, other):
+        self.expr = self.expr.gt(other)
+        return self
+
+    def __eq__(self, other):
+        self.expr = self.expr.eq(other)
+        return self
+
+    def __and__(self, other: PValueFilter | CountFilter):
+        self.expr = self.expr.and_(other.expr)
+        return self
+
+    def __or__(self, other: PValueFilter | CountFilter):
+        self.expr = self.expr.or_(other.expr)
+        return self
+
+
+class PValueFilter(Filter):
+    def __init__(self, context: str):
+        self.context = context
+        self.expr = pl.col(f"p_value_context_{context}")
+
+
+class CountFilter(Filter):
+    def __init__(self, context: str):
+        super().__init__()
+        self.context = context
+        self.expr = pl.col(f"count_total_context_{context}")
+
+
 class RegionStat:
     """
     Class for manipulation with region P-value data.
@@ -489,16 +534,25 @@ class RegionStat:
         tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]
             BM, IM, UM :class:`pl.DataFrame`
         """
-        other_contexts = list(map(lambda name: name.replace("p_value_context_", ""), self.data.select("^p_value_context_.+$").columns))
+        other_contexts = [
+            c for c in
+            map(lambda name: name.replace("p_value_context_", ""), self.data.select("^p_value_context_.+$").columns)
+            if c != context
+        ]
 
-        def filter_other(df):
-            for c in other_contexts:
-                df = df.filter(c, ">=", 1 - p_value)
-            return df
+        assert isinstance(context, str)
+        bm_filter = (PValueFilter(context) < 1 - p_value) & (CountFilter(context) >= min_n)
+        im_filter = (PValueFilter(context) >= 1 - p_value) & (PValueFilter(context) < p_value) & (CountFilter(context) >= min_n)
+        um_filter = (PValueFilter(context) >= p_value) & (CountFilter(context) >= min_n)
 
-        bm = filter_other(self.filter(context, "<", p_value, min_n))
-        im = filter_other(self.filter(context, ">=", p_value, min_n))
-        um = filter_other(self.filter(context, ">=", p_value, 1 - min_n))
+        for other_context in other_contexts:
+            bm_filter = bm_filter & (PValueFilter(other_context) >= p_value)
+            im_filter = im_filter & (PValueFilter(other_context) >= p_value)
+            um_filter = um_filter & (PValueFilter(other_context) >= p_value)
+
+        bm = self.__class__(self.data.filter(bm_filter.expr))
+        im = self.__class__(self.data.filter(im_filter.expr))
+        um = self.__class__(self.data.filter(um_filter.expr))
 
         if save is not None:
             for df, df_type in zip([bm, im, um], ["BM", "IM", "UM"]):
@@ -514,3 +568,4 @@ class RegionStat:
 
     def __str__(self):
         return self.data.__str__()
+

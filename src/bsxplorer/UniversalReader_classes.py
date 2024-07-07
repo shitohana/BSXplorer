@@ -77,7 +77,7 @@ class ArrowParquetReader:
     def _mutate_next(self, batch: pa.RecordBatch):
         return batch
 
-    def __next__(self) -> pa.Table:
+    def __next__(self) -> UniversalBatch:
         old_group = self.__current_group
         # Check if it is the last row group
         if old_group < self.reader.num_row_groups:
@@ -90,7 +90,7 @@ class ArrowParquetReader:
             )
 
             mutated = self._mutate_next(batch)
-            return pa.table(mutated)
+            return mutated
         raise StopIteration()
 
     @property
@@ -790,21 +790,24 @@ class UniversalWriter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def write(self, fullschema_batch: UniversalBatch):
+    def write(self, universal_batch: UniversalBatch):
         """
         Method for writing batch to the report file.
         """
+        if universal_batch is None:
+            return
+
         if self.writer is None:
             self.__enter__()
 
         if self.report_type == "bismark":
-            fmt_df = fullschema_batch.to_bismark()
+            fmt_df = universal_batch.to_bismark()
         elif self.report_type == "cgmap":
-            fmt_df = fullschema_batch.to_cgmap()
+            fmt_df = universal_batch.to_cgmap()
         elif self.report_type == "bedgraph":
-            fmt_df = fullschema_batch.to_bedGraph()
+            fmt_df = universal_batch.to_bedGraph()
         elif self.report_type == "coverage":
-            fmt_df = fullschema_batch.to_coverage()
+            fmt_df = universal_batch.to_coverage()
         else:
             raise KeyError(f"{self.report_type} not supported")
 

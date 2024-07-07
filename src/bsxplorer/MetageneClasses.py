@@ -9,9 +9,10 @@ import numpy as np
 import packaging
 import polars as pl
 import seaborn as sns
+from scipy import stats
 
 from .Plots import (
-    HeatMap, HeatMapFiles, BoxPlot, savgol_line, LinePlotData, LinePlot, plot_stat_expr, HeatMapData, HeatMapNew,
+    BoxPlot, savgol_line, LinePlotData, LinePlot, plot_stat_expr, HeatMapData, HeatMap,
     BoxPlotData
 )
 from .SeqMapper import CytosinesFileCM, SequenceFile
@@ -619,13 +620,36 @@ class Metagene(MetageneBase):
         # Apply stats expr
         res = (
             df
-            .group_by("fragment").agg([
+            .group_by("fragment")
+            .agg([
                 plot_stat_expr(stat).alias("density"),
                 pl.col("sum"),
-                pl.col("count")
+                pl.col("count"),
+                pl.sum("count").alias("n"),
+                (pl.col("sum") / pl.col("count")).mean().alias("average"),
+                (pl.col("sum") - (pl.col("sum") / pl.col("count"))).mean().pow(2).alias("variance")
             ])
             .sort("fragment")
         )
+
+        if 0 < confidence < 1 and stat in ["mean", "wmean"]:
+            res = (
+                res
+                .with_columns(
+                    (pl.col("variance") / pl.col("n")).sqrt().alias("scale")
+                )
+                .with_columns(
+                    pl.struct(["n", "average", "scale"])
+                    .map_elements(
+                        lambda field: stats.t.interval(confidence, df=field["n"] - 1, loc=field["average"], scale=field["scale"]),
+                        return_dtype=pl.List(pl.Float64)
+                    ).alias("interval")
+                )
+                .with_columns(pl.col("interval").list.to_struct(fields=["lower", "upper"]))
+                .unnest("interval")
+            )
+        elif 0 < confidence < 1 and not (stat in ["mean", "wmean"]):
+            raise ValueError("Confidence bands available only for mean and wmean stat parameters.")
 
         # Fill empty windows
         template = pl.DataFrame(
@@ -639,26 +663,8 @@ class Metagene(MetageneBase):
         lower = None
         upper = None
         if 0 < confidence < 1 and stat in ["mean", "wmean"]:
-            weighted = True if stat in ["wmean"] else False
-            joined = (
-                joined
-                .with_columns(
-                    pl.struct(["sum", "count"])
-                    .map_elements(
-                        lambda x: interval(x["sum"], x["count"], confidence, weighted)
-                    ).alias("interval")
-                )
-                .unnest("interval")
-                .select(["fragment", "lower", "density", "upper"])
-                .fill_nan(0)
-                .with_columns(pl.when(pl.col("lower") < 0).then(0).otherwise(pl.col("lower")).alias("lower"))
-            )
-
             upper = savgol_line(joined["upper"].to_numpy(), smooth) * 100
             lower = savgol_line(joined["lower"].to_numpy(), smooth) * 100
-
-        elif 0 < confidence < 1 and not (stat in ["mean", "wmean"]):
-            raise ValueError("Confidence bands available only for mean and wmean stat parameters.")
 
         # Smooth and convert to percents
         y = savgol_line(joined["density"].to_numpy(), smooth) * 100
@@ -838,14 +844,14 @@ class Metagene(MetageneBase):
         # convert to matrix and percents
         hm_data = np.array(hm_data, dtype=np.float32) * 100
 
-        return HeatMapData(hm_data, resized._x_ticks, resized._borders, label if label is not None else "")
+        return HeatMapData(hm_data, resized._x_ticks, resized._borders, label if label is not None else "", ["Upstream", "", "Body", "", "Downstream"])
 
     def heat_map(
             self,
             nrow: int = 100,
             ncol: int = 100,
             stat="wmean"
-    ) -> HeatMapNew:
+    ) -> HeatMap:
         """
         Create :class:`HeatMap` method.
 
@@ -860,7 +866,7 @@ class Metagene(MetageneBase):
 
         Returns
         -------
-            :class:`HeatMapNew`
+            :class:`HeatMap`
 
         Examples
         --------
@@ -898,7 +904,7 @@ class Metagene(MetageneBase):
         """
 
         hm_data = self.heat_map_data(nrow, ncol, stat)
-        return HeatMapNew(hm_data)
+        return HeatMap(hm_data)
 
     def __str__(self):
         representation = (f'Metagene with {len(self)} windows total.\n'
@@ -1226,7 +1232,7 @@ class MetageneFiles(MetageneFilesBase):
         ]
         return LinePlot(lp_data)
 
-    def heat_map(self, nrow: int = 100, ncol: int = None, stat: str = "wmean") -> HeatMapNew:
+    def heat_map(self, nrow: int = 100, ncol: int = None, stat: str = "wmean") -> HeatMap:
         """
         Create :class:`HeatMapNew` method.
 
@@ -1241,7 +1247,7 @@ class MetageneFiles(MetageneFilesBase):
 
         Returns
         -------
-            :class:`HeatMapNew`
+            :class:`HeatMap`
 
         See Also
         --------
@@ -1275,10 +1281,10 @@ class MetageneFiles(MetageneFilesBase):
             sample.heat_map_data(nrow, ncol, stat, label)
             for sample, label in zip(self.samples, self.labels)
         ]
-        return HeatMapNew(hm_data)
+        return HeatMap(hm_data)
 
-    def box_plot_data(self):
-        return {label: sample.box_plot_data for label, sample in zip(self.labels, self.samples)}
+    def box_plot_data(self, filter_context: Literal["CG", "CHG", "CHH"] | None = None):
+        return [sample.box_plot_data(filter_context, label) for label, sample in zip(self.labels, self.samples)]
 
     # Todo add fixes from issue14-16#fix
     def box_plot(self):

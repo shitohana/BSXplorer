@@ -203,14 +203,16 @@ def _jit_methylation_entropy(matrix, columns, window_length, min_depth):
         sort_signatures = np.sort(signatures)
         nonzero_indicies = np.nonzero(sort_signatures - np.roll(sort_signatures, -1))[0]
         counts = nonzero_indicies + 1
-        counts_shifted = np.roll(counts, 1)
-        counts_shifted[0] = 0
+        if nonzero_indicies.size != 0:
+            counts_shifted = np.roll(counts, 1)
+            counts_shifted[0] = 0
 
-        # Unique counts
-        counts = counts - counts_shifted
-        total_counts = counts.sum()
-
-        ME_value = abs((1 / window_length) * sum([(count / total_counts) * np.log2(count / total_counts) for count in counts]))
+            # Unique counts
+            counts = counts - counts_shifted
+            total_counts = counts.sum()
+            ME_value = abs((1 / window_length) * sum([(count / total_counts) * np.log2(count / total_counts) for count in counts]))
+        else:
+            ME_value = 0
 
         positions_matrix[i, :] = columns[i:(i + window_length)]
         ME_array[i] = ME_value
@@ -288,9 +290,9 @@ def _jit_PDR(matrix, columns, min_cyt: int, min_depth: int):
     matrix = matrix[low_cyt, :]
 
     n_cols = matrix.shape[1]
-    position_array = np.empty(n_cols, dtype=np.int64)
-    pdr_array = np.empty(n_cols, dtype=np.float64)
-    count_matrix = np.empty((n_cols, 2), dtype=np.int64)
+    position_array = np.zeros(n_cols, dtype=np.int64)
+    pdr_array = np.zeros(n_cols, dtype=np.float64)
+    count_matrix = np.zeros((n_cols, 2), dtype=np.int64)
 
     for i in prange(n_cols):
         covering_reads = matrix[:, i] != -1
@@ -311,6 +313,11 @@ def _jit_PDR(matrix, columns, min_cyt: int, min_depth: int):
         pdr_array[i] = PDR_value
         count_matrix[i] = concordant_count, discordant_count
         position_array[i] = columns[i]
+
+    non_empty = position_array != 0
+    position_array = position_array[non_empty]
+    pdr_array = pdr_array[non_empty]
+    count_matrix = count_matrix[non_empty, :]
 
     return position_array, pdr_array, count_matrix
 
@@ -336,7 +343,10 @@ class PivotRegion:
             .fill_null(-1)
         )
 
-        return cls(pivoted, calls, chr)
+        if not pivoted.is_empty():
+            return cls(pivoted, calls, chr)
+        else:
+            return None
 
     def filter(self, **kwargs):
         return self.from_calls(self.calls.filter(**kwargs), self.chr)
@@ -367,7 +377,13 @@ class PivotRegion:
             Matrix with position of cytosines from window and array with their ME values
         """
         matrix, columns = self._jit_compatitable()
-        return _jit_methylation_entropy(matrix, columns, window_length, min_depth)
+        if matrix.shape[1] > window_length and matrix.shape[0] > min_depth:
+            try:
+                return _jit_methylation_entropy(matrix, columns, window_length, min_depth)
+            except TypeError:
+                return np.zeros((0, window_length)), np.zeros((0, 1))
+        else:
+            return np.zeros((0, window_length)), np.zeros((0, 1))
 
     def epipolymorphism(self, window_length: int = 4, min_depth: int = 4):
         """
@@ -385,11 +401,20 @@ class PivotRegion:
             Matrix with position of cytosines from window and array with their ME values
         """
         matrix, columns = self._jit_compatitable()
-        return _jit_epipolymorphism(matrix, columns, window_length, min_depth)
+        if matrix.shape[1] > window_length and matrix.shape[0] > min_depth:
+            try:
+                return _jit_epipolymorphism(matrix, columns, window_length, min_depth)
+            except TypeError:
+                return np.zeros((0, window_length)), np.zeros((0, 1))
+        else:
+            return np.zeros((0, window_length)), np.zeros((0, 1))
 
     def PDR(self, min_cyt: int = 5, min_depth: int = 4):
         matrix, columns = self._jit_compatitable()
-        return _jit_PDR(matrix, columns, min_cyt, min_depth)
+        if matrix.shape[1] > min_cyt and matrix.shape[0] > min_depth:
+            return _jit_PDR(matrix, columns, min_cyt, min_depth)
+        else:
+            return np.zeros((0, 1)), np.zeros((0, 1)), np.zeros((0, 2))
 
 
 class BAMThread(Thread):
@@ -537,15 +562,12 @@ class BAMThread(Thread):
         quals = []
         abs_positions = []
         for read_pos in range(qlen):
-            try:
-                if calls_string[read_pos] == "." or positions[read_pos] is None:
-                    continue
-                ref_positions.append(read_pos)
-                calls.append(calls_string[read_pos])
-                quals.append(qual_arr[read_pos])
-                abs_positions.append(positions[read_pos] + 1)
-            except IndexError:
-                pass
+            if calls_string[read_pos] == "." or positions[read_pos] is None:
+                continue
+            ref_positions.append(read_pos)
+            calls.append(calls_string[read_pos])
+            quals.append(qual_arr[read_pos])
+            abs_positions.append(positions[read_pos] + 1)
         return ref_positions, calls, quals, abs_positions
 
     def mutate(self, batch_lazy: pl.LazyFrame):

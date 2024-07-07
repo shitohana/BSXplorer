@@ -13,14 +13,18 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import polars as pl
+import pyarrow as pa
+import pyarrow.csv as pcsv
 from jinja2 import Template
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from plotly import graph_objs as go
 from plotly.subplots import make_subplots
 
-from . import Genome, Metagene, PCA, MetageneFiles, BinomialData, ChrLevels
+from . import Genome, Metagene, PCA, MetageneFiles, BinomialData, ChrLevels, HeatMap
+from .BamReader import BAMReader
 from .SeqMapper import init_tempfile
+from .UniversalReader_batches import REPORT_TYPES_LIST
 from .UniversalReader_classes import UniversalWriter, UniversalReader, UniversalReplicatesReader
 from .utils import merge_replicates, decompress
 
@@ -297,6 +301,166 @@ class ConsoleScript(ABC):
         ...
 
 
+class BamScript:
+    @property
+    def _parser(self) -> argparse.ArgumentParser:
+        def file_path_type(arg) -> Path:
+            if arg is not None:
+                arg = Path(arg).expanduser().absolute()
+                if not arg.exists():
+                    raise FileNotFoundError(arg)
+            return arg
+
+        BAM_TYPES = ["bismark"]
+        CONTEXTS = ["CG", "CHG", "CHH", "all"]
+        MODES = ["report", "stats"]
+        STATS = ["ME", "EPM", "PDR"]
+
+        parser = argparse.ArgumentParser(
+            prog='BSXplorer',
+            description='BAM to report reader converter tool.',
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+
+        parser.add_argument('output', help="Path to output file.", type=Path)
+        parser.add_argument("--bam", help="Path to SORTED .bam file with alignments", type=file_path_type, required=True)
+        parser.add_argument("--bai", help="Path to .bai index file", type=file_path_type, required=True)
+        parser.add_argument("-f", "--fasta", help="Path to .fasta file with reference sequence for full cytosine report.", default=None, type=file_path_type)
+        parser.add_argument("--bamtype", help="Type of aligner which was used for generating BAM.", default="bismark", type=str, choices=BAM_TYPES)
+        parser.add_argument('-m', '--mode', default="report", choices=MODES)
+        parser.add_argument('--to_type', choices=REPORT_TYPES_LIST, help="Specifies the output file type if mode is set to 'report'.", default="bismark")
+        parser.add_argument('--stat', choices=STATS, help="Specifies the BAM stat type if mode is set to 'stats'", default="ME")
+        parser.add_argument('--stat_param', type=int, default=4, help="See docs for specifical stat parameters.")
+        parser.add_argument('--stat_md', type=int, default=4, help="Minimum number of reads for cytosine to be analysed (if mode is 'stats')")
+        parser.add_argument('-g', '--gff', help="Path to regions genome coordinates .gff file, if cytosines need to be filtered.", default=None, type=file_path_type)
+        parser.add_argument("-c", "--context", help="Filter cytosines by specific methylation context", type=str, default="all", choices=CONTEXTS)
+        parser.add_argument("-q", "--min_qual", help="Filter cytosines by read Phred score quality", type=int, choices=range(0, 43), default=None)
+        parser.add_argument('-s', '--skip_converted', help="Skip reads aligned to converted sequence", action='store_true')
+        parser.add_argument('--no_qc', help="Do not calculate QC stats", action='store_true')
+        parser.add_argument('-t', '--threads', help="How many threads will be used for reading the BAM file.", type=int, default=1)
+        parser.add_argument('-n', '--batch_n', help="Number of reads per batch.", default=1e4, type=int)
+        parser.add_argument('-a', '--readahead', help="Number of batches to be read before processing.", default=5, type=int)
+
+        return parser
+
+    def __init__(self, args: list[str] = None):
+
+        warnings.filterwarnings('ignore')
+        self.args = self._parser.parse_args(args)
+
+    def main(self):
+        args = self.args
+
+        if args.gff is not None:
+            regions = Genome.from_gff(args.gff).all()
+        else:
+            regions = None
+
+        output = Path(args.output).expanduser().absolute()
+
+        reader = BAMReader(
+            bam_filename=args.bam,
+            index_filename=args.bai,
+            cytosine_file=args.fasta,
+            bamtype=args.bamtype,
+            regions=regions,
+            batch_num=args.batch_n,
+            min_qual=args.min_qual,
+            threads=args.threads,
+            context=args.context,
+            keep_converted=not args.skip_converted,
+            qc=not args.no_qc,
+            readahead=args.readahead
+        )
+        if args.mode == "report":
+            with UniversalWriter(
+                    file=output,
+                    report_type=args.to_type
+            ) as writer:
+                for batch in reader.report_iter():
+                    writer.write(batch)
+
+        elif args.mode == "stats":
+            if args.stat in ["ME", "EPM"]:
+                out_schema = pa.schema(
+                    [pa.field("chr", pa.string())] +
+                    [pa.field(f"pos{pos_n}", pa.uint64()) for pos_n in range(args.stat_param)] +
+                    [pa.field("value", pa.float64())]
+                )
+
+                with pcsv.CSVWriter(
+                        args.output, schema=out_schema,
+                        write_options=pcsv.WriteOptions(include_header=False, delimiter="\t", quoting_style="none")
+                ) as writer:
+                    for batch in reader.stats_iter():
+                        if batch is not None:
+                            positions_matrix, value = batch.methylation_entropy(args.stat_param, args.stat_md)
+                            if value.size != 0:
+                                non_null = value != 0
+
+                                positions_matrix = positions_matrix[non_null, :]
+                                value = value[non_null]
+
+                                if len(value) > 0:
+                                    res_df = (
+                                        pl.DataFrame(
+                                            [list(positions_matrix), value],
+                                            schema={"positions": pl.List(pl.UInt64), "value": pl.Float64}
+                                        )
+                                        .with_columns(pl.col("positions").list.to_struct())
+                                        .with_columns(pl.lit(batch.chr).alias("chr"))
+                                        .select(["chr", "positions", "value"])
+                                        .unnest("positions")
+                                    )
+                                    writer.write(res_df.to_arrow())
+
+            elif args.stat == "PDR":
+                out_schema = pa.schema([
+                    pa.field("chr", pa.string()),
+                    pa.field("pos", pa.uint64()),
+                    pa.field("value", pa.float64()),
+                    pa.field("ccount", pa.float64()),
+                    pa.field("dcount", pa.float64())
+                ])
+
+                with pcsv.CSVWriter(
+                        output, schema=out_schema,
+                        write_options=pcsv.WriteOptions(include_header=False, delimiter="\t", quoting_style="none")
+                ) as writer:
+                    for batch in reader.stats_iter():
+                        if batch is not None:
+                            position_array, pdr_array, count_matrix = batch.PDR(args.stat_param, args.stat_md)
+
+                            if pdr_array.size != 0:
+
+                                non_null = pdr_array != 0
+                                position_array = position_array[non_null]
+                                pdr_array = pdr_array[non_null]
+                                count_matrix = count_matrix[non_null, :]
+
+                                if len(position_array) > 0:
+                                    res_df = (
+                                        pl.DataFrame(
+                                            data=[position_array, pdr_array, list(count_matrix)],
+                                            schema={"pos": pl.UInt64, "value": pl.Float64, "counts": pl.List(pl.UInt64)}
+                                        )
+                                        .with_columns(pl.col("counts").list.to_struct())
+                                        .with_columns(pl.lit(batch.chr).alias("chr"))
+                                        .select(["chr", "pos", "value", "counts"])
+                                        .unnest("counts")
+                                    )
+                                    writer.write(res_df.to_arrow())
+
+        else:
+            raise KeyError(f"Unknown mode {args.mode}")
+
+        if not args.no_qc:
+            fig = reader.plot_qc()
+            fig.set_size_inches(10, 7)
+            fig.savefig(output.parent / (output.stem + ".pdf"))
+
+
+
 class MetageneScript(ConsoleScript):
     @property
     def _parser(self) -> argparse.ArgumentParser:
@@ -446,9 +610,6 @@ class CategoryScript(ConsoleScript):
             report_files = row["report_file"] if isinstance(row["report_file"], list) else list(row["report_file"])
             report_types = row["report_type"] if isinstance(row["report_type"], list) else list(row["report_type"])
 
-            temp = None
-            decompressed = None
-
             if len(report_files) > 1:
                 temp = init_tempfile(self.args.dir, row["name"] + "_merged", delete=False, suffix=".txt")
                 print(f"Merged replicates will be saved as {temp}")
@@ -496,9 +657,6 @@ class CategoryScript(ConsoleScript):
             sample_region_stats[row["name"]] = region_pvalues
             sample_metagenes.append(metagene)
             sample_names.append(row["name"])
-
-            if decompressed is not None:
-                decompressed.close()
 
         metagene_files = MetageneFiles(sample_metagenes, sample_names)
 
@@ -568,10 +726,20 @@ class ChrLevelsScript(ConsoleScript):
             temp = None
 
             if len(report_files) > 1:
-                temp = merge_replicates(report_files, report_types[0], _config["MERGE_BATCH_SIZE"])
+                temp = init_tempfile(self.args.dir, row["name"] + "_merged", delete=False, suffix=".txt")
+                print(f"Merged replicates will be saved as {temp}")
 
-                merged_path = Path(temp.name)
-                merged_type = "parquet"
+                with UniversalWriter(temp, report_types[0]) as writer:
+                    readers = [UniversalReader(file, report_type, self.args.threads,
+                                               block_size_mb=self.args.block_mb, bar=False)
+                               for file, report_type in zip(report_files, report_types)]
+
+                    with UniversalReplicatesReader(readers) as reader:
+                        for batch in reader:
+                            writer.write(batch)
+
+                merged_path = Path(temp)
+                merged_type = report_types[0]
             else:
                 merged_path = Path(report_files[0])
                 merged_type = report_types[0]
@@ -580,21 +748,19 @@ class ChrLevelsScript(ConsoleScript):
                 file=merged_path,
                 chr_min_length=self.args.min_length,
                 window_length=self.args.window,
-                confidence=self.args.confidence
-                # threads = self.args.threads
+                confidence=self.args.confidence,
+                use_threads = self.args.threads
             )
 
             if merged_type not in ["parquet"]:
                 kwargs |= dict(
                     block_size_mb=self.args.block_mb,
-                    threads=self.args.threads
+                    use_threads=self.args.threads
                 )
 
             levels = self._constructors[merged_type](**kwargs)
             sample_levels.append(levels)
             sample_labels.append(row["name"])
-
-            if temp is not None: temp.close()
 
         rendered = Renderer(self.args).chr_levels(sample_levels, sample_labels)
 
@@ -612,8 +778,8 @@ class Renderer:
         fig.savefig(path)
 
     @staticmethod
-    def _p2html(fig: go.Figure, full_html=False, include_plotlyjs=False):
-        return fig.to_html(full_html=full_html, include_plotlyjs=include_plotlyjs, default_width="900px", default_height="675px")
+    def _p2html(fig: go.Figure, full_html=False, include_plotlyjs=False, default_width="900px", default_height="675px"):
+        return fig.to_html(full_html=full_html, include_plotlyjs=include_plotlyjs, default_width=default_width, default_height=default_height)
 
     @property
     def _get_filters(self):
@@ -636,136 +802,143 @@ class Renderer:
         else:
             return f"{filters['context']}"
 
-    def category_context_block(self, bm, other, um, filters):
+    def category_context_block(self, bm, im, um, filters, metadata):
         filter_name = self._format_filters(filters)
-
+        heading_text = f"Context {filter_name}"
+        caption_text = "<p>Group regions count:</p>\n" + "\n".join(
+            [f"<p>{label} – " + ", ".join([f"{group}: {number}" for group, number in metadata[label].items()]) + " regions</p>"
+             for label in metadata.keys()]
+        )
         context_block = TemplateContext(
-            heading=f"Context {filter_name}"
+            heading=heading_text,
+            caption=caption_text
+        )
+        subplot_titles = ["BM", "IM", "UM"]
+
+        lp_subplot_args = dict(
+            rows=1, cols=3,
+            subplot_titles=subplot_titles,
+            shared_yaxes=True,
+            horizontal_spacing=.05
+        )
+        lp_fig = make_subplots(**lp_subplot_args)
+
+        hm_subplot_args = dict(
+            rows=len(metadata.keys()), cols=3,
+            shared_yaxes=True,
+            horizontal_spacing=.05
+        )
+        hm_fig = make_subplots(**hm_subplot_args)
+
+        bp_fig = make_subplots(**(lp_subplot_args | dict(shared_yaxes=False)))
+
+        for mfiles, mtype, plot_idx in zip([bm, im, um], subplot_titles, range(1, 4)):
+            name = filter_name + f"_{mtype}" + "_{type}"
+
+            # Plots
+            line_plot = mfiles.line_plot(
+                merge_strands=not self.args.separate_strands,
+                smooth=self.args.smooth,
+                confidence=self.args.confidence
+            )
+            heat_map = mfiles.heat_map(
+                nrow=self.args.vresolution,
+                ncol=self.args.hresolution
+            )
+            box_plot = mfiles.trim_flank().box_plot()
+
+            # Matplotlib
+            if self.args.export not in ["none"]:
+                self._save_mpl(line_plot.draw_mpl(tick_labels=self.args.ticks), name.format(type="line_plot"))
+                self._save_mpl(heat_map.draw_mpl(tick_labels=self.args.ticks), name.format(type="heat_map"))
+                self._save_mpl(box_plot.draw_mpl(), name.format(type="box_plot"))
+
+            # Plotly
+            axis_name = f"xaxis{'' if plot_idx == 1 else plot_idx}"
+            lp_args = {axis_name: dict(
+                tickmode="array",
+                tickvals=line_plot.data[0].x_ticks,
+                ticktext=self.args.ticks
+            )}
+            hm_args = lp_args.copy()
+            hm_args[axis_name] |= dict(tickvals=heat_map.data[0].x_ticks)
+            # Line plot
+            line_plot.draw_plotly(lp_fig, tick_labels=self.args.ticks, fig_rows=1, fig_cols=plot_idx)
+            # Heat map
+            for count, (hm_data, label) in enumerate(zip(heat_map.data, metadata.keys())):
+                HeatMap(hm_data).draw_plotly(hm_fig, tick_labels=self.args.ticks, row=count + 1, col=plot_idx, title=label+mtype)
+            # Box plot
+            box_plot.draw_plotly(bp_fig, points=False, fig_rows=1, fig_cols=plot_idx)
+
+        context_block.plots.append(
+            TemplatePlot("Line plot", self._p2html(lp_fig, include_plotlyjs=self.__add_plotlyjs, default_width='80%'))
+        )
+        if self.__add_plotlyjs: self.__add_plotlyjs = False
+        context_block.plots.append(
+            TemplatePlot("Heatmap", self._p2html(hm_fig, include_plotlyjs=self.__add_plotlyjs, default_width='80%'))
+        )
+        context_block.plots.append(
+            TemplatePlot("Box plot", self._p2html(bp_fig, include_plotlyjs=self.__add_plotlyjs))
         )
 
-        tick_args = dict(
-            major_labels=[self.args.ticks[i] for i in [1, 3]],
-            minor_labels=[self.args.ticks[i] for i in [0, 2, 4]]
-        )
-
-        # Matplotlib block
-        if self.args.export not in ["none"]:
-            for mfiles, mtype in zip([bm, other, um], ["BM", "other", "UM"]):
-                line_plot = mfiles.line_plot(merge_strands=not self.args.separate_strands, smooth=self.args.smooth, confidence=self.args.confidence)
-                heat_map = mfiles.heat_map(nrow=self.args.vresolution, ncol=self.args.hresolution)
-
-                name = filter_name + f"_{mtype}"
-
-                fig = line_plot.draw_mpl(**tick_args)
-                self._save_mpl(fig, name.format(type="line_plot"))
-
-                fig = heat_map.draw_mpl(**tick_args)
-                self._save_mpl(fig, name.format(type="heat-map"))
-
-                fig = mfiles.box_plot().draw_mpl()
-                self._save_mpl(fig, name.format(type="box"))
-
-                fig = mfiles.trim_flank().box_plot().draw_mpl()
-                self._save_mpl(fig, name.format(type="box_trimmed"))
-
-                plt.close()
-
-        # Plotly block
-        fig = make_subplots(rows=1, cols=3, subplot_titles=["BM", "other", "UM"], shared_yaxes=True, horizontal_spacing=.05)
-
-        for mfiles, plot_idx in zip([bm, other, um], range(1, 4)):
-            lp = mfiles.line_plot().draw_plotly()
-
-            for data in lp.data:
-                fig.add_trace(data, row=1, col=plot_idx)
-            # fig.update_layout({f"xaxis{plot_idx if plot_idx != 1 else ''}": lp.layout["xaxis"]})
-            # fig.update_layout({f"xaxis{plot_idx if plot_idx != 1 else ''}": {"anchor": f"y{plot_idx if plot_idx != 1 else ''}"}})
-
-        [fig.add_trace(data, row=1, col=1) for data in bm.line_plot().draw_plotly().data]
-        [fig.add_trace(data, row=1, col=2) for data in other.line_plot().draw_plotly().data]
-        [fig.add_trace(data, row=1, col=3) for data in um.line_plot().draw_plotly().data]
-
-        pass
-
-
-
-
+        return context_block
 
     def metagene_context_block(self, filtered: MetageneFiles, filters: dict, draw_cm: bool = True):
 
         filter_name = self._format_filters(filters)
+        name = filter_name + "_{type}"
 
         context_block = TemplateContext(
             heading=f"Context {filter_name}"
         )
 
-        tick_args = dict(
-            major_labels=[self.args.ticks[i] for i in [1, 3]],
-            minor_labels=[self.args.ticks[i] for i in [0, 2, 4]]
-        )
-
-        line_plot = filtered.line_plot(merge_strands=not self.args.separate_strands)
-        heat_map = filtered.heat_map(nrow=self.args.vresolution, ncol=self.args.hresolution)
-
-        # Matplotlib block
-        if self.args.export not in ["none"]:
-            name = filter_name + "_{type}"
-
-            fig = line_plot.draw_mpl(smooth=self.args.smooth, confidence=self.args.confidence, **tick_args)
-            self._save_mpl(fig, name.format(type="line_plot"))
-
-            fig = heat_map.draw_mpl(**tick_args)
-            self._save_mpl(fig, name.format(type="heat-map"))
-
-            fig = filtered.box_plot().draw_mpl()
-            self._save_mpl(fig, name.format(type="box"))
-
-            fig = filtered.trim_flank().box_plot().draw_mpl()
-            self._save_mpl(fig, name.format(type="box_trimmed"))
-
-            plt.close()
-
-            if len(filtered.samples) > 1 and draw_cm:
-                fig = filtered.dendrogram(q=self.args.quantile)
-                self._save_mpl(fig, name.format(type="sample-cluster"))
-
-        # Plotly block
         # Clustermap
         if len(filtered.samples) > 1 and draw_cm:
             tmpfile = BytesIO()
 
             fig = filtered.dendrogram(q=self.args.quantile)
+
+            # Plotly block
             fig.savefig(tmpfile, format='png')
-
             encoded = base64.b64encode(tmpfile.getvalue()).decode('utf-8')
-
             html_plot = TemplatePlot(
                 title=f"Clustermap for {self.args.quantile} quantile",
                 data="<img src=\'data:image/png;base64,{}\'>".format(encoded)
             )
-
             context_block.plots.append(html_plot)
 
-        # Other
-        fig = line_plot.draw_plotly(smooth=self.args.smooth, confidence=self.args.confidence, **tick_args)
-        html_plot = TemplatePlot("Line plot", self._p2html(fig, include_plotlyjs=self.__add_plotlyjs))
-        context_block.plots.append(html_plot)
+            # Matplotlib
+            if self.args.export not in ["none"]:
+                self._save_mpl(fig, name.format(type="sample-cluster"))
 
-        if self.__add_plotlyjs:
-            self.__add_plotlyjs = False
+        line_plot = filtered.line_plot(merge_strands=not self.args.separate_strands, smooth=self.args.smooth, confidence=self.args.confidence)
+        heat_map = filtered.heat_map(nrow=self.args.vresolution, ncol=self.args.hresolution)
+        box_plot = filtered.trim_flank().box_plot()
 
-        fig = heat_map.draw_plotly(**tick_args)
-        html_plot = TemplatePlot("Heat map", self._p2html(fig))
-        context_block.plots.append(html_plot)
+        # Matplotlib
+        if self.args.export not in ["none"]:
+            self._save_mpl(line_plot.draw_mpl(tick_labels=self.args.ticks), name.format(type="line_plot"))
+            self._save_mpl(heat_map.draw_mpl(tick_labels=self.args.ticks), name.format(type="heat-map"))
+            self._save_mpl(box_plot.draw_mpl(), name.format(type="box_plot"))
+            plt.close()
 
-        fig = filtered.box_plot().draw_plotly()
-        html_plot = TemplatePlot("Box plot with flanking regions", self._p2html(fig))
-        context_block.plots.append(html_plot)
+        # Plotly
+        context_block.plots.append(TemplatePlot(
+            "Line plot",
+            self._p2html(line_plot.draw_plotly(tick_labels=self.args.ticks), include_plotlyjs=self.__add_plotlyjs)
+        ))
 
-        fig = filtered.trim_flank().box_plot().draw_plotly()
-        html_plot = TemplatePlot("Box plot without flanking regions", self._p2html(fig))
-        context_block.plots.append(html_plot)
+        if self.__add_plotlyjs: self.__add_plotlyjs = False
 
+        context_block.plots.append(TemplatePlot(
+            "Heat map",
+            self._p2html(heat_map.draw_plotly(tick_labels=self.args.ticks), include_plotlyjs=self.__add_plotlyjs)
+        ))
+
+        context_block.plots.append(TemplatePlot(
+            "Box plot",
+            self._p2html(box_plot.draw_plotly(), include_plotlyjs=self.__add_plotlyjs)
+        ))
         collect()
 
         return context_block
@@ -811,36 +984,30 @@ class Renderer:
             filtered_metagenes = metagene_files.filter(**filters)
 
             # Get categorised
-            bm_metagenes, um_metagenes, other_metagenes = [], [], []
+            bm_metagenes, um_metagenes, im_metagenes = [], [], []
+            metadata = {}
 
             for sample, label in zip(filtered_metagenes.samples, filtered_metagenes.labels):
                 save_name = self.args.dir / (label + self._format_filters(filters)) if self.args.save_cat else None
 
                 # todo add filtering not only by id
-                bm_ids, _, um_ids = region_pvalues[label].categorise(
+                bm_ids, im_ids, um_ids = region_pvalues[label].categorise(
                     p_value=self.args.region_p,
                     save=save_name,
                     context=filters["context"]
                 )
 
+                metadata[label] = {"BM": len(bm_ids), "IM": len(im_ids), "UM": len(um_ids)}
+
                 bm_metagenes.append(sample.filter(genome=bm_ids))
+                im_metagenes.append(sample.filter(genome=im_ids))
                 um_metagenes.append(sample.filter(genome=um_ids))
 
-                other_genes = set(sample.report_df["gene"].to_list()) - set(bm_metagenes[-1].report_df["gene"].to_list() + um_metagenes[-1].report_df["gene"].to_list())
-                other_metagenes.append(sample.filter(coords=other_genes))
+            bm_metagene_files = MetageneFiles(bm_metagenes, [label + "_BM" for label in filtered_metagenes.labels])
+            im_metagenes_files = MetageneFiles(im_metagenes, [label + "_IM" for label in filtered_metagenes.labels])
+            um_metagene_files = MetageneFiles(um_metagenes, [label + "_UM" for label in filtered_metagenes.labels])
 
-            bm_metagene_files = MetageneFiles(bm_metagenes, filtered_metagenes.labels)
-            um_metagene_files = MetageneFiles(um_metagenes, filtered_metagenes.labels)
-            other_metagene_files = MetageneFiles(other_metagenes, filtered_metagenes.labels)
-
-            html_body.context_reports.append(self.category_context_block(bm_metagene_files, other_metagene_files, um_metagene_files, filters))
-
-            # for categorised, name in zip([bm_metagene_files, um_metagene_files], ["BM", "UM"]):
-            #
-            #     context_block = self.metagene_context_block(categorised, filters, draw_cm=False)
-            #     context_block.caption = f"Category: {name}"
-            #
-            #     html_body.context_reports.append(context_block)
+            html_body.context_reports.append(self.category_context_block(bm_metagene_files, im_metagenes_files, um_metagene_files, filters, metadata))
 
         return asdict(html_body)
 
@@ -851,16 +1018,25 @@ class Renderer:
 
         for filters in filters_list:
             context_report = TemplateContext(heading=f"Context {self._format_filters(filters)}")
-            fig = go.Figure()
 
-            for level, label in zip(chr_levels_list, labels):
-                level.filter(**filters).draw_plotly(fig, smooth=self.args.smooth, label=label)
+            lp_fig = make_subplots()
+            # bp_fig = make_subplots(rows=len(chr_levels_list), subplot_titles=labels)
+            for count, (level, label) in enumerate(zip(chr_levels_list, labels)):
+                line_plot = level.filter(**filters).line_plot(smooth=self.args.smooth)
+                # box_plot = level.filter(**filters).box_plot()
 
-            plot_html = TemplatePlot("Line plot", fig.to_html(full_html=False, include_plotlyjs=self.__add_plotlyjs))
-            if self.__add_plotlyjs:
-                self.__add_plotlyjs = False
+                line_plot.draw_plotly(lp_fig, label=label)
+                # box_plot.draw_plotly(bp_fig, fig_rows=count + 1, fig_cols=1)
 
-            context_report.plots.append(plot_html)
+            context_report.plots.append(TemplatePlot(
+                "Line plot",
+                lp_fig.to_html(full_html=False, include_plotlyjs=self.__add_plotlyjs)
+            ))
+            if self.__add_plotlyjs: self.__add_plotlyjs = False
+            # context_report.plots.append(TemplatePlot(
+            #     "Box plot",
+            #     bp_fig.to_html(full_html=False, include_plotlyjs=self.__add_plotlyjs)
+            # ))
             html_body.context_reports.append(context_report)
 
             collect()

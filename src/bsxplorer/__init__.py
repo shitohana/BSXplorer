@@ -1,5 +1,5 @@
 from .MetageneClasses import Metagene, MetageneFiles
-from .Plots import LinePlot, HeatMap, HeatMapFiles, PCA
+from .Plots import LinePlot, HeatMap, PCA
 from .Binom import BinomialData, RegionStat
 from .GenomeClass import Genome
 from .ChrLevelsClass import ChrLevels
