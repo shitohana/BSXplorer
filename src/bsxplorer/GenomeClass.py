@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+import numpy as np
 import polars as pl
 from pathlib import Path
+
+from matplotlib import pyplot as plt
 
 from .utils import MetageneSchema
 
@@ -586,3 +591,187 @@ class Genome:
             return genes
         else:
             raise Exception("Genome DataFrame is empty. Are you sure input file is valid?")
+
+
+@dataclass
+class RegAlignResult:
+    gene_body: pl.DataFrame
+    upstream: pl.DataFrame
+    downstream: pl.DataFrame
+    intergene: pl.DataFrame
+    flank_length: int
+
+    def ref_positions(self):
+        def ref_pos_expr(for_column: str):
+            expr = (
+                pl.when(
+                    pl.col(for_column) < pl.col("areg_start")
+                ).then(
+                    (pl.col("areg_start") - pl.col(for_column)) / self.flank_length * -1
+                ).when(
+                    pl.col(for_column) > pl.col("areg_end")
+                ).then(
+                    (pl.col(for_column) - pl.col("areg_end")) / self.flank_length + 1
+                ).otherwise(
+                    (pl.col(for_column) - pl.col("areg_start")) / pl.col("length")
+                )
+            )
+            return expr
+
+        ref_positions = (
+            self.near_reg()
+            .cast(dict(areg_start=pl.Int64, areg_end=pl.Int64, start=pl.Int64, end=pl.Int64))
+            .with_columns([
+                (pl.col("areg_end") - pl.col("areg_start")).alias("length"),
+                pl.when(pl.col("strand") == "-").then(0 - pl.col("end")).otherwise(pl.col("start")).alias("start"),
+                pl.when(pl.col("strand") == "-").then(0 - pl.col("areg_end")).otherwise(pl.col("areg_start")).alias(
+                    "areg_start"),
+                pl.when(pl.col("strand") == "-").then(0 - pl.col("start")).otherwise(pl.col("end")).alias("end"),
+                pl.when(pl.col("strand") == "-").then(0 - pl.col("areg_start")).otherwise(pl.col("areg_end")).alias(
+                    "areg_end"),
+            ])
+            .with_columns([
+                ref_pos_expr("start").alias("ref_start"),
+                ref_pos_expr("end").alias("ref_end"),
+            ])
+            # .select(["ref_start", "ref_end"])
+            .with_columns([
+                pl.concat_list([pl.col("ref_start"), pl.col("ref_end")]).alias("ref_pos"),
+                pl.lit([1, -1]).alias("is_start")
+            ])
+            .explode(["ref_pos", "is_start"])
+            .sort("ref_pos")
+            .with_columns(pl.col("is_start").cum_sum().alias("coverage"))
+        )
+        return ref_positions
+
+    def metagene_coverage(self):
+
+        ref_positions = self.ref_positions()
+        pos = ref_positions["ref_pos"].to_numpy()
+        cov = ref_positions["coverage"].to_numpy()
+        interval_values = (-1 <= pos) & (pos <= 2)
+        return pos[interval_values], cov [interval_values]
+
+    def plot_density_mpl(
+            self,
+            fig_axes: tuple = None,
+            flank_windows: int = None,
+            body_windows: int = None,
+            major_labels: list[str] = None,
+            minor_labels: list[str] = None,
+            label: str = None,
+            **mpl_kwargs
+    ):
+        fig, axes = plt.subplots() if fig_axes is None else fig_axes
+        major_labels = ["TSS", "TES"] if major_labels is None else major_labels
+        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
+
+        pos, cov = self.metagene_coverage()
+        xticks = [-1, 0, .5, 1, 2]
+
+        if flank_windows is not None and body_windows is not None:
+            resampled_pos = []
+            resampled_cov = []
+
+            for start, stop, windows in zip([-1, 0, 1], [0, 1, 2], [flank_windows, body_windows, flank_windows]):
+                points, step = np.linspace(start, stop, windows + 1, retstep=True)
+                indexes = [(start <= pos) & (pos < (start + step)) for start in points[:-1]]
+                resampled_pos.append(points[:-1])
+                resampled_cov.append(np.array([cov[index].mean() for index in indexes]))
+
+            pos = None
+            cov = np.concatenate(resampled_cov)
+            xticks = [0, flank_windows, flank_windows + body_windows / 2, flank_windows + body_windows, flank_windows * 2 + body_windows]
+
+        axes.plot(pos if pos is not None else list(range(len(cov))), cov, label=label, **mpl_kwargs)
+
+        axes.set_xticks(xticks, labels=[minor_labels[0], major_labels[0], minor_labels[1], major_labels[1], minor_labels[2]])
+        axes.set_title("Сoverage of genes and flanking regions by DMRs")
+        axes.set_xlabel('Position')
+        axes.set_ylabel('Density')
+
+        axes.axvline(x=xticks[1], linestyle='--', color='k', alpha=.3)
+        axes.axvline(x=xticks[3], linestyle='--', color='k', alpha=.3)
+
+        return fig
+
+    def near_reg(self) -> pl.DataFrame:
+        return pl.concat([self.upstream, self.gene_body, self.downstream])
+
+    def areg_ids(self) -> list[str]:
+        return self.near_reg()["id"].unique().to_list()
+
+    def areg_stats(self) -> pl.DataFrame:
+        return (
+            self.near_reg()
+            .group_by(["chr", "areg_start", "areg_end"])
+            .agg([
+                pl.first("id"),
+                pl.len().alias("count"),
+                (pl.col("end") - pl.col("start")).mean().alias("mean_length")
+            ])
+            .sort("count", descending=True)
+        )
+
+
+def align_regions(regions: pl.DataFrame, along_regions: pl.DataFrame, flank_length: int = 2000):
+    total = []
+    # Join to middle
+    for chrom in regions["chr"].unique():
+        chr_left = (
+            regions.filter(chr=chrom)
+            .with_columns(((pl.col('end') + pl.col('start')) / 2).floor().cast(pl.UInt32).alias('mid'))
+            .sort('mid')
+        )
+        chr_right = (
+            along_regions.filter(chr=chrom)
+            .with_columns(((pl.col('end') + pl.col('start')) / 2).floor().cast(pl.UInt32).alias('mid'))
+            .sort('mid')
+        )
+
+        joined = (
+            chr_left
+            .join_asof(chr_right, on='mid', strategy='nearest')
+            .with_columns(((pl.col('end') + pl.col('start')) / 2).floor().cast(pl.UInt32).alias('mid'))
+            .select(["chr", "start", "mid", "end", pl.col("start_right").alias("areg_start"), pl.col("end_right").alias("areg_end"), "id", "strand"])
+        )
+
+        total.append(joined)
+
+    total = pl.concat(total)
+
+    in_gb = total.filter(
+        (pl.col("mid") >= pl.col("areg_start")) &
+        (pl.col("mid") <= pl.col("areg_end"))
+    )
+    in_up = total.filter(
+        (
+            (pl.col("strand") != "-") &
+            (pl.col("end") >= (pl.col("areg_start") - flank_length)) &
+            (pl.col("mid") < pl.col("areg_start"))
+        ) |
+        (
+            (pl.col("strand") == "-") &
+            (pl.col("mid") > pl.col("areg_end")) &
+            (pl.col("start") <= (pl.col("areg_end") + flank_length))
+        )
+    )
+    in_down = total.filter(
+        (
+                (pl.col("strand") != "+") &
+                (pl.col("mid") > pl.col("areg_end")) &
+                (pl.col("start") <= (pl.col("areg_end") + flank_length))
+        ) |
+        (
+                (pl.col("strand") == "-") &
+                (pl.col("end") >= (pl.col("areg_start") - flank_length)) &
+                (pl.col("mid") < pl.col("areg_start"))
+        )
+    )
+    intergene = total.filter(
+        (pl.col("end") < (pl.col("areg_start") - flank_length)) |
+        (pl.col("start") > (pl.col("areg_end") + flank_length))
+    )
+
+    return RegAlignResult(in_gb, in_up, in_down, intergene, flank_length)

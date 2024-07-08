@@ -323,6 +323,11 @@ def _jit_PDR(matrix, columns, min_cyt: int, min_depth: int):
 
 
 class PivotRegion:
+    """
+    Class for storing and calculating methylation entropy, epipolymorphism and PDR stats.
+
+    This class should not be initialized by user, but by :class:`BAMReader`
+    """
     def __init__(self, df: pl.DataFrame, calls=pl.DataFrame, chr: str = chr):
         self.calls = calls
         self.pivot = df
@@ -387,7 +392,7 @@ class PivotRegion:
 
     def epipolymorphism(self, window_length: int = 4, min_depth: int = 4):
         """
-        Wrapper for _jit_epipolymorphism – JIT compiled PM calculating function
+        Wrapper for _jit_epipolymorphism – JIT compiled EPM calculating function
 
         Parameters
         ----------
@@ -410,6 +415,20 @@ class PivotRegion:
             return np.zeros((0, window_length)), np.zeros((0, 1))
 
     def PDR(self, min_cyt: int = 5, min_depth: int = 4):
+        """
+        Wrapper for _jit_epipolymorphism – JIT compiled PDR calculating function
+
+        Parameters
+        ----------
+        min_cyt
+            Mimimal number of cytosines in region.
+        min_depth
+            Minimal depth of reads to consider this window for calculation
+
+        Returns
+        -------
+            Array with cytosine positions, Array of PDR values, Matrix with concordant/discordant reads.
+        """
         matrix, columns = self._jit_compatitable()
         if matrix.shape[1] > min_cyt and matrix.shape[0] > min_depth:
             return _jit_PDR(matrix, columns, min_cyt, min_depth)
@@ -663,6 +682,41 @@ class QCThread(Thread):
 
 
 class BAMReader:
+    """
+    Class for reading sorted and indexed BAM files.
+
+    Parameters
+    ----------
+    bam_filename
+        Path to SORTED BAM file.
+    index_filename
+        Path to BAM index (.bai) file.
+    cytosine_file
+        Preprocessed with :class:`BinomialData` class cytosine file.
+        Reads will be aligned to cytosine coordinates (None to disable).
+    bamtype
+        Aligner type, which was used during BAM calculation.
+    regions
+        DataFrame from :class:`Genome` with genomic regions to
+        align to (None to disable).
+    threads
+        Number of threads used to decompress BAM.
+    batch_num
+        Number of reads per batch.
+    min_qual
+        Filter reads by quality (None to disable).
+    context
+        Filter reads by conext. Possible options "CG", "CHG", "CHH", "all".
+        Set "all" for no filtering.
+    keep_converted
+        Keep converted reads. Default: True.
+    qc
+        Calculate QC data. Default: True.
+    readahead
+        Number of batches to read before calculation.
+    pysam_kwargs
+        Keyword arguements for pysam.AlignmentFile.
+    """
     def __init__(
             self,
             bam_filename: str | Path,
@@ -708,10 +762,24 @@ class BAMReader:
             self.reg_qual = []
 
     def report_iter(self):
+        """
+        Iter BAM file, returns :class:`UniversalBatch`.
+
+        Returns
+        -------
+        iterator
+        """
         self._mode = "report"
         return self._iter()
 
     def stats_iter(self):
+        """
+        Iter BAM file, returns :class:`PivotRegion`.
+
+        Returns
+        -------
+        iterator
+        """
         self._mode = "stats"
         return self._iter()
 
@@ -811,6 +879,13 @@ class BAMReader:
                 yield alignment_result.data
 
     def qc_data(self) -> tuple[QualsCounter, list[QualsCounter], list[tuple]]:
+        """
+        Returns QC data from read fragments. Tuple of (Count of Phred score, Count of Phred score by position, Average quality for region)
+
+        Returns
+        -------
+        tuple
+        """
         quals_stat = QualsCounter()
         pos_stat = []
         reg_stat = []
@@ -827,12 +902,23 @@ class BAMReader:
                     pos_stat.append(QualsCounter())
                 pos_stat[index] += pos_count
 
-            reg_avg = qc_result.quals_count.mean_qual()
+            reg_avg = qc_result.quals_count.total()
             reg_stat.append((qc_result.chrom, qc_result.end, reg_avg))
 
         return quals_stat, pos_stat, reg_stat
 
     def plot_qc(self):
+        """
+        Plot QC stats.
+
+        Returns
+        -------
+        ``plotly.graph_objects.Figure``
+
+        See Also
+        --------
+        `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
+        """
         quals_stat, pos_stat, reg_stat = self.qc_data()
 
         fig = plt.figure(constrained_layout=True)
@@ -840,13 +926,14 @@ class BAMReader:
 
         # Chr
         chr_ax = fig.add_subplot(gs[0, :])
-        chr_ax.set_title("Avg. reads quality")
+        chr_ax.set_title("Log(Reads count) by position")
         chr_ax.set_xlabel("Position")
         chr_ax.set_ylabel("Quality")
 
         chr_ticks = list(itertools.accumulate(self.bamfile.lengths))
 
         x_data, y_data = list(zip(*[(chr_ticks[self.bamfile.references.index(chrom)] + end, qual) for chrom, end, qual in reg_stat]))
+        y_data = np.log10(np.array([s.mean_qual() for s in pos_stat]))
         chr_ax.plot(x_data, y_data, 'b')
 
         chr_ax.set_xticks(chr_ticks, labels=self.bamfile.references, rotation=-90, fontsize=8)
@@ -869,9 +956,8 @@ class BAMReader:
         pos_ax = fig.add_subplot(gs[1, 1])
         pos_ax.set_title("Read quality by position")
         pos_ax.set_xlabel("Read position")
-        pos_ax.set_ylabel("Quality")
+        pos_ax.set_ylabel("Count")
 
-        y_data = [s.mean_qual() for s in pos_stat]
         pos_ax.plot(y_data, 'b')
 
         return fig

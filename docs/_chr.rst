@@ -7,30 +7,29 @@ ChrLevels class.
 
 .. class:: ChrLevels
 
+    .. automethod:: __init__
+
     .. rubric:: Methods
 
-   .. autosummary::
-    :nosignatures:
-    :toctree: _ChrLevels/_method
-    :template: method.rst
+    .. autosummary::
+        :nosignatures:
+        :toctree: _ChrLevels/_method
+        :template: method.rst
 
-         ~ChrLevels.from_bismark
+            ~ChrLevels.from_bismark
 
+            ~ChrLevels.from_cgmap
 
-         ~ChrLevels.from_cgmap
+            ~ChrLevels.from_bedGraph
 
+            ~ChrLevels.from_coverage
 
-         ~ChrLevels.from_parquet
+            ~ChrLevels.from_binom
 
+            ~ChrLevels.save_plot_rds
 
-         ~ChrLevels.save_plot_rds
+            ~ChrLevels.filter
 
+            ~ChrLevels.line_plot
 
-         ~ChrLevels.filter
-
-
-         ~ChrLevels.draw_mpl
-
-
-         ~ChrLevels.draw_plotly
-
+            ~ChrLevels.box_plot

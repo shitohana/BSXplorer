@@ -104,7 +104,7 @@ def _ticks(arg) -> str:
 
 def metagene_parser():
     parser = argparse.ArgumentParser(
-        prog='BSXplorer',
+        prog='bsxplorer-metagene',
         description='Metagene report creation tool',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
@@ -135,7 +135,7 @@ def metagene_parser():
 
 def chr_parser():
     parser = argparse.ArgumentParser(
-        prog='BSXplorer-ChrLevels',
+        prog='bsxplorer-chr',
         description='Chromosome methylation levels visualisation tool',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
@@ -317,7 +317,7 @@ class BamScript:
         STATS = ["ME", "EPM", "PDR"]
 
         parser = argparse.ArgumentParser(
-            prog='BSXplorer',
+            prog='bsxplorer-bam',
             description='BAM to report reader converter tool.',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter
         )
@@ -559,7 +559,7 @@ class CategoryScript(ConsoleScript):
     def _parser(self) -> argparse.ArgumentParser:
         parser = metagene_parser()
 
-        parser.prog = "BSXplorer-Categorise"
+        parser.prog = "bsxplorer-categorise"
         parser.description = 'BM, UM categorisation tool'
 
         parser.add_argument("--cytosine_p", help="P-value for binomial test to consider cytosine methylated", default=".05", type=float)

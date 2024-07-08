@@ -30,3 +30,6 @@ This page gives an overview of all public objects, functions and methods.
     _genome
     _chr
     _cluster
+    _sequence
+    _bam
+    _universal

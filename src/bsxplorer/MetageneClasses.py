@@ -600,7 +600,6 @@ class Metagene(MetageneBase):
                 .sort("fragment")
             )
 
-
     def line_plot_data(
             self,
             resolution: int = None,
