@@ -911,7 +911,7 @@ class Renderer:
             if self.args.export not in ["none"]:
                 self._save_mpl(fig, name.format(type="sample-cluster"))
 
-        line_plot = filtered.line_plot(merge_strands=not self.args.separate_strands, smooth=self.args.smooth, confidence=self.args.confidence)
+        line_plot = filtered.line_plot(merge_strands=not self.args.separate_strands, smooth=self.args.smooth, confidence=self.args.confidence, stat="mean")
         heat_map = filtered.heat_map(nrow=self.args.vresolution, ncol=self.args.hresolution)
         box_plot = filtered.trim_flank().box_plot()
 

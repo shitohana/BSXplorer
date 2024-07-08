@@ -933,7 +933,7 @@ class BAMReader:
         chr_ticks = list(itertools.accumulate(self.bamfile.lengths))
 
         x_data, y_data = list(zip(*[(chr_ticks[self.bamfile.references.index(chrom)] + end, qual) for chrom, end, qual in reg_stat]))
-        y_data = np.log10(np.array([s.mean_qual() for s in pos_stat]))
+        y_data = np.log10(np.array(y_data))
         chr_ax.plot(x_data, y_data, 'b')
 
         chr_ax.set_xticks(chr_ticks, labels=self.bamfile.references, rotation=-90, fontsize=8)
