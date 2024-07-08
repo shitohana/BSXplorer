@@ -404,7 +404,7 @@ class HeatMap:
             warnings.warn("Selecting row or col is not compatitable with multiple HeatMap instances.")
             row, col = None, None
 
-        subplots_y = len(self.data) // facet_cols + 1
+        subplots_y = len(self.data) // facet_cols + 1 if len(self.data) != facet_cols else 1
         subplots_x = facet_cols if len(self.data) > facet_cols else len(self.data)
         figure = make_subplots(rows=subplots_y, cols=subplots_x, shared_yaxes=True) if figure is None else figure
 
