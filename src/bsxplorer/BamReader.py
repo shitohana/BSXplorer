@@ -23,8 +23,8 @@ from numba import jit, prange
 from progress.bar import Bar
 from pyarrow import dataset as pads, compute as pc
 
-from src.bsxplorer.UniversalReader_batches import UniversalBatch
-from src.bsxplorer.utils import AvailableBAM
+from .UniversalReader_batches import UniversalBatch
+from .utils import AvailableBAM
 
 
 # noinspection PyMissingOrEmptyDocstring
