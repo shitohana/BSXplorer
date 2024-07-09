@@ -586,6 +586,10 @@ class BoxPlotData:
     locus: list = None
     id: list = None
 
+    @classmethod
+    def empty(cls, label=None):
+        return cls([], label if label is not None else "", [], [])
+
 
 class BoxPlot:
     def __init__(self, data: list[BoxPlotData] | BoxPlotData):

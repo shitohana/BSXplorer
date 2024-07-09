@@ -939,7 +939,7 @@ class Metagene(MetageneBase):
                 data["id"].to_list()
             )
         else:
-            raise ValueError("Got empty box plot data")
+            return BoxPlotData.empty(label)
 
     def context_box_plot(self):
         data = [self.box_plot_data(context, context)  for context in CONTEXTS]

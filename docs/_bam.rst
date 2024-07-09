@@ -94,6 +94,11 @@ with DataFrame generated with :class:`Genome` methods.
 For QC calculation, set qc parameter to True. After reading BAM file QC stats
 can be plotted with :func:`BAMReader.plot_qc` method.
 
+Resulting image:
+
+.. image:: images/bam/QC_example.png
+    :width: 600
+
 ----------
 Stats mode
 ----------

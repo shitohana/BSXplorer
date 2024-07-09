@@ -926,9 +926,9 @@ class BAMReader:
 
         # Chr
         chr_ax = fig.add_subplot(gs[0, :])
-        chr_ax.set_title("Log(Reads count) by position")
+        chr_ax.set_title("lg(Reads count) by position")
         chr_ax.set_xlabel("Position")
-        chr_ax.set_ylabel("Quality")
+        chr_ax.set_ylabel("lg(Count)")
 
         chr_ticks = list(itertools.accumulate(self.bamfile.lengths))
 
@@ -956,7 +956,8 @@ class BAMReader:
         pos_ax = fig.add_subplot(gs[1, 1])
         pos_ax.set_title("Read quality by position")
         pos_ax.set_xlabel("Read position")
-        pos_ax.set_ylabel("Count")
+        pos_ax.set_ylabel("Quality")
+        y_data = np.array([s.mean_qual() for s in pos_stat])
 
         pos_ax.plot(y_data, 'b')
 
