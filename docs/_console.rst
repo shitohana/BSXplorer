@@ -51,7 +51,163 @@ bsxplorer-metagene
       --ticks TICKS TICKS TICKS TICKS TICKS
                             Names of ticks (- character should be escaped with double reverse slash) (default: None)
 
+-------
+Example
+-------
 
+**Intraspecies report**.
+
+Command:
+
+.. code-block:: console
+
+    bsxplorer-metagene --dir metagene -o metagene_intra -m 30 -u 100 -b 200 -d 100 -q 0.95 -C 0.95 -S 10 -H 50 -V 50 --export pdf --ticks \\-2000bp \\  Body \\  +2000bp metagene.conf
+
+.. list-table:: Example config file (metagene.conf)
+    :header-rows: 1
+
+    *   - Sample name
+        - Report path
+        - Annot path
+        - Flank length
+        - Min length
+        - Region type
+        - Annot format
+        - Report format
+
+    *   - AraTh
+        - A_thaliana.txt
+        - A_thaliana_genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - BraDi
+        - Brachypodium_distachyon_leaf.txt
+        - Brachypodium_distachyon_genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - CucSa
+        - C_sativus.txt
+        - C_sativus_genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - MusMu
+        - SRR16815382_Mus_musculus.CX_report.gz
+        - Mus_musculus_genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+`Output HTML-report example <_static/html/metagene_intra.html>`_
+
+**Same species report**.
+
+Command:
+
+.. code-block:: console
+
+    bsxplorer-metagene --dir metagene-brapa -o metagene_brapa -m 30 -u 100 -b 200 -d 100 -q 0.95 -C 0.95 -S 10 -H 50 -V 50 --export pdf --ticks \\-2000bp \\  Body \\  +2000bp brapa.conf
+
+.. _brapa.conf:
+
+.. list-table:: Example config file (brapa.conf)
+    :header-rows: 1
+
+    *   - Sample name
+        - Report path
+        - Annot path
+        - Flank length
+        - Min length
+        - Region type
+        - Annot format
+        - Report format
+
+    *   - Misugi_mock
+        - DRR336466.CX_report.txt
+        - genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - Misugi_mock
+        - DRR336467.CX_report.txt
+        - genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - Misugi_infected
+        - DRR336468.CX_report.txt
+        - genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - Misugi_infected
+        - DRR336469.CX_report.txt
+        - genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - Nanane_mock
+        - DRR336470.CX_report.txt
+        - genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - Nanane_mock
+        - DRR336471.CX_report.txt
+        - genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - Nanane_infected
+        - DRR336472.CX_report.txt
+        - genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+    *   - Nanane_infected
+        - DRR336473.CX_report.txt
+        - genomic.gff
+        - 2000
+        - 0
+        - gene
+        - gff
+        - bismark
+
+`Output HTML-report example <_static/html/metagene_brapa.html>`_
 
 ^^^^^^^^^^^^^^^^^^
 bsxplorer-category
@@ -130,12 +286,25 @@ bsxplorer-chr
                             Minimum length of chromosome to be analyzed (default: 1000000)
       -C CONFIDENCE, --confidence CONFIDENCE
                             Probability for confidence bands for line-plot. 0 if disabled (default: 0.95)
-        # TODO CHANGE DEFAULT WINDOWS
       -S SMOOTH, --smooth SMOOTH
-                            Windows for SavGol function. (default: 10)
+                            Windows for SavGol function. (default: 100)
       --export {pdf,svg,none}
                             Export format for plots (set none to disable) (default: pdf)
       --separate_strands    Do strands need to be processed separately (default: False)
+
+-------
+Example
+-------
+
+Command:
+
+.. code-block:: console
+
+    bsxplorer-metagene --dir metagene -o metagene_intra -m 30 -u 100 -b 200 -d 100 -q 0.95 -C 0.95 -S 10 -H 50 -V 50 --export pdf --ticks \\-2000bp \\  Body \\  +2000bp metagene.conf
+
+Config file: :ref:`brapa.conf`
+
+`Output HTML-report example <_static/html/chr-brapa.html>`_
 
 ^^^^^^^^^^^^^
 bsxplorer-bam

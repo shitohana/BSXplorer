@@ -149,7 +149,7 @@ def chr_parser():
     parser.add_argument('-w', '--window', help="Length of windows in bp", type=int, default=10**6)
     parser.add_argument('-l', '--min_length', help="Minimum length of chromosome to be analyzed", type=int, default=10**6)
     parser.add_argument('-C', '--confidence', help='Probability for confidence bands for line-plot. 0 if disabled', type=_quantile, default=.95)
-    parser.add_argument('-S', '--smooth', help='Windows for SavGol function.', type=float, default=10)
+    parser.add_argument('-S', '--smooth', help='Windows for SavGol function.', type=float, default=100)
 
     parser.add_argument('--export',           help='Export format for plots (set none to disable)', type=str, default='pdf', choices=['pdf', 'svg', 'none'])
 

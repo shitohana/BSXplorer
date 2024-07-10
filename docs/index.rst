@@ -18,6 +18,7 @@ This page gives an overview of all public objects, functions and methods.
     :caption: Tutorials
 
     markdowns/lineplot
+    _console
 
 
 .. toctree::

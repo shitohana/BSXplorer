@@ -541,9 +541,9 @@ class RegionStat:
         ]
 
         assert isinstance(context, str)
-        bm_filter = (PValueFilter(context) < 1 - p_value) & (CountFilter(context) >= min_n)
-        im_filter = (PValueFilter(context) >= 1 - p_value) & (PValueFilter(context) < p_value) & (CountFilter(context) >= min_n)
-        um_filter = (PValueFilter(context) >= p_value) & (CountFilter(context) >= min_n)
+        bm_filter = (PValueFilter(context) < p_value) & (CountFilter(context) >= min_n)
+        im_filter = (PValueFilter(context) >= p_value) & (PValueFilter(context) < 1 - p_value) & (CountFilter(context) >= min_n)
+        um_filter = (PValueFilter(context) >= 1 - p_value) & (CountFilter(context) >= min_n)
 
         for other_context in other_contexts:
             bm_filter = bm_filter & (PValueFilter(other_context) >= p_value)

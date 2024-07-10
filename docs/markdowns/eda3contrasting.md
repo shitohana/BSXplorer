@@ -93,5 +93,3 @@ Below is a list of plots generated for the CG methylation context, as presented 
 ![EDA3 - ViolinPlot](../images/eda3contrasting/script_lp.png){.doc-single-image}
 
 ![EDA3 - BoxPlot](../images/eda3contrasting/script_hm.png){.doc-single-image}
-
-Full HTML report is [**here**](../images/IntraMetageneReport.html).
