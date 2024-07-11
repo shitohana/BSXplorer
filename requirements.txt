@@ -16,6 +16,6 @@ pyarrow==14.0.1
 pyreadr==0.4.9
 scipy==1.12.0
 seaborn==0.13.2
-scikit-learn==1.5.0
+scikit-learn==1.4.0
 pysam==0.22.1
 psutil==5.9.8
