@@ -8,6 +8,7 @@ from pathlib import Path
 
 from matplotlib import pyplot as plt
 
+from .Plots import savgol_line
 from .utils import MetageneSchema
 
 
@@ -658,6 +659,8 @@ class RegAlignResult:
             fig_axes: tuple = None,
             flank_windows: int = None,
             body_windows: int = None,
+            smooth: int = None,
+            norm: bool = False,
             major_labels: list[str] = None,
             minor_labels: list[str] = None,
             label: str = None,
@@ -678,13 +681,37 @@ class RegAlignResult:
                 points, step = np.linspace(start, stop, windows + 1, retstep=True)
                 indexes = [(start <= pos) & (pos < (start + step)) for start in points[:-1]]
                 resampled_pos.append(points[:-1])
-                resampled_cov.append(np.array([cov[index].mean() for index in indexes]))
+                resampled_cov.append(np.array([cov[index].mean() if cov[index].size != 0 else 0 for index in indexes]))
 
-            pos = None
             cov = np.concatenate(resampled_cov)
+            pos = np.array(list(range(len(cov))))
+
+            valid = np.isnan(cov)
+            cov = np.interp(pos, pos[~valid], cov[~valid]) if (~valid).sum() > 1 else np.full_like(pos, 0)
+            cov = savgol_line(cov, smooth)
+
             xticks = [0, flank_windows, flank_windows + body_windows / 2, flank_windows + body_windows, flank_windows * 2 + body_windows]
 
-        axes.plot(pos if pos is not None else list(range(len(cov))), cov, label=label, **mpl_kwargs)
+        else:
+            new_cov = []
+            new_pos = []
+            for p_prev, p_next, c_prev, c_next in zip(pos[:-1], pos[1:], cov[:-1], cov[1:]):
+                if c_next > c_prev:
+                    new_pos += [p_prev, p_prev]
+                    new_cov += [c_prev, c_next]
+                elif c_next < c_prev:
+                    new_pos += [p_next, p_next]
+                    new_cov += [c_prev, c_next]
+                else:
+                    new_pos += [p_prev]
+                    new_cov += [c_prev]
+            pos = np.array(new_pos)
+            cov = np.array(new_cov)
+
+        if norm and cov.size > 0:
+            cov = cov / cov.max()
+
+        axes.plot(pos, cov, label=label, **mpl_kwargs)
 
         axes.set_xticks(xticks, labels=[minor_labels[0], major_labels[0], minor_labels[1], major_labels[1], minor_labels[2]])
         axes.set_title("Сoverage of genes and flanking regions by DMRs")

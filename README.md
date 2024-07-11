@@ -22,12 +22,12 @@ All console scripts **require configuration file** – tab separated file with c
 
 Column **NAMES** should **NOT** be **INCLUDED** in real configuration file.
 
-| <ins>Group name</ins> | <ins>Path to report</ins> | <ins>Path to annotation</ins> | Flank length | Min region length | Genome type | Report type |
-|-----------------------|---------------------------|-------------------------------|--------------|-------------------|-------------|-------------|
-| Mock                  | mock-1.CX_report.txt      | annotation.gff                | 2000         | 0                 | gff         | bismark     |
-| Mock                  | mock-2.CX_report.txt      | annotation.gff                | 2000         | 0                 | gff         | bismark     |
-| Infected              | infected-1.CX_report.txt  | annotation.gff                | 2000         | 0                 | gff         | bismark     |
-| Infected              | infected-2.CX_report.txt  | annotation.gff                | 2000         | 0                 | gff         | bismark     |
+| <ins>Group name</ins> | <ins>Path to report</ins> | <ins>Path to annotation</ins> | Flank length | Min region length | Region type | Genome type | Report type |
+|-----------------------|---------------------------|-------------------------------|--------------|-------------------|-------------|-------------|-------------|
+| Mock                  | mock-1.CX_report.txt      | annotation.gff                | 2000         | 0                 | gene        | gff         | bismark     |
+| Mock                  | mock-2.CX_report.txt      | annotation.gff                | 2000         | 0                 | gene        | gff         | bismark     |
+| Infected              | infected-1.CX_report.txt  | annotation.gff                | 2000         | 0                 | gene        | gff         | bismark     |
+| Infected              | infected-2.CX_report.txt  | annotation.gff                | 2000         | 0                 | gene        | gff         | bismark     |
 
 Columns with <ins>underlined</ins> are required.
 
