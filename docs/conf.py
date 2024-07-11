@@ -4,7 +4,7 @@ import sys
 project = 'BSXplorer'
 copyright = '2023, shitohana'
 author = 'shitohana'
-release = '1.0.0rc5'
+release = '1.1.0a0'
 sys.path.insert(0, os.path.abspath('../src'))
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.append(os.path.abspath('.'))
@@ -17,7 +17,8 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',
-    'sphinx.ext.autosectionlabel'
+    'sphinx.ext.autosectionlabel',
+    'sphinx.ext.viewcode'
 ]
 myst_enable_extensions = [
     "dollarmath",

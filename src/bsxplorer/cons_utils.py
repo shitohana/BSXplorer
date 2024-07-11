@@ -988,7 +988,7 @@ class Renderer:
             metadata = {}
 
             for sample, label in zip(filtered_metagenes.samples, filtered_metagenes.labels):
-                save_name = self.args.dir / (label + self._format_filters(filters)) if self.args.save_cat else None
+                save_name = self.args.dir / (f"{label}_{self._format_filters(filters)}") if self.args.save_cat else None
 
                 # todo add filtering not only by id
                 bm_ids, im_ids, um_ids = region_pvalues[label].categorise(
