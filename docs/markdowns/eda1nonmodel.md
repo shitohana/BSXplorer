@@ -139,7 +139,7 @@ filtered = metagenes.filter(context="CG", strand="-")
 
 labels_settings = dict(major_labels=["", ""], minor_labels=["-500bp", "Body", "+500bp"])
 
-filtered.line_plot().draw_mpl(smooth=5, confidence=.95, **labels_settings)
+filtered.line_plot(smooth=5, confidence=.95).draw_mpl(**labels_settings)
 filtered.heat_map(10, 20).draw_mpl(**labels_settings)
 ```
 
@@ -152,8 +152,8 @@ The MetageneFiles object has [**`.box_plot()`**](bsxplorer.MetageneFiles.box_plo
 The [**`.trim_flank()`**](bsxplorer.MetageneFiles.trim_flank) method analyzes methylation of the body of the region.
 
 ```python
-filtered.trim_flank().box_plot()
-filtered.trim_flank().violin_plot()
+filtered.trim_flank().box_plot().draw_mpl()
+filtered.trim_flank().box_plot(violin=True).draw_mpl()
 ```
 
 ![EDA1 - Genes_vs_TE ViolinPlot](../images/eda1nonmodel/g_vs_te_bp.png){.doc-double-image}

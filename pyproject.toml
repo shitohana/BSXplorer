@@ -11,23 +11,26 @@ authors = [
 keywords = ['bismark', 'methylation', 'plot', 'bs-seq']
 license = {file = "LICENSE.txt"}
 dependencies = [
-    "biopython>=1.81",
-    "dynamicTreeCut>=0.1.1",
-    "fastcluster>=1.2.6",
-    "Jinja2>=3.1.2",
-    "matplotlib>=3.8.0",
-    "numba>=0.58.1",
-    "numpy>=1.26.3",
-    "pandas>=2.2.0",
-    "plotly>=5.18.0",
-    "polars>=0.20.7",
-    "progress>=1.6",
-    "pyarrow>=13.0.0",
-    "pyreadr>=0.4.9",
-    "scikit-learn>=1.4.0",
-    "scipy>=1.12.0",
-    "seaborn>=0.13.2"
-
+    "biopython==1.81",
+    "dynamicTreeCut==0.1.1",
+    "fastcluster==1.2.6",
+    "func_timeout==4.3.5",
+    "Jinja2==3.1.2",
+    "matplotlib==3.8.0",
+    "numba==0.58.1",
+    "numpy==1.26.3",
+    "packaging==23.2",
+    "pandas==2.2.0",
+    "plotly==5.18.0",
+    "polars==0.20.7",
+    "progress==1.6",
+    "pyarrow==13.0.0",
+    "pyreadr==0.4.9",
+    "scikit-learn==1.4.0",
+    "scipy==1.12.0",
+    "seaborn>=0.13.2",
+    "pysam==0.22.1",
+    "psutil==5.9.8"
 ]
 description = "Analytical framework for BS-seq data comparison and visualization"
 readme = "README.md"
@@ -54,3 +57,4 @@ exclude = ["/venv", "/dist", "/test", "/docs"]
 bsxplorer-metagene = "bsxplorer.cons_master:metagene"
 bsxplorer-category = "bsxplorer.cons_master:category"
 bsxplorer-chr = "bsxplorer.cons_master:chr_levels"
+bsxplorer-bam = "bsxplorer.cons_master:bam"

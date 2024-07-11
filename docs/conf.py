@@ -12,12 +12,12 @@ sys.path.append(os.path.abspath('.'))
 import bsxplorer
 
 extensions = [
-    # TODO add myst_parser to dependencies
     'myst_parser',
     'sphinx.ext.intersphinx',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
-    'sphinx.ext.napoleon'
+    'sphinx.ext.napoleon',
+    'sphinx.ext.autosectionlabel'
 ]
 myst_enable_extensions = [
     "dollarmath",
@@ -25,7 +25,7 @@ myst_enable_extensions = [
 ]
 
 templates_path = ['_templates']
-autodoc_mock_imports = ['polars', 'matplotlib', 'numpy', 'scipy', 'pandas', 'pyarrow', 'pyreadr', 'dynamicTreeCut', 'plotly', 'numba', 'pathlib']
+autodoc_mock_imports = ['polars', 'matplotlib', 'numpy', 'scipy', 'pandas', 'pyarrow', 'pyreadr', 'dynamicTreeCut', 'plotly', 'numba', 'pathlib', 'progress']
 autodoc_default_options = {
     'members': True,
     'exclude-members': '__init__'

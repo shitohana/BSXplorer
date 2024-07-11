@@ -72,7 +72,7 @@ The smoothened matplotlib line plot, showing the average methylation density in 
 can be generated with the [**`Metagene.line_plot().draw_mpl()`**](bsxplorer.LinePlot.draw_mpl)
 
 ```python
-filtered.line_plot().draw_mpl(smooth=10)
+filtered.line_plot(smooth=10).draw_mpl()
 ```
 
 ![Basic usage - LinePlot](../images/gettingstarted/basic_usage_lp.png){.doc-single-image}

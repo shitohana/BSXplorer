@@ -11,7 +11,6 @@ Reference for plotting classes.
     :template: class.rst
 
     LinePlot
-    LinePlotFiles
     HeatMap
-    HeatMapFiles
+    BoxPlot
     PCA

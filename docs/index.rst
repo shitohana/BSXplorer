@@ -18,6 +18,7 @@ This page gives an overview of all public objects, functions and methods.
     :caption: Tutorials
 
     markdowns/lineplot
+    _console
 
 
 .. toctree::
@@ -30,3 +31,6 @@ This page gives an overview of all public objects, functions and methods.
     _genome
     _chr
     _cluster
+    _sequence
+    _bam
+    _universal
