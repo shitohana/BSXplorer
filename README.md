@@ -14,6 +14,21 @@ Yuditskiy, K., Bezdvornykh, I., Kazantseva, A. et al. BSXplorer: analytical fram
 pip install bsxplorer
 ```
 
+# Version 1.1.0. What's Changed
+
+## Major changes
+
+* Added new classes for Unified reading of methylation reports (UniversalReader, UniversalReplicatesReader). Now any supported report type can be converted into another.
+* Added support for processing BAM files (BAMReader). BAM files can be either converted to methylation report (faster than with native methods), or methylation statistics, such as methylation entropy, epipolymorphism or PDR can be calculated.
+* Added method for aligning one set of regions along another (e.g. DMR along genes) – align_regions. Regions can not only be aligned, but the coverage of the metagene by DMRs can be visualized.
+
+## Minor improvements
+
+* Any plot data now can be retrieved by corresponding method.
+* Fixes to the plotting API.
+* Fixes to Category report.
+* Added console command for processing BAM files.
+
 # Console usage
 
 - [bsxplorer-metagene](#bsxplorer-metagene) - Create Metagene report
