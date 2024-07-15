@@ -72,6 +72,9 @@ class Genome:
             Character for comments in file.
         has_header
             Does file have header.
+        read_filters
+            Filter annotation by `polars.Expr
+            <https://docs.pola.rs/py-polars/html/reference/expressions/index.html>`_
 
         Returns
         -------
@@ -99,7 +102,13 @@ class Genome:
             (pl.col(cols[id_col]) if id_col is not None else pl.lit("")).alias("id"),
         ]
 
-        genes = genes.with_columns(select_cols).select(["chr", "type", "start", "end", "strand", "id"]).sort(["chr", "start"])
+        genes = (
+            genes
+            .with_columns(select_cols)
+            .select(["chr", "type", "start", "end", "strand", "id"])
+            .sort(["chr", "start"])
+            .filter(True if read_filters is None else read_filters)
+        )
 
         print(f"Genome read from {file}")
         return cls(genes)
@@ -467,6 +476,8 @@ class Genome:
 
         Parameters
         ----------
+        region_type
+            Filter annotation by region type from gff.
         min_length
             Region length threshold.
         flank_length
@@ -596,6 +607,21 @@ class Genome:
 
 @dataclass
 class RegAlignResult:
+    """
+    Class for storing regions aligned to outer set of regions
+
+    Attributes
+    ----------
+    gene_body
+        Regions, which middle coordinate is inside outer region.
+    upstream
+        Regions, which middle coordinate is in upstream of outer region.
+    downstream
+        Regions, which middle coordinate is in downstream of outer region.
+    intergene
+        Regions, which middle coordinate not in flanking regions nor gene body.
+    """
+
     gene_body: pl.DataFrame
     upstream: pl.DataFrame
     downstream: pl.DataFrame
@@ -603,6 +629,13 @@ class RegAlignResult:
     flank_length: int
 
     def ref_positions(self):
+        """
+        This function calculates the coordinates normalized with respect to the length of the outer region
+
+        Returns
+        -------
+            polars.DataFrame for upstream, gene_body and downstream relative positions.
+        """
         def ref_pos_expr(for_column: str):
             expr = (
                 pl.when(
@@ -647,12 +680,19 @@ class RegAlignResult:
         return ref_positions
 
     def metagene_coverage(self):
+        """
+        This function calculates the coverage of the metagene by the aligned regions.
+
+        Returns
+        -------
+            tuple(relative_positions, coverage)
+        """
 
         ref_positions = self.ref_positions()
         pos = ref_positions["ref_pos"].to_numpy()
         cov = ref_positions["coverage"].to_numpy()
         interval_values = (-1 <= pos) & (pos <= 2)
-        return pos[interval_values], cov [interval_values]
+        return pos[interval_values], cov[interval_values]
 
     def plot_density_mpl(
             self,
@@ -661,14 +701,47 @@ class RegAlignResult:
             body_windows: int = None,
             smooth: int = None,
             norm: bool = False,
-            major_labels: list[str] = None,
-            minor_labels: list[str] = None,
+            tick_labels: list[str] = None,
             label: str = None,
             **mpl_kwargs
     ):
+        """
+        Plot coverage, returned by :func:`RegAlignResult.metagene_coverage`
+
+        Parameters
+        ----------
+        fig_axes
+            Tuple of (
+            `matplotlib.pyplot.Figure
+            <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_,
+            `matplotlib.axes.Axes
+            <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes>`_).
+            New are created if ``None``
+        flank_windows
+            Number of windows for flanking regions (set None for no resampling).
+        body_windows
+            Number of windows for body region (set None for no resampling).
+        smooth
+            Number of windows for
+            `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter
+            (set 0 for no smoothing). Applied only if `flank_windows` and `body_windows` params are specified.
+        norm
+            Should the output plot be normalized by maximum coverage.
+        tick_labels
+            Labels for upstream, body region start and end, downstream (e.g. TSS, TES).
+            **Exactly 5** need to be provided. Set ``None`` to disable.
+        label
+            Label of line on line-plot
+        mpl_kwargs
+            Keyword arguments for
+            `matplotlib.plot <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.plot.html>`_
+
+        Returns
+        -------
+        ``matplotlib.pyplot.Figure``
+        """
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
-        major_labels = ["TSS", "TES"] if major_labels is None else major_labels
-        minor_labels = ["Upstream", "Body", "Downstream"] if minor_labels is None else minor_labels
+        tick_labels = ["Upstream", "TSS", "Body", "TES", "Downstream"] if tick_labels is None else tick_labels
 
         pos, cov = self.metagene_coverage()
         xticks = [-1, 0, .5, 1, 2]
@@ -713,7 +786,7 @@ class RegAlignResult:
 
         axes.plot(pos, cov, label=label, **mpl_kwargs)
 
-        axes.set_xticks(xticks, labels=[minor_labels[0], major_labels[0], minor_labels[1], major_labels[1], minor_labels[2]])
+        axes.set_xticks(xticks, labels=tick_labels)
         axes.set_title("Сoverage of genes and flanking regions by DMRs")
         axes.set_xlabel('Position')
         axes.set_ylabel('Density')

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import re
-import typing
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import packaging
 import polars as pl
 import seaborn as sns
 from scipy import stats
@@ -24,7 +21,7 @@ from .Base import (
 )
 from .Clusters import ClusterSingle, ClusterMany
 from .UniversalReader_batches import ReportTypes
-from .utils import MetageneSchema, AvailableSumfunc, CONTEXTS, interval
+from .utils import MetageneSchema, AvailableSumfunc, CONTEXTS
 from .GenomeClass import Genome
 from .UniversalReader_classes import UniversalReader
 
@@ -150,7 +147,6 @@ class Metagene(MetageneBase):
                    gene_windows=args["body_windows"],
                    downstream_windows=args["downstream_windows"])
 
-
     @classmethod
     def from_binom(
             cls,
@@ -161,7 +157,6 @@ class Metagene(MetageneBase):
             down_windows: int = 0,
             p_value: float = .05,
             use_threads=True,
-            sumfunc: AvailableSumfunc = "wmean"
     ):
         """
         Constructor for Metagene class from :meth:`BinomialData.preprocess` ``.parquet`` file.
@@ -199,7 +194,7 @@ class Metagene(MetageneBase):
         """
         reader = UniversalReader(file, "binom", methylation_pvalue=p_value, use_threads=use_threads)
 
-        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
+        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, "wmean")
         report_df = read_metagene(**(locals() | args))
 
         return cls(report_df,
@@ -577,6 +572,8 @@ class Metagene(MetageneBase):
 
         Parameters
         ----------
+        na_rm
+            Replace empty windows by specified value.
         count_threshold
             Minimum counts per window
 
@@ -609,6 +606,29 @@ class Metagene(MetageneBase):
             merge_strands: bool = True,
             label=""
     ):
+        """
+
+        Parameters
+        ----------
+        confidence
+            Probability for confidence bands (e.g. 0.95)
+        smooth
+            Number of windows for
+            `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter
+            (set 0 for no smoothing). Applied only if `flank_windows` and `body_windows` params are specified.
+        resolution
+            Number of fragments to resize to. Keep None if no resize is needed.
+        stat
+            Summary function to use for plot. Possible options: ``mean``, ``wmean``, ``log``, ``wlog``, ``qN``
+        merge_strands
+            Does negative strand need to be reversed
+        label
+            Label for the data.
+
+        Returns
+        -------
+        :class:`LinePlotData`
+        """
         resized = self if resolution is None else self.resize(resolution)
         df = resized.report_df
 
@@ -685,6 +705,12 @@ class Metagene(MetageneBase):
 
         Parameters
         ----------
+        confidence
+            Probability for confidence bands (e.g. 0.95)
+        smooth
+            Number of windows for
+            `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter
+            (set 0 for no smoothing). Applied only if `flank_windows` and `body_windows` params are specified.
         resolution
             Number of fragments to resize to. Keep None if no resize is needed.
         stat
@@ -756,7 +782,6 @@ class Metagene(MetageneBase):
         lp_data = resized.line_plot_data(resolution, smooth, confidence, stat, merge_strands)
         return LinePlot(lp_data)
 
-
     def contexts_line_plot(
             self,
             resolution: int = None,
@@ -773,9 +798,7 @@ class Metagene(MetageneBase):
             if len(filtered) > 0
         ]
 
-
         return LinePlot(lp_data)
-
 
     def heat_map_data(
             self,
@@ -1180,8 +1203,7 @@ class MetageneFiles(MetageneFilesBase):
             smooth: int = 50,
             confidence: float = 0.,
             stat: str = "wmean",
-            merge_strands: bool = True,
-            label=""
+            merge_strands: bool = True
     ):
         """
         Create :class:`LinePlotFiles` method.
@@ -1194,6 +1216,12 @@ class MetageneFiles(MetageneFilesBase):
             Summary function to use for plot. Possible options: ``mean``, ``wmean``, ``log``, ``wlog``, ``qN``
         merge_strands
             Does negative strand need to be reversed
+        confidence
+            Probability for confidence bands (e.g. 0.95)
+        smooth
+            Number of windows for
+            `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter
+            (set 0 for no smoothing). Applied only if `flank_windows` and `body_windows` params are specified.
 
         Returns
         -------

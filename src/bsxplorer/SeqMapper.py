@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import gzip
-import io
 import itertools
 import os
 import tempfile
@@ -9,7 +8,6 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pyarrow.dataset as pads
 from Bio import SeqIO
 from numba import njit
 

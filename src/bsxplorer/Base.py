@@ -85,16 +85,6 @@ class MetageneBase:
         return self.upstream_windows + self.downstream_windows + self.gene_windows
 
     @property
-    def _tick_positions(self):
-        return dict(
-            up_mid=self.upstream_windows / 2,
-            body_start=self.upstream_windows,
-            body_mid=self.total_windows / 2,
-            body_end=self.gene_windows + self.upstream_windows,
-            down_mid=self.total_windows - (self.downstream_windows / 2)
-        )
-
-    @property
     def _x_ticks(self):
         return [
             self.upstream_windows / 2,
@@ -191,70 +181,6 @@ class MetageneFilesBase:
             return samples
         else:
             raise ValueError("Different windows number between samples")
-
-
-class PlotBase(MetageneBase):
-    def flank_lines(self, axes: Axes, major_labels: list, minor_labels: list, show_border=True):
-        labels = prepare_labels(major_labels, minor_labels)
-
-        if self.downstream_windows < 1:
-            labels["down_mid"], labels["body_end"] = [""] * 2
-
-        if self.upstream_windows < 1:
-            labels["up_mid"], labels["body_start"] = [""] * 2
-
-        ticks = self._tick_positions
-
-        names = list(ticks.keys())
-        x_ticks = [ticks[key] for key in names]
-        x_labels = [labels[key] for key in names]
-
-        axes.set_xticks(x_ticks, labels=x_labels)
-
-        if show_border:
-            for tick in [ticks["body_start"], ticks["body_end"]]:
-                axes.axvline(x=tick, linestyle='--', color='k', alpha=.3)
-
-        return axes
-
-    def _merge_strands(self, df: pl.DataFrame):
-        return df.filter(pl.col("strand") != "-").extend(self._strand_reverse(df.filter(pl.col("strand") == "-")))
-
-    @staticmethod
-    def _strand_reverse(df: pl.DataFrame):
-        max_fragment = df["fragment"].max()
-        return df.with_columns((max_fragment - pl.col("fragment")).alias("fragment")).sort("fragment")
-
-    def flank_lines_plotly(self, figure: go.Figure, major_labels: list, minor_labels: list, show_border=True):
-        """
-        Add flank lines to the given axis (for line plot)
-        """
-        labels = prepare_labels(major_labels, minor_labels)
-
-        if self.downstream_windows < 1:
-            labels["down_mid"], labels["body_end"] = [""] * 2
-
-        if self.upstream_windows < 1:
-            labels["up_mid"], labels["body_start"] = [""] * 2
-
-        ticks = self._tick_positions
-
-        names = list(ticks.keys())
-        x_ticks = [ticks[key] for key in names]
-        x_labels = [labels[key] for key in names]
-
-        figure.update_layout(
-            xaxis=dict(
-                tickmode='array',
-                tickvals=x_ticks,
-                ticktext=x_labels)
-        )
-
-        if show_border:
-            for tick in [ticks["body_start"], ticks["body_end"]]:
-                figure.add_vline(x=tick, line_dash="dash", line_color="rgba(0,0,0,0.2)")
-
-        return figure
 
 
 def validate_metagene_args(
@@ -413,7 +339,6 @@ def read_metagene(
         # POLARS EXPRESSIONS
         # Region position check
         UP_REGION = pl.col('position') < pl.col('start')
-        BODY_REGION = (pl.col('start') <= pl.col('position')) & (pl.col('position') <= pl.col('end'))
         DOWN_REGION = (pl.col('position') > pl.col('end'))
 
         # Fragment numbers calculation

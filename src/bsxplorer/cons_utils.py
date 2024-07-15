@@ -10,7 +10,6 @@ from dataclasses import dataclass, field, asdict
 from gc import collect
 from io import BytesIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 import polars as pl
 import pyarrow as pa
@@ -26,7 +25,6 @@ from .BamReader import BAMReader
 from .SeqMapper import init_tempfile
 from .UniversalReader_batches import REPORT_TYPES_LIST
 from .UniversalReader_classes import UniversalWriter, UniversalReader, UniversalReplicatesReader
-from .utils import merge_replicates, decompress
 
 
 def render_template(
@@ -460,7 +458,6 @@ class BamScript:
             fig.savefig(output.parent / (output.stem + ".pdf"))
 
 
-
 class MetageneScript(ConsoleScript):
     @property
     def _parser(self) -> argparse.ArgumentParser:
@@ -535,7 +532,6 @@ class MetageneScript(ConsoleScript):
                 if pca is not None:
                     pca.append_metagene(report_metagene, Path(report_file).stem, row["name"])
                 replicates.append(report_metagene)
-
 
             sample_metagenes.append(
                 MetageneFiles(replicates).merge()
@@ -749,7 +745,7 @@ class ChrLevelsScript(ConsoleScript):
                 chr_min_length=self.args.min_length,
                 window_length=self.args.window,
                 confidence=self.args.confidence,
-                use_threads = self.args.threads
+                use_threads=self.args.threads
             )
 
             if merged_type not in ["parquet"]:
@@ -988,7 +984,7 @@ class Renderer:
             metadata = {}
 
             for sample, label in zip(filtered_metagenes.samples, filtered_metagenes.labels):
-                save_name = self.args.dir / (f"{label}_{self._format_filters(filters)}") if self.args.save_cat else None
+                save_name = self.args.dir / f"{label}_{self._format_filters(filters)}" if self.args.save_cat else None
 
                 # todo add filtering not only by id
                 bm_ids, im_ids, um_ids = region_pvalues[label].categorise(

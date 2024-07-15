@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import warnings
 from dataclasses import dataclass
+from typing import Iterable
 
 import matplotlib.cbook
 import numpy as np
@@ -89,6 +90,7 @@ def flank_lines_mpl(axes: Axes, x_ticks, x_labels: list, borders: list = None):
 
     return axes
 
+
 def flank_lines_plotly(figure: go.Figure, x_ticks, x_labels, borders: list = None, fig_rows=None, fig_cols=None):
     borders = list() if borders is None else borders
     if x_labels is None or not x_labels:
@@ -109,7 +111,6 @@ def flank_lines_plotly(figure: go.Figure, x_ticks, x_labels, borders: list = Non
                 row=row, col=col
             )
 
-
             for border in borders:
                 figure.add_vline(x=border, line_dash="dash", line_color="rgba(0,0,0,0.2)", row=row, col=col)
 
@@ -120,8 +121,8 @@ def flank_lines_plotly(figure: go.Figure, x_ticks, x_labels, borders: list = Non
 class LinePlotData:
     x: np.ndarray
     y: np.ndarray
-    x_ticks: list
-    borders: list
+    x_ticks: Iterable
+    borders: Iterable
     lower: np.ndarray | None = None
     upper: np.ndarray | None = None,
     label: str = ""
@@ -129,6 +130,15 @@ class LinePlotData:
 
 
 class LinePlot:
+    """
+    Class for generating line plot.
+
+    Parameters
+    ----------
+    data
+        Instance of :class:`LinePlotData` (e.g. generated from :func:`Metagene.line_plot_data`)
+
+    """
     def __init__(self, data: list[LinePlotData] | LinePlotData):
         self.data = data if isinstance(data, list) else [data]
 
@@ -223,6 +233,10 @@ class LinePlot:
             Whether to draw dotted vertical line on body region borders or not
         kwargs
             Keyword arguments for plotly.graph_objects.Scatter
+        fig_cols
+            Cols of the subplot where to draw the line plot.
+        fig_rows
+            Rows of the subplot where to draw the line plot.
 
         Returns
         -------
@@ -275,8 +289,16 @@ class HeatMapData:
     x_labels: list[str] | None = None
 
 
-
 class HeatMap:
+    """
+    Class for generating heat map.
+
+    Parameters
+    ----------
+    data
+        Instance of :class:`HeatMapData` (e.g. generated from :func:`Metagene.heat_map_data`)
+
+    """
     def __init__(self, data: list[HeatMapData] | HeatMapData):
         self.data = data if isinstance(data, list) else [data]
 
@@ -308,6 +330,8 @@ class HeatMap:
             **Exactly 5** need to be provided. Set ``None`` to disable.
         show_border
             Whether to draw dotted vertical line on body region borders or not.
+        facet_cols
+            Maximum number of plots on the same row.
 
         Returns
         -------
@@ -369,6 +393,8 @@ class HeatMap:
 
         Parameters
         ----------
+        figure
+            Plotly Figure, where to plot HeatMap
         title
             Title for axis
         vmin
@@ -382,6 +408,12 @@ class HeatMap:
             **Exactly 5** need to be provided. Set ``None`` to disable.
         show_border
             Whether to draw dotted vertical line on body region borders or not.
+        row
+            Row, where heatmap will be plotted.
+        col
+            Column, where heatmap will be plotted.
+        facet_cols
+            Maximum number of plots on the same row.
 
         Returns
         -------
@@ -434,7 +466,7 @@ class HeatMap:
                 showarrow=False, font=dict(size=16)
             )
 
-        figure.layout.coloraxis.update(colorbar=new_fig.layout["coloraxis"]["colorbar"].update(len=.8, lenmode="fraction", yref="paper"))
+            figure.layout.coloraxis.update(colorbar=new_fig.layout["coloraxis"]["colorbar"].update(len=.8, lenmode="fraction", yref="paper"))
 
         return figure
 
@@ -592,6 +624,15 @@ class BoxPlotData:
 
 
 class BoxPlot:
+    """
+    Class for generating box plot.
+
+    Parameters
+    ----------
+    data
+        Instance of :class:`BoxPlotData` (e.g. generated from :func:`Metagene.box_plot_data`)
+
+    """
     def __init__(self, data: list[BoxPlotData] | BoxPlotData):
         self.data = data if isinstance(data, list) else [data]
         self.values = [bp_data.values for bp_data in data]
@@ -605,6 +646,24 @@ class BoxPlot:
             title: str = None,
             violin: bool = False
     ):
+        """
+        Draw box plot with matplotlib.
+
+        Parameters
+        ----------
+        fig_axes
+            Tuple of (`matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_, `matplotlib.axes.Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes>`_). New are created if ``None``
+        showfliers
+            Show outliers on the boxplot.
+        title
+            Title of the box plot.
+        violin
+            Should box plot be visualized as violin plot.
+
+        Returns
+        -------
+        ``matplotlib.pyplot.Figure``
+        """
         if fig_axes is None:
             plt.clf()
             fig, axes = plt.subplots()
@@ -630,6 +689,31 @@ class BoxPlot:
             fig_rows: int | list = None,
             fig_cols: int | list = None
     ):
+        """
+        Draw box plot with plotly.
+
+        Parameters
+        ----------
+        figure
+            `plotly.graph_objects.Figure
+            <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_.
+            New is created if ``None``
+        points
+            Specify which points should be included
+            (`see Plotly docs <https://plotly.github.io/plotly.py-docs/generated/plotly.express.box.html>`_)
+        title
+            Title of the box plot.
+        violin
+            Should box plot be visualized as violin plot.
+        fig_cols
+            Cols of the subplot where to draw the box plot.
+        fig_rows
+            Rows of the subplot where to draw the box plot.
+
+        Returns
+        -------
+        ``matplotlib.pyplot.Figure``
+        """
         figure = make_subplots() if figure is None else figure
 
         for data, label in zip(self.values, self.labels):

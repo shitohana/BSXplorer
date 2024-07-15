@@ -89,6 +89,7 @@ class BaseBatch(ABC):
 
 # noinspection PyMissingOrEmptyDocstring
 
+# noinspection PyMissingOrEmptyDocstring
 class ConvertedBatch(BaseBatch):
     @classmethod
     @abstractmethod

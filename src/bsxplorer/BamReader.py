@@ -753,8 +753,6 @@ class BAMReader:
         self._mode = "report"
         self._context = context
 
-        self._memory_pool = pa.system_memory_pool()
-
         self.qc = qc
         if qc:
             self.quals_count = QualsCounter()
@@ -962,17 +960,6 @@ class BAMReader:
         pos_ax.plot(y_data, 'b')
 
         return fig
-
-    def _upd_qc(self, qc_result: QCResult):
-        self.quals_count += qc_result.quals_count
-
-        new_pos_count = []
-        for new, total in itertools.zip_longest(qc_result.pos_count, self.pos_count, fillvalue=QualsCounter()):
-            new_pos_count.append(total + new)
-        self.pos_count = new_pos_count
-
-        avg_region_qual = sum(qual * count for qual, count in qc_result.quals_count.items()) / qc_result.quals_count.total()
-        self.reg_qual.append((qc_result.chrom, qc_result.end, avg_region_qual))
 
     def _upd_bar(self, chrom, end, reads):
         self._bar.message = f"{chrom} ({self.bamfile.references.index(chrom) + 1}/{len(self.bamfile.references)})"

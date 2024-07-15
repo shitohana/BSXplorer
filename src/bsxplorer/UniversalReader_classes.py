@@ -141,6 +141,9 @@ class BinomReader(ArrowParquetReader):
 
 # noinspection PyMissingOrEmptyDocstring
 class ArrowReaderCSV:
+
+    __slots__ = ["file", "batch_size", "_current_batch", "reader"]
+
     @property
     @abstractmethod
     def pa_schema(self):
@@ -562,8 +565,6 @@ class UniversalReplicatesReader(object):
     ----------
     readers
         List of initialized instances of :class:`UniversalReader`.
-    bar
-        Indicate the progres bar while reading.
 
     Examples
     --------
@@ -576,7 +577,7 @@ class UniversalReplicatesReader(object):
 
     def __init__(
             self,
-            readers: list[UniversalReader]
+            readers: list[UniversalReader],
     ):
         self.readers = readers
         self.haste_limit = 1e9
