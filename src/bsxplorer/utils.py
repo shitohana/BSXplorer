@@ -31,32 +31,6 @@ def remove_extension(path):
     re.sub("\.[^./]+$", "", path)
 
 
-def prepare_labels(major_labels: list, minor_labels: list):
-    labels = dict(
-        up_mid="Upstream",
-        body_start="TSS",
-        body_mid="Body",
-        body_end="c",
-        down_mid="Downstream"
-    )
-
-    if major_labels and len(major_labels) == 2:
-        labels["body_start"], labels["body_end"] = major_labels
-    elif major_labels:
-        print("Length of major tick labels != 2. Using default.")
-    else:
-        labels["body_start"], labels["body_end"] = [""] * 2
-
-    if minor_labels and len(minor_labels) == 3:
-        labels["up_mid"], labels["body_mid"], labels["down_mid"] = minor_labels
-    elif minor_labels:
-        print("Length of minor tick labels != 3. Using default.")
-    else:
-        labels["up_mid"], labels["body_mid"], labels["down_mid"] = [""] * 3
-
-    return labels
-
-
 def approx_batch_num(path, batch_size, check_lines=1000):
     size = getsize(path)
 
@@ -96,39 +70,24 @@ def interval(sum_density: list[int], sum_counts: list[int], alpha=.95, weighted:
     :param sum_counts: Sums of all read cytosines in fragment
     :param alpha: Probability for confidence band
     """
-    sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
-    average = sum_density.sum() / sum_counts.sum()
+    try:
+        sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
+        average = sum_density.sum() / sum_counts.sum()
 
-    normalized = None
-    if weighted:
-        normalized = np.divide(sum_density, sum_counts)
-        variance = np.average((normalized - average) ** 2, weights=sum_counts)
-    else:
-        variance = np.average((sum_density - average) ** 2)
+        normalized = None
+        if weighted:
+            normalized = np.divide(sum_density, sum_counts)
+            variance = np.average((normalized - average) ** 2, weights=sum_counts)
+        else:
+            variance = np.average((sum_density - average) ** 2)
 
-    n = sum(sum_counts) - 1
-    i = stats.t.interval(alpha, df=n, loc=normalized if weighted else average, scale=np.sqrt(variance / n))
+        n = sum(sum_counts) - 1
+        i = stats.t.interval(alpha, df=n, loc=normalized if weighted else average, scale=np.sqrt(variance / n))
+        return {"lower": i[0], "upper": i[1]}
 
-    return {"lower": i[0], "upper": i[1]}
-
-
-def interval_chr(sum_density: list[int], sum_counts: list[int], alpha=.95):
-    """
-    Evaluate confidence interval for point
-
-    :param sum_density: Sums of methylated counts in fragment
-    :param sum_counts: Sums of all read cytosines in fragment
-    :param alpha: Probability for confidence band
-    """
-    sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
-    average = sum_density.sum() / len(sum_counts)
-
-    variance = np.average((sum_density - average) ** 2)
-
-    n = sum(sum_counts) - 1
-    i = stats.t.interval(alpha, df=n, loc=average, scale=np.sqrt(variance / n))
-
-    return {"lower": i[0], "upper": i[1]}
+    except Exception as e:
+        print(f"Got {e} when calculating confidence inetrval")
+        return {"lower": np.nan, "upper": np.nan}
 
 
 MetageneSchema = dotdict(dict(
@@ -138,6 +97,19 @@ MetageneSchema = dotdict(dict(
     gene=pl.Categorical,
     context=pl.Categorical,
     id=pl.Categorical,
+    fragment=pl.UInt32,
+    sum=pl.Float32,
+    count=pl.UInt32,
+))
+
+
+MetageneJoinedSchema = dotdict(dict(
+    chr=pl.Categorical,
+    strand=pl.Categorical,
+    gene=pl.Categorical,
+    start=pl.UInt64,
+    id=pl.Categorical,
+    context=pl.Categorical,
     fragment=pl.UInt32,
     sum=pl.Float32,
     count=pl.UInt32,
@@ -155,6 +127,24 @@ class ReportBar(Bar):
     @property
     def max2mb(self):
         return int(self.max) / (1024**2)
+
+    @property
+    def elapsed_fmt(self):
+        return str(datetime.timedelta(seconds=self.elapsed))
+
+    @property
+    def eta_fmt(self):
+        return str(datetime.timedelta(seconds=self.eta))
+
+
+class BAMBar(Bar):
+    def __init__(self, name, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+
+
+    suffix = "%(index)d/%(max)d %(name)s [%(elapsed_fmt)s | ETA: %(eta_fmt)s]"
+    fill = "@"
 
     @property
     def elapsed_fmt(self):
@@ -223,38 +213,61 @@ def merge_replicates(
 
     print("Reading reports")
 
-    batches = [reader.next_batches(1)[0] for reader in readers]
-    while sum(map(lambda batch: batch is not None, batches)) > 0:
+    batches = [reader.next_batches(1) for reader in readers]
+    ungrouped = None
 
-        batches = list(map(lambda group: group[0], filter(lambda group: group is not None, batches)))
+    while any(batch is not None for batch in batches):
 
-        concat = pl.concat(batches)
+        batches = list(map(
+            # Add group_column column to check if position is fully grouped or not
+            lambda batch: pl.concat(batch).with_columns(pl.lit(1).alias("group_count")),
+            # Filter empty batches
+            filter(lambda batch: batch is not None, batches)
+        ))
+        pass
 
-        grouped = (
-            concat
-            .group_by(["chr", "strand", "position", "context"], maintain_order=True)
-            .agg([pl.sum("count_m"), pl.sum("count_um")])
-            .cast(dict(
-                chr=pl.Categorical,
-                strand=pl.Categorical,
-                position=pl.UInt64,
-                count_m=pl.UInt32,
-                count_um=pl.UInt32,
-                context=pl.Categorical
-            ))
-            .select(pq_schema.names)
+        concat = (
+            # Concat all DataFrames into single one
+            pl.concat(batches + [ungrouped.select(batches[0].columns)] if ungrouped is not None else batches)
         )
 
-        print(f"Current position: {batches[0].row(0)[0]} {batches[0].row(0)[1]}", end="\r")
+        # Group all and sum group_count
+        stacked = (
+            concat
+            .group_by(["chr", "strand", "position", "context"], maintain_order=True)
+            .agg([pl.sum("count_m"), pl.sum("count_um"), pl.sum("group_count")])
+        )
+
+        # Only rows, which are fully grouped (have found its pair in every file)
+        grouped = stacked.filter(pl.col("group_count") == len(batches))
+        # Yet ungrouped ones
+        ungrouped = stacked.filter(pl.col("group_count") < len(batches))
+
+        print(f"Current position: {batches[0].row(0)[0]} {batches[0].row(0)[1]} Ungrouped rows: {len(ungrouped)}", end="\r")
 
         pq_writer.write(
-            grouped.to_arrow().cast(target_schema=pq_schema)
+            (
+                grouped
+                .select(pq_schema.names)
+                # Cast to optimal types for conversion to polars end easier grouping
+                .cast(dict(
+                    chr=pl.Categorical,
+                    strand=pl.Categorical,
+                    position=pl.UInt64,
+                    count_m=pl.UInt32,
+                    count_um=pl.UInt32,
+                    context=pl.Categorical
+                ))
+                .to_arrow()
+                .cast(target_schema=pq_schema)
+            )
         )
         batches = [reader.next_batches(1) for reader in readers]
         collect()
 
     print("\nDONE")
     return temp_parquet
+
 
 polars2arrow = {
     pl.Int8: pa.int8(),
@@ -269,10 +282,11 @@ polars2arrow = {
     pl.Float64: pa.float64(),
     pl.Boolean: pa.bool_(),
     pl.Binary: pa.binary(),
-    pl.Utf8: pa.utf8()
+    pl.Utf8: pa.utf8(),
 }
 
 arrow2polars = {value: key for key, value in polars2arrow.items()}
+
 
 def polars2arrow_convert(pl_schema: OrderedDict):
     if pl.Categorical in pl_schema.values():
@@ -281,3 +295,48 @@ def polars2arrow_convert(pl_schema: OrderedDict):
         (key, polars2arrow[value]) for key, value in pl_schema.items()
     ])
     return pa_schema
+
+
+def arrow2polars_convert(pa_schema: pa.Schema):
+    pl_schema = OrderedDict()
+
+    if not all(pa_type in arrow2polars.keys() for pa_type in pa_schema.types):
+        raise KeyError("Not all field types have match in polars.")
+
+    for name, pa_type in zip(pa_schema.names, pa_schema.types):
+        pl_schema[name] = arrow2polars[pa_type]
+
+    return pl_schema
+
+
+CONTEXTS = ["CG", "CHG", "CHH"]
+CYTOSINE_SUMFUNC = ["wmean", "mean", "min", "max", "median", "1pgeom"]
+AvailableSumfunc = Literal["wmean", "mean", "min", "max", "median", "1pgeom"]
+AvailableBAM = Literal["bismark"]
+AvailablePlotStats = Literal["mean", "wmean"]
+
+
+def prepare_labels(major_labels: list, minor_labels: list):
+    labels = dict(
+        up_mid="Upstream",
+        body_start="TSS",
+        body_mid="Body",
+        body_end="c",
+        down_mid="Downstream"
+    )
+
+    if major_labels and len(major_labels) == 2:
+        labels["body_start"], labels["body_end"] = major_labels
+    elif major_labels:
+        print("Length of major tick labels != 2. Using default.")
+    else:
+        labels["body_start"], labels["body_end"] = [""] * 2
+
+    if minor_labels and len(minor_labels) == 3:
+        labels["up_mid"], labels["body_mid"], labels["down_mid"] = minor_labels
+    elif minor_labels:
+        print("Length of minor tick labels != 3. Using default.")
+    else:
+        labels["up_mid"], labels["body_mid"], labels["down_mid"] = [""] * 3
+
+    return labels

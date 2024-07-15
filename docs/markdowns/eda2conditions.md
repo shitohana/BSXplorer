@@ -77,22 +77,20 @@ inf_merged = merge_replicates(
     report_type="bismark"
 )
 
-
 p_value_kwargs = dict(
     genome=annot,
     methylation_pvalue=.05
 )
 
-mock_binom = bsxplorer.BinomialData.preprocess(
+mock_binom = bsxplorer.BinomialData.from_report(
     mock_merged.name, report_type="parquet", min_coverage=2
 )
 mock_pstat = mock_binom.region_pvalue(**p_value_kwargs)
 
-inf_binom = bsxplorer.BinomialData.preprocess(
+inf_binom = bsxplorer.BinomialData.from_report(
     inf_merged.name, report_type="parquet", min_coverage=2
 )
 inf_pstat = inf_binom.region_pvalue(**p_value_kwargs)
-
 
 categorise_kwargs = dict(
     context="CG", p_value=.05, min_n=5
@@ -119,7 +117,7 @@ tick_kwargs = dict(
     minor_labels=["-500bp", "Body", "+500bp"]
 )
 
-metagenes.line_plot().draw_mpl(smooth=10, **tick_kwargs)
+metagenes.line_plot(smooth=10).draw_mpl(**tick_kwargs)
 metagenes.heat_map(50, 50).draw_mpl(**tick_kwargs)
 ```
 
@@ -189,15 +187,15 @@ well as heatmaps that display methylation levels in the aforementioned classes.
 
 ```python
 metagenes = bsxplorer.MetageneFiles(
-    [metagene_mock, metagene_inf, metagene_mock.filter(id=mock_inf_up), metagene_inf.filter(id=mock_inf_up)], 
+    [metagene_mock, metagene_inf, metagene_mock.filter(id=mock_inf_up), metagene_inf.filter(id=mock_inf_up)],
     ["mock_all", "inf_all", "mock_up", "inf_up"]
 )
 filtered = metagenes.filter(context="CG")
 
 ticks = {"major_labels": ["", ""], "minor_labels": ["-500bp", "Body", "+500bp"]}
-filtered.line_plot().draw_mpl(smooth=10, **ticks)
-filtered.heat_map(20, 20).draw_mpl(**ticks) 
-filtered.trim_flank().box_plot()
+filtered.line_plot(smooth=10).draw_mpl(**ticks)
+filtered.heat_map(20, 20).draw_mpl(**ticks)
+filtered.trim_flank().box_plot().draw_plotly()
 ```
 
 ![EDA2 - Cond LP](../images/eda2conditions/condition_lp.png){.doc-single-image}

@@ -1,35 +1,71 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Literal
 
 import polars as pl
-import progress.bar
-import pyarrow as pa
 from pyarrow import parquet as pq
 from scipy.stats import binom
 
-from .ArrowReaders import BismarkOptions, CsvReader, ParquetReader
+from .UniversalReader_batches import ARROW_SCHEMAS, ReportTypes
+from .UniversalReader_classes import UniversalReader
+from .utils import arrow2polars_convert
 
 
 class BinomialData:
-    """
-    Calculates P-value for cytosine residues.
-    """
-    def __init__(self, path: str | Path):
-        self.path = Path(path)
+    """Calculates P-value for cytosine residues."""
+    def __init__(self, path):
+        self.preprocessed_path = Path(path)
 
     @classmethod
-    def preprocess(
+    def read_total_stats(
             cls,
             file: str | Path,
-            report_type: Literal["bismark"] = "bismark",
-            name: str | Path = None,
-            min_coverage: int = 2,
+            report_type: ReportTypes,
             block_size_mb: int = 20,
             use_threads: bool = True,
-            dir: str | Path = "./"
+            **kwargs
+    ):
+        """
+        Get methylation stats from methylation reports file.
+
+        Parameters
+        ----------
+        file
+            Path to cytosine report.
+        report_type
+            Type of report. Possible types: "bismark", "cgmap", "bedgraph", "coverage".
+        block_size_mb
+            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates approx. Block size * 20 memory for reading.)
+        use_threads
+            Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
+        kwargs
+            Keyword agruements for reader (e.g. sequence)
+
+        Returns
+        -------
+
+        """
+        with UniversalReader(file, report_type, use_threads, block_size_mb=block_size_mb, **kwargs) as reader:
+            metadata = dict(cytosine_residues=0, density_sum=0)
+            for batch in reader:
+                batch.filter_not_none()
+                metadata["cytosine_residues"] += len(batch)
+                metadata["density_sum"] += batch.data["density"].sum()
+
+        return metadata
+
+    @classmethod
+    def from_report(
+            cls,
+            file: str | Path,
+            report_type: ReportTypes,
+            block_size_mb: int = 20,
+            use_threads: bool = True,
+            min_coverage: int = 2,
+            save: str | Path | bool = None,
+            dir: str | Path = Path.cwd(),
+            **kwargs
     ):
         """
         Method to preprocess BS-seq cytosine report data by calculating methylation P-value for every cytosine (assuming distribution is binomial) that passes `min_coverage` threshold.
@@ -39,8 +75,8 @@ class BinomialData:
         file
             Path to cytosine report.
         report_type
-            Type of report. Possible types: bismark.
-        name
+            Type of report. Possible types: "bismark", "cgmap", "bedgraph", "coverage".
+        save
             Name with which preprocessed file will be saved. If not provided - input file name is being used.
         min_coverage
             Minimal coverage for cytosine.
@@ -50,81 +86,47 @@ class BinomialData:
             Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
         dir
             Path to working dir, where file will be saved.
+        kwargs
+            Keyword agruements for reader (e.g. sequence)
 
         Returns
         -------
         BinomialData
             Instance of Binom class.
         """
-        file = Path(file).expanduser().absolute()
-        if not file.exists(): raise FileNotFoundError()
 
-        block_size = (1024 ** 2) * block_size_mb
-
-        metadata = dict(
-            cytosine_residues=0,
-            density_sum=0
+        filename = "{tmp}{name}.binom.pq".format(
+            tmp="tmp_" if save is False else "",
+            name=file.stem if save is None else save
         )
+        save_path = Path(dir) / filename
 
-        # Reading and calculating total stats
-        print("Reading from", file.absolute())
-
-        file_size = os.stat(file.absolute()).st_size
-        bar = cls.__bar("Reading cytosines", file_size)
-
-        if report_type == "bismark":
-            options = BismarkOptions(use_threads=use_threads, block_size=block_size)
-
-            get_reader = lambda: CsvReader(file, options)
-        # todo check with another parquet...
-        if report_type == "parquet":
-            get_reader = lambda: ParquetReader(file)
-
-        with get_reader() as reader:
-            for batch in reader:
-                # Update metadata with total distribution stats
-                formatted = cls.__formatters["stats"][report_type](batch)
-                metadata["cytosine_residues"] += len(batch)
-                metadata["density_sum"] += formatted["density"].sum()
-
-                bar.next(block_size)
-            bar.goto(file_size)
-            bar.finish()
+        # Update metadata with total distribution stats
+        metadata = cls.read_total_stats(file, report_type, block_size_mb, use_threads, **kwargs)
 
         # Calculating total p_values
-        save_path = Path(dir) / ((file.stem if name is None else name) + ".parquet")
         print("Writing p_values file into:", save_path.absolute())
         total_probability = metadata["density_sum"] / metadata["cytosine_residues"]
 
-        with pq.ParquetWriter(save_path, cls.__schemas["arrow"]["p_value"]) as pq_writer:
-            with get_reader() as reader:
-                bar = cls.__bar("Calculating p-values", file_size)
+        arrow_pvalue_schema = ARROW_SCHEMAS["binom"]
+        polars_pvalue_schema = arrow2polars_convert(arrow_pvalue_schema)
+
+        with pq.ParquetWriter(save_path, arrow_pvalue_schema) as pq_writer:
+            with UniversalReader(file, report_type, use_threads, block_size_mb=block_size_mb, **kwargs) as reader:
                 for batch in reader:
-                    # Calculate density for each cytosine despite its methylation context.
-                    formatted = (
-                        cls.__formatters["p_value"][report_type](batch)
-                        # Filter by coverage.
-                        .filter(pl.col("total") >= min_coverage)
-                    )
+                    filtered = batch.data.filter(pl.col("count_total") >= min_coverage)
                     # Binomial test for cytosine methylation
-                    cdf = 1 - binom.cdf(formatted["count_m"] - 1, formatted["total"], total_probability)
+                    cdf_col = 1 - binom.cdf(filtered["count_m"].cast(pl.Int64) - 1, filtered["count_total"], total_probability)
                     # Write to p_valued file
                     p_valued = (
-                        formatted.with_columns(pl.lit(cdf).cast(pl.Float64).alias("p_value"))
-                        .select(cls.__schemas["arrow"]["p_value"].names)
-                        .cast(cls.__schemas["polars"]["p_value"])
+                        filtered.with_columns(pl.lit(cdf_col).cast(pl.Float64).alias("p_value"))
+                        .select(arrow_pvalue_schema.names)
+                        .cast(polars_pvalue_schema)
                     )
-                    pq_writer.write(
-                        p_valued
-                        .to_arrow()
-                        .cast(cls.__schemas["arrow"]["p_value"])
-                    )
-                    bar.next(block_size)
-            bar.goto(file_size)
-            bar.finish()
-        print("Done")
+                    pq_writer.write(p_valued.to_arrow().cast(arrow_pvalue_schema))
 
-        print(f"\nTotal cytosine residues: {metadata['cytosine_residues']}.\nAverage proportion of methylated reads to total reads for cytosine residue: {metadata['density_sum'] / metadata['cytosine_residues']}")
+        print("DONE")
+        print(f"\nTotal cytosine residues: {metadata['cytosine_residues']}.\nAverage proportion of methylated reads to total reads for cytosine residue: {round(metadata['density_sum'] / metadata['cytosine_residues'] * 100, 3)}%")
 
         return cls(save_path)
 
@@ -133,8 +135,8 @@ class BinomialData:
             genome: pl.DataFrame,
             methylation_pvalue: float = .05,
             use_threads: bool = True,
-            save: bool = False,
-            save_path: str = None
+            save: str | Path | bool = None,
+            dir: str | Path = Path.cwd()
     ):
         """
         Map cytosines with provided annotation and calculate region methylation P-value (assuming distribution is binomial).
@@ -148,9 +150,9 @@ class BinomialData:
         use_threads
             Do multi-threaded or single-threaded reading. If multi-threaded option is used, number of threads is defined by `multiprocessing.cpu_count()`
         save
-            Does processed file need to be saved as BED-like TSV with gene methylation stats.
-        save_path
-            Path, where file needs to be saved (If save option is set True).
+            Name with which preprocessed file will be saved. If not provided - input file name is being used.
+        dir
+            Path to working dir, where file will be saved.
 
         Returns
         -------
@@ -161,14 +163,13 @@ class BinomialData:
         --------
         If there no preprocessed file:
 
-        >>> import bsxplorer as bp
         >>> report_path = "/path/to/report.txt"
         >>> genome_path = "/path/to/genome.gff"
-        >>> c_binom = bp.BinomialData.preprocess(report_path, report_type="bismark")
+        >>> c_binom = bsxplorer.BinomialData.preprocess(report_path, report_type="bismark")
 
-        >>> genome = bp.Genome.from_gff(genome_path).gene_body()
-        >>> region_stats = c_binom.region_pvalue(genome)
-        >>> region_stats
+        >>> genome = bsxplorer.Genome.from_gff(genome_path).gene_body()
+        >>> data = c_binom.region_pvalue(genome)
+        >>> data
         shape: (3, 11)
         ┌─────────┬────────┬─────────┬───────┬───────┬────────┬────────┬────────┬────────┬────────┬────────┐
         │ chr     ┆ strand ┆ id      ┆ start ┆ end   ┆ p_valu ┆ p_valu ┆ p_valu ┆ total  ┆ total  ┆ total  │
@@ -188,174 +189,162 @@ class BinomialData:
 
         If preprocessed file exists:
 
-        >>> preprocessed_path = "/path/to/preprocessed.parquet"
-        >>> c_binom = bp.BinomialData(preprocessed_path)
-        >>> region_stats = c_binom.region_pvalue(genome)
+        >>> preprocessed_path = "/path/to/preprocessed.binom.pq"
+        >>> c_binom = bsxplorer.BinomialData(preprocessed_path)
+        >>> data = c_binom.region_pvalue(genome)
         """
+        polars_pvalue_schema = arrow2polars_convert(ARROW_SCHEMAS["binom"])
+        genome = genome.cast({k: v for k, v in polars_pvalue_schema.items() if k in genome.columns})
+        genome = genome.rename({"strand": "gene_strand"})
 
-        # Format genome
-        pl.enable_string_cache()
-        genome = genome.cast({k: v for k, v in self.__schemas["polars"]["p_value"].items() if k in genome.columns})
-
-        metadata = pl.DataFrame(schema={"context":    self.__schemas["polars"]["p_value"]["context"],
-                                        "methylated": pl.Int64,
-                                        "total":      pl.Int64})
+        context_metadata = pl.DataFrame(
+            schema={"context": polars_pvalue_schema["context"],
+                    "count_m": pl.Int64,
+                    "count_total": pl.Int64}
+        )
 
         gene_stats = None
-
-        print("From", self.path)
-        with ParquetReader(self.path, use_threads=use_threads) as pq_reader:
-            bar = self.__bar("Reading p_values", max=len(pq_reader))
-
-            for batch in pq_reader:
-                methyl = (
-                    pl.from_arrow(batch)
-                    .with_columns(
-                        (pl.col("p_value") <= methylation_pvalue).alias("methylated").cast(pl.Boolean)
-                    )
-                    .drop("p_value")
-                )
-
-                metadata = metadata.extend(
-                    methyl.group_by("context").agg([
-                        pl.col("methylated").sum().cast(pl.Int64),
-                        pl.count("position").alias("total").cast(pl.Int64)
+        with UniversalReader(
+                self.preprocessed_path,
+                "binom",
+                use_threads,
+                methylation_pvalue=methylation_pvalue
+        ) as reader:
+            for full_batch in reader:
+                # Extend context metadata
+                context_metadata.extend(
+                    full_batch.data.group_by("context").agg([
+                        pl.sum("count_m").cast(pl.Int64),
+                        pl.sum("count_total").cast(pl.Int64)
                     ])
                 )
 
+                # Map on genome
                 mapped = (
-                    methyl.lazy()
-                    .join_asof(genome.lazy(),
-                               left_on="position", right_on="start",
-                               strategy="backward",
-                               by=["chr", "strand"])
-                    .filter(pl.col("position") <= pl.col("end"))
-                    .filter(pl.col("start").is_not_nan())
-                    .group_by(["chr", "strand", "start", "end", "id", "context"], maintain_order=True)
+                    full_batch.data.lazy()
+                    .join_asof(
+                        genome.lazy(), left_on="position", right_on="start", strategy="backward", by="chr"
+                    )
+                    .filter(
+                        # Limit by end of region
+                        pl.col('position') <= pl.col('downstream'),
+                        # Filter by strand if it is defined
+                        ((pl.col("gene_strand") != ".") & (pl.col("gene_strand") == pl.col("strand"))) | (pl.col("gene_strand") == "."),
+                        pl.col("start").is_not_nan()
+                    )
+                    .group_by(["chr", "start", "context"], maintain_order=True)
                     .agg([
-                        pl.col("methylated").sum().cast(pl.Int64),
-                        pl.count("position").alias("total").cast(pl.Int64)
+                        pl.first("gene_strand"),
+                        pl.first("end"),
+                        pl.first("id"),
+                        pl.sum("count_m"),
+                        pl.sum("count_total")
                     ])
+                    .rename({"gene_strand": "strand"})
                     .collect()
                 )
 
-                if gene_stats is None: gene_stats = mapped
-                else: gene_stats.extend(mapped)
+                if gene_stats is None:
+                    gene_stats = mapped
+                else:
+                    gene_stats.extend(mapped)
 
-                bar.next()
-            bar.finish()
+        context_metadata = context_metadata.group_by("context").agg([pl.sum("count_m"), pl.sum("count_total")])
 
-        metadata = metadata.group_by("context").agg([pl.sum("methylated"), pl.sum("total")])
-
+        # Calculate region pvalues
         result = pl.DataFrame(schema=gene_stats.schema | {"p_value": pl.Float64})
-        for row in metadata.iter_rows(named=True):
-            filtered = gene_stats.filter(pl.col("context") == row["context"])
-            total_probability = row["methylated"] / row["total"]
+        for metadata_row in context_metadata.iter_rows(named=True):
+            total_probability = metadata_row["count_m"] / metadata_row["count_total"]
 
-            cdf = 1 - binom.cdf(filtered["methylated"] - 1, filtered["total"], total_probability)
-            result.extend(
-                filtered.with_columns(pl.lit(cdf, pl.Float64).alias("p_value"))
-            )
+            filtered = gene_stats.filter(pl.col("context") == metadata_row["context"])
+            cdf = 1 - binom.cdf(filtered["count_m"].cast(pl.Int64) - 1, filtered["count_total"], total_probability)
+            result.extend(filtered.with_columns(pl.lit(cdf, pl.Float64).alias("p_value")))
 
-            print(f"{row['context']}\tTotal sites: {row['total']}, methylated: {row['methylated']}\t({round(total_probability * 100, 2)}%)")
-        result = result.select(["chr", "start", "end", "id", "p_value", "strand", "context", "total"])
+            print(f"{metadata_row['context']}\tTotal sites: {metadata_row['count_total']}, methylated: {metadata_row['count_m']}\t({round(total_probability * 100, 2)}%)")
+
+        result = result.select(["chr", "start", "end", "id", "strand", "context", "p_value", "count_m", "count_total"])
+
+        filename = "{tmp}{name}.tsv".format(
+            tmp="tmp_" if save is False else "",
+            name=self.preprocessed_path.stem if save is None else save
+        )
+        save_path = Path(dir) / filename
 
         if save:
-            if save_path is not None:
-                save_path = Path(save_path)
-            else:
-                save_path = self.path.parent / (self.path.stem + "_genes.tsv")
-            if save_path.suffix == "":
-                save_path = save_path.with_suffix(".tsv")
-
-            result.write_csv(save_path.absolute(), has_header=False, separator="\t")
-
+            result.write_csv(save_path.absolute(), include_header=False, separator="\t")
             print("Saved into:", save_path)
 
         return RegionStat.from_expanded(result)
 
-    __formatters = {
-        "stats": {
-            "bismark": lambda batch:
-                (
-                    pl.from_arrow(batch).lazy()
-                    .with_columns([
-                        (pl.col("count_m") / (pl.col("count_m") + pl.col("count_um")))
-                        .cast(pl.Float64)
-                        .alias("density")
-                    ])
-                    .filter(pl.col("density").is_not_nan())
-                ).collect(),
-            "parquet": lambda batch:
-                (
-                    pl.from_arrow(batch).lazy()
-                    .with_columns([
-                        (pl.col("count_m") / (pl.col("count_m") + pl.col("count_um")))
-                        .cast(pl.Float64)
-                        .alias("density")
-                    ])
-                    .filter(pl.col("density").is_not_nan())
-                ).collect(),
-        },
-        "p_value": {
-            "bismark": lambda batch:
-                (
-                    pl.from_arrow(batch).lazy()
-                    .with_columns([
-                        (pl.col("count_m") + pl.col("count_um")).cast(pl.Int32).alias("total"),
-                        pl.col("count_m").cast(pl.Int32),
-                    ])
-                ).collect(),
-            "parquet": lambda batch:
-            (
-                pl.from_arrow(batch).lazy()
-                .with_columns([
-                    (pl.col("count_m") + pl.col("count_um")).cast(pl.Int32).alias("total"),
-                    pl.col("count_m").cast(pl.Int32),
-                ])
-            ).collect()
-        }
-    }
 
-    __schemas = {
-        "polars": {
-            "p_value": dict(
-                chr=pl.Categorical,
-                strand=pl.Categorical,
-                position=pl.UInt64,
-                context=pl.Categorical,
-                p_value=pl.Float64
-            )
-        },
-        "arrow": {
-            "p_value": pa.schema([
-                ("chr", pa.dictionary(pa.int16(), pa.utf8())),
-                ("strand", pa.dictionary(pa.int8(), pa.utf8())),
-                ("position", pa.uint64()),
-                ("context", pa.dictionary(pa.int8(), pa.utf8())),
-                ("p_value", pa.float64()),
-            ])
-        }
+class Filter:
+    __slots__ = ["expr"]
 
-    }
+    def __le__(self, other):
+        self.expr = self.expr.le(other)
+        return self
 
-    @staticmethod
-    def __bar(name, max):
-        suffix = "%(percent).1f%%"
-        return progress.bar.Bar(name, suffix=suffix, max=max)
+    def __lt__(self, other):
+        self.expr = self.expr.lt(other)
+        return self
+
+    def __ge__(self, other):
+        self.expr = self.expr.ge(other)
+        return self
+
+    def __gt__(self, other):
+        self.expr = self.expr.gt(other)
+        return self
+
+    def __eq__(self, other):
+        self.expr = self.expr.eq(other)
+        return self
+
+    def __and__(self, other: PValueFilter | CountFilter):
+        self.expr = self.expr.and_(other.expr)
+        return self
+
+    def __or__(self, other: PValueFilter | CountFilter):
+        self.expr = self.expr.or_(other.expr)
+        return self
 
 
-# TODO add CSV init support
+class PValueFilter(Filter):
+    def __init__(self, context: str):
+        self.context = context
+        self.expr = pl.col(f"p_value_context_{context}")
+
+
+class CountFilter(Filter):
+    def __init__(self, context: str):
+        super().__init__()
+        self.context = context
+        self.expr = pl.col(f"count_total_context_{context}")
+
+
 class RegionStat:
     """
     Class for manipulation with region P-value data.
 
     Attributes
     ----------
-    region_stats : polars.DataFrame
+    data : polars.DataFrame
         Region stats DataFrame
     """
-    def __init__(self, region_stats: pl.DataFrame = None):
+
+    schema = {
+        'chr': pl.String,
+        'start': pl.UInt64,
+        'end': pl.UInt64,
+        'id': pl.String,
+        'strand': pl.String,
+        'context': pl.String,
+        'p_value': pl.Float64,
+        'count_m': pl.UInt32,
+        'count_total': pl.UInt32
+    }
+
+    def __init__(self, data: pl.DataFrame = None):
         """
         Class for manipulation with region P-value data.
 
@@ -365,11 +354,11 @@ class RegionStat:
 
         Parameters
         ----------
-        region_stats : polars.DataFrame
+        data : polars.DataFrame
             Region stats DataFrame
         """
 
-        self.region_stats = region_stats
+        self.data = data
 
     @classmethod
     def from_expanded(cls, df: pl.DataFrame):
@@ -389,11 +378,26 @@ class RegionStat:
         gene_stats = (
             df
             .filter(df.select(["chr", "strand", "start", "end", "context"]).is_duplicated().not_())
-            .pivot(values=["p_value", "total"],
+            .pivot(values=["p_value", "count_m", "count_total"],
                    columns="context",
-                   index=list(set(df.columns) - set(["p_value", "context", "total"])))
+                   index=list(set(df.columns) - {"p_value", "context", "count_m", "count_total"}))
         )
         return cls(gene_stats)
+
+    @classmethod
+    def from_csv(cls, file: str | Path):
+        """
+        Read RegionStat data from preprocessed and saved with :method:`RegionStat.save`
+
+        Parameters
+        ----------
+        file
+            Path to file.
+
+        """
+        if not file.exists(): raise FileNotFoundError(file)
+        df = pl.read_csv(file, has_header=False, separator="\t", schema=cls.schema)
+        return cls.from_expanded(df)
 
     def filter(
             self,
@@ -427,8 +431,8 @@ class RegionStat:
 
         Examples
         --------
-        >>> region_stats = BinomialData("./A_thaliana.parquet").region_pvalue(genome)
-        >>> region_stats
+        >>> data = BinomialData("./A_thaliana.binom.pq").region_pvalue(genome)
+        >>> data
         shape: (3, 11)
         ┌─────────┬────────┬─────────┬───────┬───────┬────────┬────────┬────────┬────────┬────────┬────────┐
         │ chr     ┆ strand ┆ id      ┆ start ┆ end   ┆ p_valu ┆ p_valu ┆ p_valu ┆ total_ ┆ total_ ┆ total_ │
@@ -445,7 +449,7 @@ class RegionStat:
         │ NC_0030 ┆ +      ┆ gene-AT ┆ 11101 ┆ 11372 ┆ 1.0    ┆ 1.0    ┆ 1.0    ┆ 1      ┆ 8      ┆ 43     │
         │ 70.9    ┆        ┆ 1G03987 ┆       ┆       ┆        ┆        ┆        ┆        ┆        ┆        │
         └─────────┴────────┴─────────┴───────┴───────┴────────┴────────┴────────┴────────┴────────┴────────┘
-        >>> region_stats.filter("CG", "<", 0.05, 20)
+        >>> data.filter("CG", "<", 0.05, 20)
         shape: (3, 11)
         ┌────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┐
         │ chr    ┆ strand ┆ id     ┆ start  ┆ end    ┆ p_valu ┆ p_valu ┆ p_valu ┆ total_ ┆ total_ ┆ total_ │
@@ -479,9 +483,9 @@ class RegionStat:
             expr = True
 
         return self.__class__(
-            self.region_stats
-                .filter(expr)
-                .filter(pl.col(f"total_context_{context}") >= min_n)
+            self.data
+            .filter(expr)
+            .filter(pl.col(f"count_total_context_{context}") >= min_n)
         )
 
     def save(self, path: str | Path):
@@ -496,9 +500,9 @@ class RegionStat:
         path = Path(path)
 
         (
-            self.region_stats
+            self.data
             .select(["chr", "start", "end", "id", "strand"])
-            .write_csv(path, has_header=False, separator="\t")
+            .write_csv(path, include_header=False, separator="\t")
         )
 
     def categorise(
@@ -530,36 +534,38 @@ class RegionStat:
         tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]
             BM, IM, UM :class:`pl.DataFrame`
         """
-        other_contexts = list({"CG", "CHG", "CHH"} - set([context]))
-        bm = (
-            self.filter(context, "<", p_value, min_n)
-            .filter(other_contexts[0], ">=", 1 - p_value)
-            .filter(other_contexts[1], ">=", 1 - p_value)
-        )
-        im = (
-            self.filter(context, ">=", p_value, min_n)
-            .filter(context, "<", 1 - p_value, min_n)
-            .filter(other_contexts[0], ">=", 1 - p_value)
-            .filter(other_contexts[1], ">=", 1 - p_value)
-        )
-        um = (
-            self.filter(context, ">=", p_value, 1 - min_n)
-            .filter(other_contexts[0], ">=", 1 - p_value)
-            .filter(other_contexts[1], ">=", 1 - p_value)
-        )
+        other_contexts = [
+            c for c in
+            map(lambda name: name.replace("p_value_context_", ""), self.data.select("^p_value_context_.+$").columns)
+            if c != context
+        ]
+
+        assert isinstance(context, str)
+        bm_filter = (PValueFilter(context) < p_value) & (CountFilter(context) >= min_n)
+        im_filter = (PValueFilter(context) >= p_value) & (PValueFilter(context) < 1 - p_value) & (CountFilter(context) >= min_n)
+        um_filter = (PValueFilter(context) >= 1 - p_value) & (CountFilter(context) >= min_n)
+
+        for other_context in other_contexts:
+            bm_filter = bm_filter & (PValueFilter(other_context) >= p_value)
+            im_filter = im_filter & (PValueFilter(other_context) >= p_value)
+            um_filter = um_filter & (PValueFilter(other_context) >= p_value)
+
+        bm = self.__class__(self.data.filter(bm_filter.expr))
+        im = self.__class__(self.data.filter(im_filter.expr))
+        um = self.__class__(self.data.filter(um_filter.expr))
 
         if save is not None:
             for df, df_type in zip([bm, im, um], ["BM", "IM", "UM"]):
                 save_path = Path(save)
                 df.save(save_path.with_name(save_path.name + "_" + df_type).with_suffix(".tsv"))
-        return bm.region_stats, im.region_stats, um.region_stats
+        return bm.data, im.data, um.data
 
     def __len__(self):
-        return len(self.region_stats)
+        return len(self.data)
 
     def __repr__(self):
-        return self.region_stats.__repr__()
+        return self.data.__repr__()
 
     def __str__(self):
-        return self.region_stats.__str__()
+        return self.data.__str__()
 

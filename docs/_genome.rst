@@ -1,41 +1,66 @@
 Genome
 ======
 
-Genome class
+^^^^^^^^^
+Reference
+^^^^^^^^^
 
 .. currentmodule:: bsxplorer
 
-.. class:: Genome
-
-    .. rubric:: Methods
-
-   .. autosummary::
+.. autosummary::
     :nosignatures:
-    :toctree: _Genome/_method
-    :template: method.rst
+    :toctree: _Genome
+    :template: class.rst
 
-         ~Genome.all
+    Genome
+    RegAlignResult
 
+.. autosummary::
+    :nosignatures:
+    :toctree: _Genome
+    :template: func.rst
 
-         ~Genome.cds
+    align_regions
 
+^^^^^
+Usage
+^^^^^
 
-         ~Genome.exon
+BSXplorer offers functionality to align one set of regions over another. Regions can
+be read either with :class:`Genome` or initialized directly with
+`polars functionality <https://docs.pola.rs/api/python/stable/reference/api/polars.read_csv.html>`_
+(DataFrame need to have `chr`, `start` and `end` columns).
 
+To align regions (e.g. define DMR position relative to genes) use :func:`align_regions`.
 
-         ~Genome.from_custom
+.. code-block:: python
 
+    import bsxplorer as bsx
 
-         ~Genome.from_gff
+    genes = bsx.Genome.from_gff("path/to/annot.gff").gene_body(min_length=0)
+    dmr = bsx.Genome.from_custom(
+        "path/to/dmr.txt",
+        chr_col=0,
+        start_col=1,
+        end_col=2
+    ).all()
 
+    res = align_regions(dmr, along_regions=genes, flank_length=2000)
 
-         ~Genome.gene_body
+:func:`align_regions` returns :class:`RegAlignResult`, which stores regions which are
+in upstream, body, downstream or intergenic space. Then metagene coverage with regions
+can be plotted via :func:`RegAlignResult.plot_density_mpl` method.
 
+.. code-block:: python
 
-         ~Genome.near_TES
+    fig = res.plot_density_mpl(
+        flank_windows=100,
+        body_windows=200,
+        major_labels=["TSS", "TES"],
+        minor_labels=["-2000bp", "Gene body", "+2000bp"]
+    )
 
+Example of resulting image:
 
-         ~Genome.near_TSS
-
-
-         ~Genome.other
+.. image:: images/genome/CG_DMR_density.png
+    :width: 600

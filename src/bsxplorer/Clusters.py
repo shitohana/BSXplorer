@@ -1,28 +1,26 @@
 from __future__ import annotations
 
-import gzip
 import warnings
-from collections import Counter
-from functools import cache
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import polars as pl
+import seaborn as sns
 from dynamicTreeCut import cutreeHybrid
 from dynamicTreeCut.dynamicTreeCut import get_heights
 from fastcluster import linkage
 from scipy.cluster.hierarchy import leaves_list, optimal_leaf_ordering
 from scipy.spatial.distance import pdist
-from sklearn.cluster import KMeans, SpectralClustering
-import seaborn as sns
-import plotly.express as px
+from sklearn.cluster import KMeans
 
 from .Base import MetageneBase, MetageneFilesBase
-from abc import ABC, abstractmethod
 
 
+# noinspection PyMissingOrEmptyDocstring
 class _ClusterBase(ABC):
     @abstractmethod
     def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
@@ -51,7 +49,7 @@ class _ClusterBase(ABC):
             na_rm: float | None = None
     ) -> (np.ndarray, np.ndarray):
         # Merge strands
-        df = self.__merge_strands(metagene.bismark)
+        df = self.__merge_strands(metagene.report_df)
 
         grouped = (
             df.lazy()
@@ -180,9 +178,9 @@ class ClusterMany(_ClusterBase):
     """Class for operating with multiple samples regions clustering"""
 
     def __init__(self, metagenes: MetageneFilesBase, count_threshold=5, na_rm: float | None = None):
-        intersect_list = set.intersection(*[set(metagene.bismark["gene"].to_list()) for metagene in metagenes.samples])
+        intersect_list = set.intersection(*[set(metagene.report_df["gene"].to_list()) for metagene in metagenes.samples])
         for i in range(len(metagenes.samples)):
-            metagenes.samples[i].bismark = metagenes.samples[i].bismark.filter(pl.col("gene").is_in(intersect_list))
+            metagenes.samples[i].report_df = metagenes.samples[i].report_df.filter(pl.col("gene").is_in(intersect_list))
 
         self.clusters = [ClusterSingle(metagene, count_threshold, na_rm) for metagene in metagenes.samples]
         self.sample_names = metagenes.labels
@@ -244,6 +242,7 @@ class ClusterMany(_ClusterBase):
         return ClusterPlot([cluster.all().data for cluster in self.clusters], self.sample_names)
 
 
+# noinspection PyMissingOrEmptyDocstring
 class ClusterData:
     def __init__(self, centers: np.ndarray, labels: np.array, names: list[str] | np.array):
         self.centers = centers
@@ -295,7 +294,7 @@ class ClusterPlot:
 
         def save(data: ClusterData, path: Path):
             df = pl.DataFrame(dict(name=list(map(str, data.names)), label=data.labels), schema=dict(name=pl.Utf8, label=pl.Utf8))
-            df.write_csv(path, has_header=False, separator="\t")
+            df.write_csv(path, include_header=False, separator="\t")
 
         if self.sample_names is not None and isinstance(self.data, list):
             for data, sample_name in zip(self.data, self.sample_names):
@@ -306,7 +305,6 @@ class ClusterPlot:
         if not isinstance(self.data, list):
 
             save(self.data, filename.with_suffix(".tsv"))
-
 
     def __intersect_genes(self):
         if isinstance(self.data, list):
@@ -389,7 +387,7 @@ class ClusterPlot:
                     step.name = sample_name
             return figure
         else:
-            dist = pdist(self.centers, metric=metric)
+            dist = pdist(self.data.centers, metric=metric)
             link = linkage(dist, method, metric)
             link = optimal_leaf_ordering(link, dist, metric=metric)
 

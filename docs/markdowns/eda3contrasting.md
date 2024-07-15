@@ -42,7 +42,7 @@ Then, a compendium of line plots to guide a comparative analyses of methylation 
 different species is constructed:
 
 ```python
-filtered.line_plot().draw_mpl(smooth=50)
+filtered.line_plot(smooth=50).draw_mpl()
 ```
 
 ![EDA3 - LinePlot](../images/gettingstarted/contrasting_lp.png){.doc-single-image}
@@ -58,8 +58,8 @@ filtered.heat_map(100, 100).draw_mpl()
 To examine and highlight differences in methylation patterns between different organisms, summary statistics is made available in a graphical format.
 
 ```python
-filtered.violin_plot()
-filtered.box_plot()
+filtered.box_plot(violin=True).draw_mpl()
+filtered.box_plot().draw_mpl()
 ```
 
 ![EDA3 - ViolinPlot](../images/gettingstarted/contrasting_vp.png){.doc-double-image}
@@ -93,5 +93,3 @@ Below is a list of plots generated for the CG methylation context, as presented 
 ![EDA3 - ViolinPlot](../images/eda3contrasting/script_lp.png){.doc-single-image}
 
 ![EDA3 - BoxPlot](../images/eda3contrasting/script_hm.png){.doc-single-image}
-
-Full HTML report is [**here**](../images/IntraMetageneReport.html).
