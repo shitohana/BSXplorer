@@ -94,7 +94,7 @@ class BinomialData:
         BinomialData
             Instance of Binom class.
         """
-
+        file = Path(file)
         filename = "{tmp}{name}.binom.pq".format(
             tmp="tmp_" if save is False else "",
             name=file.stem if save is None else save
