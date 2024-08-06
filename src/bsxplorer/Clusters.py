@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import multiprocessing
+import os
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -15,9 +17,16 @@ from dynamicTreeCut.dynamicTreeCut import get_heights
 from fastcluster import linkage
 from scipy.cluster.hierarchy import leaves_list, optimal_leaf_ordering
 from scipy.spatial.distance import pdist
-from sklearn.cluster import KMeans
+from scipy.stats import pearsonr
 
 from .Base import MetageneBase, MetageneFilesBase
+from .Plots import flank_lines_plotly
+
+default_n_threads = multiprocessing.cpu_count()
+os.environ['OPENBLAS_NUM_THREADS'] = f"{default_n_threads}"
+os.environ['MKL_NUM_THREADS'] = f"{default_n_threads}"
+os.environ['OMP_NUM_THREADS'] = f"{default_n_threads}"
+from sklearn.cluster import KMeans, MiniBatchKMeans
 
 
 # noinspection PyMissingOrEmptyDocstring
@@ -35,7 +44,7 @@ class _ClusterBase(ABC):
         ...
 
     def __merge_strands(self, df: pl.DataFrame):
-        return df.filter(pl.col("strand") == "+").extend(self.__strand_reverse(df.filter(pl.col("strand") == "-")))
+        return df.filter(pl.col("strand") == "+").vstack(self.__strand_reverse(df.filter(pl.col("strand") == "-")))
 
     @staticmethod
     def __strand_reverse(df: pl.DataFrame):
@@ -88,7 +97,7 @@ class _ClusterBase(ABC):
                 aggregate_function="sum",
                 maintain_order=True
             )
-            .select(["chr", "strand", "name"] + list(map(str, range(metagene.total_windows))))
+            .select(["chr", "strand", "name"] + list(map(str, range(int(metagene.total_windows)))))
             .cast({"name": pl.Utf8})
         )
 
@@ -107,8 +116,20 @@ class _ClusterBase(ABC):
 class ClusterSingle(_ClusterBase):
     """Class for operating with single sample regions clustering"""
 
-    def __init__(self, metagene: MetageneBase, count_threshold=5, na_rm: float | None = None):
-        self.matrix, self.names = self._process_metagene(metagene, count_threshold, na_rm)
+    def __init__(self, metagene: MetageneBase, count_threshold=5, na_rm: float | None = None, empty=False):
+        if not empty:
+            self.matrix, self.names = self._process_metagene(metagene, count_threshold, na_rm)
+            self._x_ticks = metagene._x_ticks
+            self._borders = metagene._borders
+
+    @classmethod
+    def _from_raw(cls, matrix, names, x_ticks, _borders):
+        c = cls(None, empty=True)
+        c.matrix = matrix
+        c.names = names
+        c._x_ticks = x_ticks
+        c._borders = _borders
+        return c
 
     def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
         """
@@ -128,6 +149,7 @@ class ClusterSingle(_ClusterBase):
         :class:`ClusterPlot`
 
         """
+
         kmeans = KMeans(n_clusters=n_clusters, n_init=n_init, **kwargs).fit(self.matrix)
 
         print(f"Clustering done in {kmeans.n_iter_} iterations")
@@ -184,6 +206,31 @@ class ClusterMany(_ClusterBase):
 
         self.clusters = [ClusterSingle(metagene, count_threshold, na_rm) for metagene in metagenes.samples]
         self.sample_names = metagenes.labels
+
+    def compare(self):
+        if len(self.clusters) > 2:
+            raise ValueError("This method is available only for 2 samples")
+
+        # Match region set
+        a_sample = self.clusters[0]
+        b_sample = self.clusters[1]
+
+        intersection = list(set.intersection(*map(lambda cluster: set(cluster.names), self.clusters)))
+        intersection.sort()
+
+        a_order = np.argsort(a_sample.names)
+        b_order = np.argsort(b_sample.names)
+
+        a_matrix = a_sample.matrix[a_order[np.searchsorted(a_sample.names, intersection, sorter=a_order)], :]
+        b_matrix = b_sample.matrix[b_order[np.searchsorted(b_sample.names, intersection, sorter=b_order)], :]
+
+        diff_matrix = b_matrix - a_matrix
+
+        names = a_sample.names[a_order[np.searchsorted(a_sample.names, intersection, sorter=a_order)]]
+        cluster_single = ClusterSingle._from_raw(diff_matrix, names, a_sample._x_ticks, a_sample._borders)
+
+        return cluster_single
+
 
     def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
         """
@@ -244,10 +291,15 @@ class ClusterMany(_ClusterBase):
 
 # noinspection PyMissingOrEmptyDocstring
 class ClusterData:
-    def __init__(self, centers: np.ndarray, labels: np.array, names: list[str] | np.array):
+    def __init__(self, centers: np.ndarray, labels: np.array, names: list[str] | np.array,
+                 ticks: list[int] = None, borders: list[int] = None, matrix: np.ndarray = None):
         self.centers = centers
         self.labels = labels
         self.names = names
+
+        self.ticks = ticks
+        self.borders = borders
+        self.matrix = matrix
 
     @classmethod
     def from_kmeans(cls, kmeans: KMeans, names: list[str] | np.array):
@@ -351,7 +403,7 @@ class ClusterPlot:
             fig = sns.clustermap(df, **args)
             return fig
 
-    def draw_plotly(self, method='average', metric='euclidean', cmap: str = "cividis"):
+    def draw_plotly(self, method='average', metric='euclidean', cmap: str = "cividis", tick_labels: list[str] = None, **kwargs):
         """
         Draws clustermap with plotly imshow.
 
@@ -379,7 +431,7 @@ class ClusterPlot:
 
             im = np.dstack([d.centers[order, :] for d in self.data])
 
-            figure = px.imshow(im, color_continuous_scale=cmap, animation_frame=2, aspect='auto')
+            figure = px.imshow(im, color_continuous_scale=cmap, animation_frame=2, aspect='auto', **kwargs)
             figure.update_layout(sliders=[{"currentvalue": {"prefix": "Sample = "}}])
             if self.sample_names is not None:
                 for step, sample_name in zip(figure.layout.sliders[0].steps, self.sample_names):
@@ -394,5 +446,56 @@ class ClusterPlot:
             order = leaves_list(link)
             im = self.data.centers[order, :]
 
-            figure = px.imshow(im, color_continuous_scale=cmap, aspect='auto')
+            ticktext = np.array([f"{label} ({count})" for label, count in zip(*np.unique(self.data.labels, return_counts=True))])
+
+            figure = px.imshow(im, color_continuous_scale=cmap, aspect='auto', **kwargs)
+            figure.update_layout(
+                yaxis=dict(
+                    tickmode='array',
+                    tickvals=list(range(len(order))),
+                    ticktext=ticktext[order]
+                )
+            )
+
+            if tick_labels is None:
+                tick_labels = ["Upstream", "", "Body", "", "Downstream"]
+
+            figure = flank_lines_plotly(figure, self.data.ticks, tick_labels, self.data.borders)
             return figure
+
+    @property
+    def labels(self):
+        return self.data.labels
+
+    @property
+    def names(self):
+        return self.data.names
+
+    def module_corr(self, module: int = None, p_cutoff: float = None):
+        if self.data.matrix is None:
+            return None
+        if module > self.data.centers.shape[0] - 1:
+            raise ValueError(f"Max cluster index is {self.data.centers.shape[0] - 1}!")
+        else:
+            module_index = self.data.labels == module
+            module_members = self.data.matrix[module_index, :]
+            module_vector = self.data.centers[module, :]
+
+            cor = np.apply_along_axis(lambda row: pearsonr(row, module_vector), axis=1, arr=module_members).astype(np.float64)
+
+            res_df = pl.DataFrame(
+                data=np.c_[self.data.names[self.data.labels == module], cor].T.tolist(),
+                schema=dict(name=pl.String, cor=pl.Float64, pvalue=pl.Float64)
+            )
+
+            if p_cutoff is not None:
+                res_df = res_df.filter(pl.col("pvalue") <= p_cutoff)
+
+            return res_df
+
+
+    def get_module_ids(self, module: int):
+        if module > self.data.centers.shape[0] - 1:
+            raise ValueError(f"Max cluster index is {self.data.centers.shape[0] - 1}!")
+
+        return self.names[self.labels == module]

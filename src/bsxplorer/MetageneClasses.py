@@ -804,7 +804,6 @@ class Metagene(MetageneBase):
             self,
             nrow: int = 100,
             ncol: int = 100,
-            stat="wmean",
             label=None
     ):
         resized = self.resize(ncol)
@@ -812,31 +811,25 @@ class Metagene(MetageneBase):
         # Merge strands
         report_df = report_df.filter(pl.col("strand") != "-").extend(self._reverse_strand(report_df, report_df["fragment"].max()))
 
-        order = (
-            report_df.lazy()
-            .group_by(['chr', 'strand', "gene"])
-            .agg(plot_stat_expr(stat).alias("order"))
-            .collect()
-            ["order"]
-        )
-
         # sort by rows and add row numbers
         hm_data = (
             report_df.lazy()
-            .group_by(['chr', 'strand', "gene"])
-            .agg([pl.col('fragment'), pl.col('sum'), pl.col('count')])
-            .with_columns(pl.lit(order).alias("order"))
-            .sort('order', descending=True)
-            # add row count
-            .with_row_count(name='row')
-            # round row count
+            .group_by("gene")
+            .agg([
+                pl.col("fragment"),
+                (pl.col("sum") / pl.col("count")).alias("density")
+            ])
             .with_columns(
-                (pl.col('row') / (pl.col('row').max() + 1) * nrow).floor().alias('row').cast(pl.UInt16)
+                (pl.col("density").list.sum() / (resized.total_windows + 1)).alias("order")
             )
-            .explode(['fragment', 'sum', 'count'])
-            # calc sum count for row|fragment
-            .groupby(['row', 'fragment'])
-            .agg(plot_stat_expr(stat).alias('density'))
+            .sort('order', descending=True)
+            .with_row_count(name='row')
+            .with_columns(
+                (pl.col('row') / (pl.max("row") + 1) * nrow).floor().alias('row').cast(pl.UInt16)
+            )
+            .explode(['fragment', 'density'])
+            .group_by(["row", "fragment"])
+            .agg(pl.mean("density"))
         )
 
         # prepare full template
@@ -872,7 +865,6 @@ class Metagene(MetageneBase):
             self,
             nrow: int = 100,
             ncol: int = 100,
-            stat="wmean"
     ) -> HeatMap:
         """
         Create :class:`HeatMap` method.
@@ -925,7 +917,7 @@ class Metagene(MetageneBase):
         HeatMap : For more information about plotting parameters.
         """
 
-        hm_data = self.heat_map_data(nrow, ncol, stat)
+        hm_data = self.heat_map_data(nrow, ncol)
         return HeatMap(hm_data)
 
     def __str__(self):
@@ -1076,12 +1068,9 @@ class MetageneFiles(MetageneFilesBase):
             use_threads=use_threads
         )
 
-        if report_type not in ["parquet"]:
-            default_args |= dict(
-                block_size_mb=block_size_mb
-            )
         if report_type not in ["binom"]:
             default_args |= dict(
+                block_size_mb=block_size_mb,
                 sumfunc=sumfunc
             )
 
@@ -1094,7 +1083,7 @@ class MetageneFiles(MetageneFilesBase):
         return cls(samples, labels)
 
     def filter(self, context: str = None, strand: str = None, chr: str = None, genome: pl.DataFrame = None,
-               id: list[str] = None, coords: list[str] = None):
+               id: list[str] = None, coords: list[str] = None) -> MetageneFiles:
         """
         :meth:`Metagene.filter` all metagenes.
 
@@ -1259,7 +1248,7 @@ class MetageneFiles(MetageneFilesBase):
         ]
         return LinePlot(lp_data)
 
-    def heat_map(self, nrow: int = 100, ncol: int = None, stat: str = "wmean") -> HeatMap:
+    def heat_map(self, nrow: int = 100, ncol: int = None) -> HeatMap:
         """
         Create :class:`HeatMapNew` method.
 
@@ -1305,7 +1294,7 @@ class MetageneFiles(MetageneFilesBase):
         .. image:: ../../images/heatmap/ara_bradi_plotly.png
         """
         hm_data = [
-            sample.heat_map_data(nrow, ncol, stat, label)
+            sample.heat_map_data(nrow, ncol, label)
             for sample, label in zip(self.samples, self.labels)
         ]
         return HeatMap(hm_data)

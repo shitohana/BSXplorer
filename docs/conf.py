@@ -2,9 +2,9 @@ import os
 import sys
 
 project = 'BSXplorer'
-copyright = '2023, shitohana'
+copyright = '2024, shitohana'
 author = 'shitohana'
-release = '1.1.0a0'
+release = '1.1.0'
 sys.path.insert(0, os.path.abspath('../src'))
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.append(os.path.abspath('.'))

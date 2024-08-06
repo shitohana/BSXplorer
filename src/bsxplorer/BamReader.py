@@ -16,7 +16,6 @@ import numba as nb
 import numpy as np
 
 import polars as pl
-import pyarrow as pa
 import pysam
 from matplotlib import pyplot as plt
 from numba import jit, prange

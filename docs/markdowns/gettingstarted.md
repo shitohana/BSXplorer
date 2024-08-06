@@ -99,7 +99,7 @@ arath_metagene = bsxplorer.Metagene.from_bismark(
 ```
 
 Once the data was filtered based on methylation context and strand, one can use the [**`.cluster()`**](bsxplorer.Metagene.cluster) method. 
-The resulting [**`Clustering`**](bsxplorer.ClusterSingle) object 
+The resulting [**`ClusterSingle`**](bsxplorer.ClusterSingle) object 
 contains an ordered list of clustered genes and their visualisation in a form of a heatmap.
 
 ```python
@@ -107,7 +107,7 @@ arath_filtered = arath_metagene.filter(context="CG", strand="+")
 arath_clustered = arath_filtered.cluster(count_threshold=5, na_rm=0).all()
 ```
 
-To visualise the clustered genes, use the [**`.draw()`**](bsxplorer.ClusterSingle.draw_mpl) method.
+To visualise the clustered genes, use the [**`.draw_mpl()`**](bsxplorer.ClusterSingle.draw_mpl) method.
 
 ![Clustering - All](../images/gettingstarted/clustering_all.png){.doc-single-image}
 
