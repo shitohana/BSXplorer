@@ -44,7 +44,7 @@ genomic features against the genome background use :class:`Enrichment`.
         end_col=2
     ).all()
 
-    enrichment = Enrichment(dmr, genes, flank_length=2000).enrich()
+    enrichment = bsx.Enrichment(dmr, genes, flank_length=2000).enrich()
 
 :func:`Enrichment.enrich` returns :class:`EnrichmentResult`, which stores enrichment
 statistics and coordinates of regions which have aligned with
@@ -53,12 +53,7 @@ can be plotted via :func:`EnrichmentResult.plot_density_mpl` method.
 
 .. code-block:: python
 
-    fig = res.plot_density_mpl(
-        flank_windows=100,
-        body_windows=200,
-        major_labels=["TSS", "TES"],
-        minor_labels=["-2000bp", "Gene body", "+2000bp"]
-    )
+    fig = enrichment.plot_density_mpl()
 
 Example of resulting image:
 
