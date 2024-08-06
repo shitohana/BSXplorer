@@ -11,7 +11,6 @@ from matplotlib import pyplot as plt
 
 from .Plots import savgol_line
 from .utils import MetageneSchema
-from .. import bsxplorer as bsx
 
 
 class Genome:
@@ -1204,8 +1203,8 @@ class Enrichment:
     """
 
     def __init__(self, regions: pl.DataFrame, genome: pl.DataFrame, flank_length: int = 0):
-        self.regions = bsx.Genome.validate(regions)
-        genome = bsx.Genome.validate(genome)
+        self.regions = Genome.validate(regions)
+        genome = Genome.validate(genome)
         self.genome = genome if not flank_length else self._add_flank_regions(genome, flank_length)
         self._flank_length = flank_length
 
@@ -1237,18 +1236,18 @@ class Enrichment:
 
     @staticmethod
     def _add_flank_regions(genome, flank_length) -> pl.DataFrame:
-        gene_bodies = bsx.Genome(genome.lazy()).gene_body(flank_length=flank_length)
+        gene_bodies = Genome(genome.lazy()).gene_body(flank_length=flank_length)
         return pl.concat(
             [
                 genome,
-                bsx.Genome.validate(
+                Genome.validate(
                     gene_bodies
                     .select(["chr", pl.col("upstream").alias("start"), pl.col("start").alias("end"), "strand"])
                     .with_columns(
                         type=pl.when(pl.col("strand") == "-").then(pl.lit("downstream")).otherwise(pl.lit("upstream"))
                     )
                 ),
-                bsx.Genome.validate(
+                Genome.validate(
                     gene_bodies
                     .select(["chr", pl.col("end").alias("start"), pl.col("downstream").alias("end"), "strand"])
                     .with_columns(
