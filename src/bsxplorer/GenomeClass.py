@@ -31,6 +31,16 @@ class Genome:
 
         self.genome = self.validate(genome)
 
+    def raw(self):
+        """
+        This method returns raw Genome DataFrame without any
+        filtering and ranges manipulation.
+
+        Returns
+        -------
+        ``pl.DataFrame``
+        """
+        return self.genome.collect()
 
     @classmethod
     def validate(cls, genome):
@@ -42,7 +52,6 @@ class Genome:
             genome = genome.with_columns(strand=pl.lit("."))
 
         return genome.select(list(cls._schema.keys())).cast(cls._schema)
-
 
     _schema = {
         "chr": pl.Utf8,
@@ -658,6 +667,7 @@ class RegAlignResult:
         -------
             polars.DataFrame for upstream, gene_body and downstream relative positions.
         """
+
         def ref_pos_expr(for_column: str):
             expr = (
                 pl.when(
@@ -785,7 +795,8 @@ class RegAlignResult:
             cov = np.interp(pos, pos[~valid], cov[~valid]) if (~valid).sum() > 1 else np.full_like(pos, 0)
             cov = savgol_line(cov, smooth)
 
-            xticks = [0, flank_windows, flank_windows + body_windows / 2, flank_windows + body_windows, flank_windows * 2 + body_windows]
+            xticks = [0, flank_windows, flank_windows + body_windows / 2, flank_windows + body_windows,
+                      flank_windows * 2 + body_windows]
 
         else:
             new_cov = []
@@ -837,9 +848,16 @@ class RegAlignResult:
         )
 
 
-def align_regions(regions: pl.DataFrame, along_regions: pl.DataFrame, flank_length: int = 2000):
+def align_regions(
+        regions: pl.DataFrame,
+        along_regions: pl.DataFrame,
+        flank_length: int = 2000
+):
     total = []
-    # Join to middle
+
+    DeprecationWarning("This method will be removed in future versions. Please use Enrichment class.")
+
+    # Join by middle
     for chrom in regions["chr"].unique():
         chr_left = (
             regions.filter(chr=chrom)
@@ -856,7 +874,8 @@ def align_regions(regions: pl.DataFrame, along_regions: pl.DataFrame, flank_leng
             chr_left
             .join_asof(chr_right, on='mid', strategy='nearest')
             .with_columns(((pl.col('end') + pl.col('start')) / 2).floor().cast(pl.UInt32).alias('mid'))
-            .select(["chr", "start", "mid", "end", pl.col("start_right").alias("areg_start"), pl.col("end_right").alias("areg_end"), "id", "strand"])
+            .select(["chr", "start", "mid", "end", pl.col("start_right").alias("areg_start"),
+                     pl.col("end_right").alias("areg_end"), "id", "strand"])
         )
 
         total.append(joined)
@@ -869,14 +888,14 @@ def align_regions(regions: pl.DataFrame, along_regions: pl.DataFrame, flank_leng
     )
     in_up = total.filter(
         (
-            (pl.col("strand") != "-") &
-            (pl.col("end") >= (pl.col("areg_start") - flank_length)) &
-            (pl.col("mid") < pl.col("areg_start"))
+                (pl.col("strand") != "-") &
+                (pl.col("end") >= (pl.col("areg_start") - flank_length)) &
+                (pl.col("mid") < pl.col("areg_start"))
         ) |
         (
-            (pl.col("strand") == "-") &
-            (pl.col("mid") > pl.col("areg_end")) &
-            (pl.col("start") <= (pl.col("areg_end") + flank_length))
+                (pl.col("strand") == "-") &
+                (pl.col("mid") > pl.col("areg_end")) &
+                (pl.col("start") <= (pl.col("areg_end") + flank_length))
         )
     )
     in_down = total.filter(
@@ -900,6 +919,15 @@ def align_regions(regions: pl.DataFrame, along_regions: pl.DataFrame, flank_leng
 
 
 class EnrichmentResult:
+    """
+    Class for storing and visualizing enrichment results.
+
+    Warnings
+    --------
+    This class SHOULD NOT be called directly. To create
+    it call :func:`Enrichment.enrich` instead.
+    """
+
     def __init__(
             self,
             aligned: pl.DataFrame,
@@ -911,7 +939,17 @@ class EnrichmentResult:
         self._is_gff = is_gff
 
     def ref_positions(self):
+        """
+        This method calculates relative normalized
+        positions of region start and end to gene region
+        respectively. Coordinates (-1, 0) refer to the
+        upstream region, [0, 1] refer to the gene body,
+        (1, 2) refer to the downstream region.
 
+        Returns
+        -------
+            pl.DataFrame
+        """
         ref_positions = (
             self.aligned.lazy()
             .filter(
@@ -932,21 +970,21 @@ class EnrichmentResult:
                     .then(pl.col("gend") - pl.col("afrag_start"))
                     .otherwise(pl.col("afrag_end") - pl.col("gstart"))
                 ),
-                glength = (pl.col("gend") - pl.col("gstart"))
+                glength=(pl.col("gend") - pl.col("gstart"))
             )
             .with_columns(
-                ref_start = pl.col("ref_start") / pl.col("glength"),
-                ref_end = pl.col("ref_end") / pl.col("glength"),
+                ref_start=pl.col("ref_start") / pl.col("glength"),
+                ref_end=pl.col("ref_end") / pl.col("glength"),
             )
             .with_columns(
-                ref_start = (
+                ref_start=(
                     pl.when(pl.col("type") == "upstream")
                     .then(pl.col("ref_start") - 1)
                     .when(pl.col("type") == "downstream")
                     .then(pl.col("ref_start") + 1)
                     .otherwise(pl.col("ref_start"))
                 ),
-                ref_end = (
+                ref_end=(
                     pl.when(pl.col("type") == "upstream")
                     .then(pl.col("ref_end") - 1)
                     .when(pl.col("type") == "downstream")
@@ -989,6 +1027,38 @@ class EnrichmentResult:
             label: str = "",
             **mpl_kwargs
     ):
+        """
+        Visualize enrichment results as a scatterplot, where
+        x – genomic region type,
+        y – enrichment value.
+
+        Parameters
+        ----------
+        fig_axes
+            Tuple of (
+            `matplotlib.pyplot.Figure
+            <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_,
+            `matplotlib.axes.Axes
+            <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes>`_).
+            New are created if ``None``
+
+        exclude
+            List of names of genomic region types to exclude from
+            the final plot. Set None if no exclusion should be performed.
+
+        label
+            Label for the points on the scatterplot
+            (useful, when several groups of points should
+            be bisualized on the same plot).
+
+        mpl_kwargs
+            Keyword arguemtnts for plt.scatter function of the
+            matplotlib API.
+
+        Returns
+        -------
+        ``matplotlib.pyplot.Figure``
+        """
 
         exclude = list() if exclude is None else exclude
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
@@ -998,7 +1068,8 @@ class EnrichmentResult:
 
         plot_df = self.enrich_stats.filter(pl.col("type").is_in(exclude).not_()).sort("enrichment")
 
-        axes.scatter(plot_df["type"].to_list(), plot_df["enrichment"].to_list(), label=label, marker='o', alpha=.90, s=50, **mpl_kwargs)
+        axes.scatter(plot_df["type"].to_list(), plot_df["enrichment"].to_list(), label=label, marker='o', alpha=.90,
+                     s=50, **mpl_kwargs)
 
         return fig
 
@@ -1076,7 +1147,8 @@ class EnrichmentResult:
             cov = np.interp(pos, pos[~valid], cov[~valid]) if (~valid).sum() > 1 else np.full_like(pos, 0)
             cov = savgol_line(cov, smooth)
 
-            xticks = [0, flank_windows, flank_windows + body_windows / 2, flank_windows + body_windows, flank_windows * 2 + body_windows]
+            xticks = [0, flank_windows, flank_windows + body_windows / 2, flank_windows + body_windows,
+                      flank_windows * 2 + body_windows]
 
         else:
             new_cov = []
@@ -1111,6 +1183,26 @@ class EnrichmentResult:
 
 
 class Enrichment:
+    """
+    Class for performing logFC enrichment of specified regions over genome.
+
+    Parameters
+    ----------
+    regions
+        polars.DataFrame of region coordinates, which is
+        validated by :func:`Genome.validate`.
+        Obligatory columns are: chr (chromosome name), start, end.
+
+    genome
+        polars.DataFrame of genome, which is generated by
+        :func:`Genome.raw` method of an :class:`Genome` instance.
+
+    flank_length
+        Length in bp of flanking regions for genes.
+        If no flanking regions should be added, set
+        this parameter to 0.
+    """
+
     def __init__(self, regions: pl.DataFrame, genome: pl.DataFrame, flank_length: int = 0):
         self.regions = bsx.Genome.validate(regions)
         genome = bsx.Genome.validate(genome)
@@ -1120,19 +1212,20 @@ class Enrichment:
     @property
     def _type_lengths(self) -> pl.DataFrame:
         return (
-           self.genome
-           .group_by("type")
-           .agg([(pl.col("end") - pl.col("start")).sum().alias("total")])
+            self.genome
+            .group_by("type")
+            .agg([(pl.col("end") - pl.col("start")).sum().alias("total")])
         )
 
     @property
     def _chr_lengths(self) -> pl.DataFrame:
         # Use predefined chromosome lengths if available
         if "region" not in self._type_lengths["type"]:
-            return (self.genome.group_by("chr").agg([(pl.last("end") - pl.first("start")).alias("length")]))
+            return self.genome.group_by("chr").agg([(pl.last("end") - pl.first("start")).alias("length")])
         # Otherwise, take last gene coord for chromosome end
         else:
-            return (self.genome.vstack(self.regions).filter(type="region").select(["type", (pl.col("end")).alias("length")]))
+            return (self.genome.vstack(self.regions).filter(type="region").select(
+                ["type", (pl.col("end")).alias("length")]))
 
     @property
     def _is_gff(self) -> bool:
@@ -1154,8 +1247,7 @@ class Enrichment:
                     .with_columns(
                         type=pl.when(pl.col("strand") == "-").then(pl.lit("downstream")).otherwise(pl.lit("upstream"))
                     )
-                )
-                ,
+                ),
                 bsx.Genome.validate(
                     gene_bodies
                     .select(["chr", pl.col("end").alias("start"), pl.col("downstream").alias("end"), "strand"])
@@ -1167,6 +1259,16 @@ class Enrichment:
         )
 
     def enrich(self) -> EnrichmentResult:
+        """
+        This method performs an alignment of regions to the genome,
+        calculating genomic coordinates of genome regions and
+        user-defined regions intersections, and runs calculates logFC
+        enrichment metric.
+
+        Returns
+        -------
+            :class:`EnrichmentResult`
+        """
         if not self._is_gff:
             raise ValueError('"gene" region type must be included in the genome DataFrame!')
 
@@ -1202,11 +1304,11 @@ class Enrichment:
                     if dend < gstart:
                         dpos.pop(0)
                     else:
-                        if dend > gstart and dstart < gstart:
+                        if dend > gstart > dstart:
                             aligned.append((chrom, gstart, gend, dstart, dend, gstart, dend))
                         elif dstart >= gstart and dend <= gend:
                             aligned.append((chrom, gstart, gend, dstart, dend, dstart, dend))
-                        elif dstart < gend and dend > gend:
+                        elif dstart < gend < dend:
                             aligned.append((chrom, gstart, gend, dstart, dend, dstart, gend))
                         else:
                             break
@@ -1229,7 +1331,8 @@ class Enrichment:
             }
         )
 
-        joined = res_df.join(self.genome, left_on=["chr", "gstart", "gend"], right_on=["chr", "start", "end"], how="left")
+        joined = res_df.join(self.genome, left_on=["chr", "gstart", "gend"], right_on=["chr", "start", "end"],
+                             how="left")
 
         len_stats = (
             joined

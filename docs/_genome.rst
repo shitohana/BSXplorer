@@ -13,14 +13,9 @@ Reference
     :template: class.rst
 
     Genome
-    RegAlignResult
+    Enrichment
+    EnrichmentResult
 
-.. autosummary::
-    :nosignatures:
-    :toctree: _Genome
-    :template: func.rst
-
-    align_regions
 
 ^^^^^
 Usage
@@ -31,13 +26,17 @@ be read either with :class:`Genome` or initialized directly with
 `polars functionality <https://docs.pola.rs/api/python/stable/reference/api/polars.read_csv.html>`_
 (DataFrame need to have `chr`, `start` and `end` columns).
 
-To align regions (e.g. define DMR position relative to genes) use :func:`align_regions`.
+To align regions (e.g. define DMR position relative to genes) or perform the enrichment of regions at these
+genomic features against the genome background use :class:`Enrichment`.
 
 .. code-block:: python
 
     import bsxplorer as bsx
 
-    genes = bsx.Genome.from_gff("path/to/annot.gff").gene_body(min_length=0)
+    # If you want to perform an ENRICHMENT, and not only plot
+    # the density of metagene coverage, you NEED to use .raw() method
+    # for genome DataFrame.
+    genes = bsx.Genome.from_gff("path/to/annot.gff").raw()
     dmr = bsx.Genome.from_custom(
         "path/to/dmr.txt",
         chr_col=0,
@@ -45,11 +44,12 @@ To align regions (e.g. define DMR position relative to genes) use :func:`align_r
         end_col=2
     ).all()
 
-    res = align_regions(dmr, along_regions=genes, flank_length=2000)
+    enrichment = Enrichment(dmr, genes, flank_length=2000).enrich()
 
-:func:`align_regions` returns :class:`RegAlignResult`, which stores regions which are
-in upstream, body, downstream or intergenic space. Then metagene coverage with regions
-can be plotted via :func:`RegAlignResult.plot_density_mpl` method.
+:func:`Enrichment.enrich` returns :class:`EnrichmentResult`, which stores enrichment
+statistics and coordinates of regions which have aligned with
+genomic features. The metagene coverage with regions
+can be plotted via :func:`EnrichmentResult.plot_density_mpl` method.
 
 .. code-block:: python
 
@@ -64,3 +64,6 @@ Example of resulting image:
 
 .. image:: images/genome/CG_DMR_density.png
     :width: 600
+
+Enrichment statistics can be accessed with :attr:`EnrichmentResult.enrich_stats`
+or plotted with :func:`EnrichmentResult.plot_enrich_mpl`

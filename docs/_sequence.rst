@@ -1,4 +1,4 @@
-Cluster
+Sequence
 ========
 
 .. currentmodule:: bsxplorer
@@ -20,7 +20,8 @@ Usage
 
 For some tasks, such as converting .bedGraph files to Bismark reports, BSXplorer
 needs information about all cytosines in reference genome. For such tasks the user need
-to preprocess reference genome with :class:`SequenceFile`.
+to preprocess reference genome with :class:`SequenceFile`. Afterwards,
+preprocessed cytosine file can be used in dedicated functions.
 
 .. code-block:: python
 
