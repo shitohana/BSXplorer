@@ -42,11 +42,12 @@ class Genome:
 
     @classmethod
     def validate(cls, genome):
-        if "id" not in genome.columns:
+        columns = genome.collect_schema().names()
+        if "id" not in columns:
             genome = genome.with_columns(id=pl.lit(""))
-        if "type" not in genome.columns:
+        if "type" not in columns:
             genome = genome.with_columns(type=pl.lit(""))
-        if "strand" not in genome.columns:
+        if "strand" not in columns:
             genome = genome.with_columns(strand=pl.lit("."))
 
         return genome.select(list(cls._schema.keys())).cast(cls._schema)
@@ -116,10 +117,10 @@ class Genome:
         genes = (
             pl.scan_csv(
                 file,
-                comment_char=comment_char,
+                comment_prefix=comment_char,
                 has_header=has_header,
                 separator='\t'
-            )
+            ).collect()
         )
         cols = genes.columns
         select_cols = [
@@ -137,6 +138,7 @@ class Genome:
             .select(["chr", "type", "start", "end", "strand", "id"])
             .sort(["chr", "start"])
             .filter(True if read_filters is None else read_filters)
+            .lazy()
         )
 
         print(f"Genome read from {file}")
@@ -393,7 +395,7 @@ class Genome:
             self.genome, gene_type, min_length, flank_length)
         genes = (
             genes
-            .groupby(['chr', 'strand'], maintain_order=True)
+            .group_by(['chr', 'strand'], maintain_order=True)
             .agg([
                 pl.col('start'),
                 # upstream shift
@@ -474,7 +476,7 @@ class Genome:
             self.genome, gene_type, min_length, flank_length)
         genes = (
             genes
-            .groupby(['chr', 'strand'], maintain_order=True).agg([
+            .group_by(['chr', 'strand'], maintain_order=True).agg([
                 pl.col('end'),
                 # downstream shift
                 (pl.col('start').shift(-1) - pl.col('end'))
@@ -608,7 +610,7 @@ class Genome:
 
         trimmed = (
             genes
-            .groupby(['chr', 'strand'], maintain_order=True).agg([
+            .group_by(['chr', 'strand'], maintain_order=True).agg([
                 pl.col('start'),
                 pl.col('end'),
                 length_before.alias('upstream'),

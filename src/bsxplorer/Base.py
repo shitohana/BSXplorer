@@ -1,89 +1,165 @@
 from __future__ import annotations
 
+import functools
 import gzip
 import warnings
-from typing import Literal
+from typing import Literal, Optional, Type
 
 import numpy as np
 import polars as pl
-from pydantic import BaseModel, Field
+from polars import DataFrame
+from pydantic import BaseModel, Field, field_validator, validate_call
 from pyreadr import write_rds
 from scipy import stats
+from typing_extensions import Annotated
 
-from . import UniversalBatch, UniversalReader
-from .utils import remove_extension, CYTOSINE_SUMFUNC, MetageneJoinedSchema, AvailableSumfunc
+from .UniversalReader_classes import UniversalReader
+from .utils import remove_extension, CYTOSINE_SUMFUNC, MetageneJoinedSchema, AvailableSumfunc, GenomeDf
 
 
 class MetageneModel(BaseModel):
-    report_df: pl.DataFrame = Field(
-        exclude=True,
-        title="DataFrame with report methylation data",
-        description="pl.DataFrame with cytosine methylation status",
-    )
-    upstream_windows: int = Field(alias="up_windows", gt=0, title="Upstream windows number")
-    gene_windows: int = Field(alias="body_windows", gt=0, title="Region body windows number")
-    downstream_windows: int = Field(alias="downstream_windows", gt=0, title="Downstream windows number")
-    strand: Literal["+", "-", ".", None] = Field(
+    upstream_windows: int = Field(ge=0, title="Upstream windows number", default=0)
+    gene_windows: int = Field(gt=0, title="Region body windows number")
+    downstream_windows: int = Field(ge=0, title="Downstream windows number", default=0)
+    strand: Optional[Literal["+", "-", "."]] = Field(
         default=None,
         title="Metagene strand",
         description="Defines the strand if metagene was filtered by it.",
     )
-    context: Literal["CG", "CHG", "CHH", None] = Field(
+    context: Optional[Literal["CG", "CHG", "CHH"]] = Field(
         default=None,
         title="Methylation context",
         description="Defines the context if metagene was filtered by it.",
     )
 
+    class Config:
+        validate_assignment = True
+        arbitrary_types_allowed = True
 
-class MetageneBase:
+
+class MetageneBase(MetageneModel):
     """
     Base class for :class:`Metagene` and plots.
     """
+    report_df: DataFrame = Field(exclude=True, title="Methylation data",
+                                 description="pl.DataFrame with cytosine methylation status.")
+    plot_data: Optional[pl.DataFrame] = Field(exclude=True, title="Plot data (optional)", default=None)
 
-    def __init__(self, report_df: pl.DataFrame, **kwargs):
-        """
-        Base class for Bismark data.
+    @classmethod
+    @validate_call(config=dict(arbitrary_types_allowed=True))
+    def read_metagene(
+            cls,
+            reader: UniversalReader,
+            genome: GenomeDf,
+            upstream_windows: Annotated[int, Field(ge=0)] = 100,
+            body_windows: Annotated[int, Field(gt=0)] = 200,
+            downstream_windows: Annotated[int, Field(ge=0)] = 100,
+            sumfunc: Literal["wmean", "mean", "min", "max", "median", "1pgeom"] = "wmean",
+    ):
+        genome = genome.rename({"strand": "gene_strand"})
+        # POLARS EXPRESSIONS
+        # Region position check
+        UP_REGION = pl.col('position') < pl.col('start')
+        DOWN_REGION = (pl.col('position') > pl.col('end'))
 
-        :param report_df: pl.DataFrame with cytosine methylation status.
-        :param upstream_windows: Number of upstream windows. Required.
-        :param gene_windows: Number of gene windows. Required.
-        :param downstream_windows: Number of downstream windows. Required.
-        :param strand: Strand if filtered.
-        :param context: Methylation context if filtered.
-        :param plot_data: Data for plotting.
-        """
-        self.report_df: pl.DataFrame = report_df
+        # Fragment numbers calculation
+        # 1e-10 is added (position is always < end)
+        UP_FRAGMENT = (((pl.col('position') - pl.col('upstream')) / (
+                pl.col('start') - pl.col('upstream'))) * upstream_windows).floor()
+        BODY_FRAGMENT = (((pl.col('position') - pl.col('start')) / (
+                pl.col('end') - pl.col('start') + 1e-10)) * body_windows).floor() + upstream_windows
+        DOWN_FRAGMENT = (((pl.col('position') - pl.col('end')) / (pl.col('downstream') - pl.col(
+            'end') + 1e-10)) * downstream_windows).floor() + upstream_windows + body_windows
 
-        self.upstream_windows: int = kwargs.get("upstream_windows")
-        self.downstream_windows: int = kwargs.get("downstream_windows")
-        self.gene_windows: int = kwargs.get("gene_windows")
-        self.plot_data: pl.DataFrame = kwargs.get("plot_data")
-        self.context: str = kwargs.get("context")
-        self.strand: str = kwargs.get("strand")
+        # Firstly BismarkPlot was written so there were only one sum statistic - mean.
+        # Sum and count of densities was calculated for further weighted mean analysis in respect to fragment size
+        # For backwards compatibility, for newly introduces statistics, column names are kept the same.
+        # Count is set to 1 and "sum" to actual statistics (e.g. median, min, e.t.c)
 
-    @property
-    def metadata(self) -> dict:
-        """
-        :return: Bismark metadata in dict
-        """
-        return {
-            "upstream_windows": self.upstream_windows,
-            "downstream_windows": self.downstream_windows,
-            "gene_windows": self.gene_windows,
-            "plot_data": self.plot_data,
-            "context": self.context,
-            "strand": self.strand
-        }
+        AGG_EXPRS = [pl.lit(1).alias("count"), pl.first("gene_strand").alias("strand"), pl.first("gene"),
+                     pl.first("id")]
+
+        if sumfunc == "median":
+            AGG_EXPRS.append(pl.median("density").alias("sum"))
+        elif sumfunc == "min":
+            AGG_EXPRS.append(pl.min("density").alias("sum"))
+        elif sumfunc == "max":
+            AGG_EXPRS.append(pl.max("density").alias("sum"))
+        elif sumfunc == "1pgeom":
+            AGG_EXPRS.append((pl.col("density").log1p().mean().exp() - 1).alias("sum"))
+        elif sumfunc == "mean":
+            AGG_EXPRS.append(pl.mean("density").alias("sum"))
+        else:
+            AGG_EXPRS.append(pl.sum('density').alias('sum'))
+            AGG_EXPRS.pop(0)
+            AGG_EXPRS.insert(0, pl.count('density').alias("count"))
+
+        GENE_LABEL_COLS = [
+            pl.col("chr"),
+            pl.concat_str(pl.col("start"), pl.col("end"), separator="-")
+        ]
+
+        GROUP_BY_COLS = ['chr', 'start', 'context', 'fragment']
+
+        def process_batch(df: pl.DataFrame):
+            result = (
+                df.lazy()
+                .filter(pl.col("count_total") != 0)
+                # Sort by position for joining
+                .sort(['chr', 'position'])
+                # Join with nearest
+                .join_asof(genome.lazy(), left_on='position', right_on='upstream', by='chr', strategy="backward")
+                # Limit by end of region
+                .filter(pl.col('position') <= pl.col('downstream'))
+                # Filter by strand if it is defined
+                .filter(((pl.col("gene_strand") != ".") & (pl.col("gene_strand") == pl.col("strand"))) | (
+                        pl.col("gene_strand") == "."))
+                # Calculate fragment ids
+                .with_columns([
+                    pl.when(UP_REGION).then(UP_FRAGMENT).when(DOWN_REGION).then(DOWN_FRAGMENT).otherwise(
+                        BODY_FRAGMENT).alias('fragment'),
+                    pl.concat_str(GENE_LABEL_COLS, separator=":").alias("gene")
+                ])
+                # Assign types
+                .cast({key: value for key, value in MetageneJoinedSchema.items() if key in GROUP_BY_COLS})
+                # gather fragment stats
+                .group_by(GROUP_BY_COLS)
+                # Calculate sumfunc
+                .agg(AGG_EXPRS)
+                .drop_nulls(subset=['sum'])
+                .cast({key: value for key, value in MetageneJoinedSchema.items() if key not in GROUP_BY_COLS})
+                .select(list(MetageneJoinedSchema.keys()))
+                .collect()
+            )
+            return result
+
+        print("Reading report from", reader.file)
+        report_df = None
+
+        for batch in reader:
+            processed = process_batch(batch.data)
+
+            if report_df is None:
+                report_df = processed
+            else:
+                report_df.extend(processed)
+
+        print("DONE\n")
+        return cls(
+            report_df=report_df,
+            upstream_windows=upstream_windows,
+            gene_windows=body_windows,
+            downstream_windows=downstream_windows
+        )
 
     def save_rds(self, filename, compress: bool = False):
         """
-        Save Metagene in Rds.
+        Save Metagene in RDS format.
 
         :param filename: Path for file.
         :param compress: Whether to compress to gzip or not.
         """
-        write_rds(filename, self.report_df.to_pandas(),
-                  compress="gzip" if compress else None)
+        write_rds(filename, self.report_df.to_pandas(), compress="gzip" if compress else None)
 
     def save_tsv(self, filename, compress=False):
         """
@@ -99,11 +175,11 @@ class MetageneBase:
         else:
             self.report_df.write_csv(filename, separator="\t")
 
-    @property
+    @functools.cached_property
     def total_windows(self):
         return self.upstream_windows + self.downstream_windows + self.gene_windows
 
-    @property
+    @functools.cached_property
     def _x_ticks(self):
         return [
             self.upstream_windows / 2,
@@ -113,25 +189,41 @@ class MetageneBase:
             self.total_windows - (self.downstream_windows / 2)
         ]
 
-    @property
+    @functools.cached_property
     def _borders(self):
-        return [self.upstream_windows, self.gene_windows + self.upstream_windows,]
+        return [self.upstream_windows, self.gene_windows + self.upstream_windows, ]
 
     def __len__(self):
         return len(self.report_df)
 
 
-class MetageneFilesBase:
-    def __init__(self, samples, labels: list[str] = None):
-        self.samples = self.__check_metadata(samples if isinstance(samples, list) else [samples])
+class MetageneFilesBase(BaseModel):
+    samples: list[Type[BaseModel]] = Field(exclude=True, title="List of samples",
+                                           description="List of initialized Metagene instances.")
+    labels: Optional[list[str]] = Field(default_factory=list, title="Sample labels",
+                                        description="Equal length list of samples' labels.")
 
-        if samples is None:
-            raise Exception("Flank or gene windows number does not match!")
+    @field_validator("labels")
+    @classmethod
+    def _validate_labels(cls, labels: list[str], values) -> list[str]:
+        if len(labels) == 0:
+            return list(map(str, range(len(values["samples"]))))
+        assert len(labels) == values["samples"], ValueError("Samples and labels lists should be equal length!")
+        return labels
 
-        self.labels = list(map(str, range(len(samples)))) if labels is None else labels
+    @field_validator("samples")
+    @classmethod
+    def _validate_saples(cls, samples: list[Type[BaseModel]]):
+        assert (
+                functools.reduce(lambda a, b: a == b, map(lambda sample: sample.upstream_windows, samples)) and
+                functools.reduce(lambda a, b: a == b, map(lambda sample: sample.gene_windows, samples)) and
+                functools.reduce(lambda a, b: a == b, map(lambda sample: sample.downstream_windows, samples))
+        ), ValueError("Samples have different number of windows!")
+        return samples
 
-        if len(self.labels) != len(self.samples):
-            raise Exception("Labels length doesn't match samples number")
+    class Config:
+        validate_assignment = True
+        arbitrary_types_allowed = True
 
     def save_rds(self, base_filename, compress: bool = False, merge: bool = False):
         """
@@ -188,40 +280,12 @@ class MetageneFilesBase:
                     f"{remove_extension(base_filename)}_{label}.tsv", compress=compress)
 
     @staticmethod
-    def __check_metadata(samples: list[MetageneBase]):
-        upstream_check = set([sample.metadata["upstream_windows"]
-                              for sample in samples])
-        downstream_check = set(
-            [sample.metadata["downstream_windows"] for sample in samples])
-        gene_check = set([sample.metadata["gene_windows"]
-                          for sample in samples])
-
-        if len(upstream_check) == len(gene_check) == len(downstream_check) == 1:
-            return samples
-        else:
-            raise ValueError("Different windows number between samples")
-
-
-def validate_metagene_args(
-        genome: pl.DataFrame,
-        upstream_windows: int = 0,
-        body_windows: int = 2000,
-        downstream_windows: int = 0,
-        sumfunc: AvailableSumfunc = "wmean",
-):
-    # VALIDATION
-    # Windows
-    upstream_windows = upstream_windows if upstream_windows > 0 else 0
-    body_windows = body_windows if body_windows > 0 else 0
-    downstream_windows = downstream_windows if downstream_windows > 0 else 0
-    # Genome
-    if not isinstance(genome, pl.DataFrame):
-        raise TypeError("Genome must be converted into DataFrame (e.g. via Genome.gene_body()).")
-    # Sumfunc
-    if sumfunc not in CYTOSINE_SUMFUNC:
-        raise NotImplementedError("This summary function is not implemented yet")
-
-    return locals()
+    def _check_metadata(samples: list[MetageneBase]):
+        assert (
+                functools.reduce(lambda a, b: a == b, map(lambda sample: sample.upstream_windows, samples)) and
+                functools.reduce(lambda a, b: a == b, map(lambda sample: sample.gene_windows, samples)) and
+                functools.reduce(lambda a, b: a == b, map(lambda sample: sample.downstream_windows, samples))
+        ), ValueError("Samples have different number of windows!")
 
 
 def validate_chromosome_args(
@@ -327,124 +391,6 @@ def read_chromosomes(
 
     report_df = report_df.filter(~pl.col("chr").is_in(chr_short_list))
 
-    return report_df
-
-
-def read_metagene(
-        reader: UniversalReader,
-        genome: pl.DataFrame,
-        upstream_windows: int = 0,
-        body_windows: int = 2000,
-        downstream_windows: int = 0,
-        sumfunc: Literal["wmean", "mean", "min", "max", "median", "1pgeom"] = "wmean",
-        **kwargs
-):
-    batch_schema = UniversalBatch.pl_schema()
-    genome = (
-        genome
-        .cast(dict(
-            chr=batch_schema["chr"],
-            upstream=batch_schema["position"],
-            start=batch_schema["position"],
-            end=batch_schema["position"],
-            downstream=batch_schema["position"],
-        ))
-        .rename({"strand": "gene_strand"})
-    )
-
-    # BATCH SETUP
-    def process_batch(df: pl.DataFrame, genome: pl.DataFrame, upstream_windows, body_windows, downstream_windows,
-                      sumfunc):
-        # POLARS EXPRESSIONS
-        # Region position check
-        UP_REGION = pl.col('position') < pl.col('start')
-        DOWN_REGION = (pl.col('position') > pl.col('end'))
-
-        # Fragment numbers calculation
-        # 1e-10 is added (position is always < end)
-        UP_FRAGMENT = (((pl.col('position') - pl.col('upstream')) / (
-                    pl.col('start') - pl.col('upstream'))) * upstream_windows).floor()
-        BODY_FRAGMENT = (((pl.col('position') - pl.col('start')) / (
-                    pl.col('end') - pl.col('start') + 1e-10)) * body_windows).floor() + upstream_windows
-        DOWN_FRAGMENT = (((pl.col('position') - pl.col('end')) / (pl.col('downstream') - pl.col(
-            'end') + 1e-10)) * downstream_windows).floor() + upstream_windows + body_windows
-
-        # Firstly BismarkPlot was written so there were only one sum statistic - mean.
-        # Sum and count of densities was calculated for further weighted mean analysis in respect to fragment size
-        # For backwards compatibility, for newly introduces statistics, column names are kept the same.
-        # Count is set to 1 and "sum" to actual statistics (e.g. median, min, e.t.c)
-
-        AGG_EXPRS = [pl.lit(1).alias("count"), pl.first("gene_strand").alias("strand")]
-
-        if sumfunc == "median":
-            AGG_EXPRS.append(pl.median("density").alias("sum"))
-        elif sumfunc == "min":
-            AGG_EXPRS.append(pl.min("density").alias("sum"))
-        elif sumfunc == "max":
-            AGG_EXPRS.append(pl.max("density").alias("sum"))
-        elif sumfunc == "1pgeom":
-            AGG_EXPRS.append((pl.col("density").log1p().mean().exp() - 1).alias("sum"))
-        elif sumfunc == "mean":
-            AGG_EXPRS.append(pl.mean("density").alias("sum"))
-        else:
-            AGG_EXPRS.append(pl.sum('density').alias('sum'))
-            AGG_EXPRS.pop(0)
-            AGG_EXPRS.insert(0, pl.count('density').alias("count"))
-
-        GENE_LABEL_COLS = [
-            pl.col("chr"),
-            pl.concat_str(pl.col("start"), pl.col("end"), separator="-")
-        ]
-
-        GROUP_BY_COLS = ['chr', 'start', 'gene', 'context', 'id', 'fragment']
-
-        processed = (
-            df.lazy()
-            .filter(pl.col("count_total") != 0)
-            # Sort by position for joining
-            .sort(['chr', 'position'])
-            # Join with nearest
-            .join_asof(genome.lazy(), left_on='position', right_on='upstream', by='chr', strategy="backward")
-            # Limit by end of region
-            .filter(pl.col('position') <= pl.col('downstream'))
-            # Filter by strand if it is defined
-            .filter(((pl.col("gene_strand") != ".") & (pl.col("gene_strand") == pl.col("strand"))) | (
-                        pl.col("gene_strand") == "."))
-            # Calculate fragment ids
-            .with_columns([
-                pl.when(UP_REGION).then(UP_FRAGMENT).when(DOWN_REGION).then(DOWN_FRAGMENT).otherwise(
-                    BODY_FRAGMENT).alias('fragment'),
-                pl.concat_str(GENE_LABEL_COLS, separator=":").alias("gene")
-            ])
-            # Assign types
-            .cast({key: value for key, value in MetageneJoinedSchema.items() if key in GROUP_BY_COLS})
-            # gather fragment stats
-            .groupby(by=GROUP_BY_COLS)
-            # Calculate sumfunc
-            .agg(AGG_EXPRS)
-            .drop_nulls(subset=['sum'])
-            .cast({key: value for key, value in MetageneJoinedSchema.items() if key not in GROUP_BY_COLS})
-            .select(list(MetageneJoinedSchema.keys()))
-        ).collect()
-        return processed
-
-    print("Reading report from", reader.file)
-    report_df = None
-
-    for batch in reader:
-        processed = process_batch(
-            batch.data,
-            genome,
-            upstream_windows, body_windows, downstream_windows,
-            sumfunc
-        )
-
-        if report_df is None:
-            report_df = processed
-        else:
-            report_df.extend(processed)
-
-    print("DONE\n")
     return report_df
 
 

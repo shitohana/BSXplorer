@@ -8,7 +8,7 @@ from pyreadr import write_rds
 
 from .Base import read_chromosomes, validate_chromosome_args
 from .Plots import savgol_line, LinePlotData, LinePlot, BoxPlotData, BoxPlot
-from . import UniversalReader
+from .UniversalReader_classes import UniversalReader
 
 
 class ChrLevels:
