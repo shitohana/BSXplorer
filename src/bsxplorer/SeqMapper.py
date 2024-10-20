@@ -11,6 +11,7 @@ import pyarrow.parquet as pq
 from Bio import SeqIO
 from numba import njit
 
+from .cbsx import get_trinuc_cython
 
 @njit
 def convert_trinuc(trinuc, reverse=False):
@@ -166,7 +167,7 @@ class SequenceFile:
         return ids
 
     cytosine_file_schema = pa.schema([
-            ("chr", pa.dictionary(pa.int8(), pa.utf8())),
+            ("chr", pa.dictionary(pa.int16(), pa.utf8())),
             ("position", pa.int32()),
             ("strand", pa.bool_()),
             ("context", pa.dictionary(pa.int16(), pa.utf8())),
@@ -213,7 +214,7 @@ class SequenceFile:
             Path, where cytosine file will be written.
         """
         with pq.ParquetWriter(output_file, self.cytosine_file_schema) as writer:
-            for chr_record in SeqIO.index(self._handle, "fasta"):
+            for chr_record in SeqIO.parse(self._handle, "fasta"):
                 sequence_region = SequenceRegion(chr_record)
                 table = sequence_region.parse_cytosines()
                 unified = self._unify_dictionaries(table, self._dummy_table)
@@ -224,21 +225,20 @@ class SequenceFile:
         self._handle.seek(0)
 
 
-
 class SequenceRegion:
     def __init__(self, record: SeqIO.SeqRecord):
         self.record = record
         self.sequence = str(record.seq)
 
     def parse_cytosines(self):
-        positions, trinucs, contexts = zip(*[get_trinuc(self.sequence), get_trinuc(self.sequence, reverse=True)])
+        positions, strands, contexts, trinucs = get_trinuc_cython(self.sequence)
         length = len(positions)
 
         arrow_table = pa.Table.from_arrays(
             arrays=[
-                list(itertools.repeat(self.record.id, length * 2)),
+                list(itertools.repeat(self.record.id, length)),
                 positions,
-                list(itertools.repeat(True, length)) + list(itertools.repeat(True, length)),
+                strands,
                 contexts,
                 trinucs
             ],

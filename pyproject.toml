@@ -1,7 +1,3 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "bsxplorer"
 version = "1.1.0.post1"
@@ -11,54 +7,69 @@ authors = [
 keywords = ['bismark', 'methylation', 'plot', 'bs-seq']
 license = {file = "LICENSE.txt"}
 dependencies = [
-    "Bio==1.6.2",
-    "biopython==1.81",
-    "dynamicTreeCut==0.1.1",
-    "fastcluster==1.2.6",
-    "func_timeout==4.3.5",
-    "Jinja2==3.1.3",
-    "matplotlib==3.8.0",
-    "numba==0.58.1",
-    "numpy==1.26.4",
-    "packaging==23.2",
-    "pandas==2.2.0",
-    "plotly==5.18.0",
-    "polars==0.20.7",
-    "progress==1.6",
-    "pyarrow==14.0.1",
-    "pyreadr==0.4.9",
-    "scikit_learn==1.4.0",
-    "scipy==1.14.0",
-    "seaborn==0.13.2",
-    "pysam==0.22.1",
-    "psutil==5.9.8",
+    "biopython>=1.84",
+    "dynamictreecut>=0.1.1",
+    "fastcluster>=1.2.6",
+    "func-timeout>=4.3.5",
+    "jinja2>=3.1.4",
+    "matplotlib>=3.9.2",
+    "numba>=0.60.0",
+    "numpy<2",
+    "packaging>=24.1",
+    "pandas>=2.2.3",
+    "plotly>=5.24.1",
+    "polars>=1.9.0",
+    "progress>=1.6",
+    "psutil>=6.1.0",
+    "pyarrow>=17.0.0",
+    "pyreadr>=0.5.2",
+    "pysam>=0.22.1",
+    "scikit-learn>=1.5.2",
+    "scipy>=1.13.1",
+    "seaborn>=0.13.2",
 ]
 description = "Analytical framework for BS-seq data comparison and visualization"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.9",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
-# dynamic = ["version", "description"]
 
 [project.urls]
-Homepage = "https://github.com/shitohana/BSXplorer"
+Repository = "https://github.com/shitohana/BSXplorer"
 Documentation = "https://shitohana.github.io/BSXplorer/"
-"Bug Tracker" = "https://github.com/shitohana/BSXplorer/issues"
+Issues = "https://github.com/shitohana/BSXplorer/issues"
 
-[tool.hatch.build]
-exclude = ["/venv", "/dist", "/test", "/docs"]
 
-#[tool.hatch.build.targets.wheel]
-#packages = ["src/bsxplorer"]
+[tool.uv]
+dev-dependencies = [
+    "cython>=3.0.11",
+    "ipython>=8.18.1",
+    "pip>=24.2",
+    "setuptools>=75.2.0",
+]
 
 [project.scripts]
 bsxplorer-metagene = "bsxplorer.cons_master:metagene"
 bsxplorer-category = "bsxplorer.cons_master:category"
 bsxplorer-chr = "bsxplorer.cons_master:chr_levels"
 bsxplorer-bam = "bsxplorer.cons_master:bam"
+
+[build-system]
+requires = ["setuptools", "wheel", "cython"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src/bsxplorer"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src/bsxplorer", "src"]
+
+[tool.setuptools.package-data]
+cython = ["*.pyx", "*.cpp", "*.c"]
