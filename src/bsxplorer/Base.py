@@ -5,15 +5,34 @@ import warnings
 from typing import Literal
 
 import numpy as np
-import plotly.graph_objects as go
 import polars as pl
-from matplotlib.axes import Axes
+from pydantic import BaseModel, Field
 from pyreadr import write_rds
 from scipy import stats
 
-from .UniversalReader_batches import UniversalBatch
-from .UniversalReader_classes import UniversalReader
-from .utils import remove_extension, CYTOSINE_SUMFUNC, MetageneJoinedSchema, AvailableSumfunc, prepare_labels
+from . import UniversalBatch, UniversalReader
+from .utils import remove_extension, CYTOSINE_SUMFUNC, MetageneJoinedSchema, AvailableSumfunc
+
+
+class MetageneModel(BaseModel):
+    report_df: pl.DataFrame = Field(
+        exclude=True,
+        title="DataFrame with report methylation data",
+        description="pl.DataFrame with cytosine methylation status",
+    )
+    upstream_windows: int = Field(alias="up_windows", gt=0, title="Upstream windows number")
+    gene_windows: int = Field(alias="body_windows", gt=0, title="Region body windows number")
+    downstream_windows: int = Field(alias="downstream_windows", gt=0, title="Downstream windows number")
+    strand: Literal["+", "-", ".", None] = Field(
+        default=None,
+        title="Metagene strand",
+        description="Defines the strand if metagene was filtered by it.",
+    )
+    context: Literal["CG", "CHG", "CHH", None] = Field(
+        default=None,
+        title="Methylation context",
+        description="Defines the context if metagene was filtered by it.",
+    )
 
 
 class MetageneBase:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 import warnings
 from dataclasses import dataclass
 from typing import Iterable
@@ -8,13 +9,9 @@ from typing import Iterable
 import matplotlib.cbook
 import numpy as np
 import polars as pl
-from matplotlib import pyplot as plt, colormaps, colors as mcolors
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
 from plotly import graph_objects as go, express as px
 from plotly.subplots import make_subplots
 from scipy.signal import savgol_filter
-from sklearn.decomposition import PCA as PCA_sklearn
 
 from .utils import prepare_labels
 
@@ -79,7 +76,7 @@ def lp_ticks(ticks: dict, major_labels: list, minor_labels: list):
     return x_ticks, x_labels
 
 
-def flank_lines_mpl(axes: Axes, x_ticks, x_labels: list, borders: list = None):
+def flank_lines_mpl(axes, x_ticks, x_labels: list, borders: list = None):
     borders = list() if borders is None else borders
     if x_labels is None or not x_labels:
         x_labels = [""] * 5
@@ -149,7 +146,7 @@ class LinePlot:
             tick_labels: list[str] = None,
             show_border: bool = True,
             **kwargs
-    ) -> Figure:
+    ):
         """
         Draws line-plot on given matplotlib axes.
 
@@ -181,6 +178,8 @@ class LinePlot:
 
         `Linestyles <https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html>`_ : For possible linestyles.
         """
+        if 'matplotlib' not in sys.modules:
+            import matplotlib.pyplot as plt
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
 
         for line_data in self.data:
@@ -343,6 +342,8 @@ class HeatMap:
 
         `Matplotlib color scales <https://matplotlib.org/stable/users/explain/colors/colormaps.html>`_: For possible colormap ``color_scale`` arguments.
         """
+        if 'matplotlib' not in sys.modules:
+            import pyplot as plt, colormaps, colors as mcolors
         plt.clf()
         subplots_y = len(self.data) // facet_cols + 1
         subplots_x = facet_cols if len(self.data) > facet_cols else len(self.data)
@@ -357,7 +358,6 @@ class HeatMap:
             vmax = np.max(hm_data.matrix) if vmax is None else vmax
 
             axes = axes_matrix[count % facet_cols, count // facet_cols]
-            assert isinstance(axes, Axes)
             image = axes.imshow(
                 hm_data.matrix,
                 interpolation="nearest", aspect='auto',
@@ -378,7 +378,7 @@ class HeatMap:
 
     def draw_plotly(
             self,
-            figure: Figure = None,
+            figure = None,
             title: str = None,
             vmin: float = None, vmax: float = None,
             color_scale="Viridis",
@@ -540,7 +540,8 @@ class PCA:
             self.matrix = matrix
             self.labels = labels
             self.groups = groups
-
+            if 'sklearn.decomposition' not in sys.modules:
+                from sklearn.decomposition import PCA as PCA_sklearn
             pca = PCA_sklearn(n_components=2)
             fit: PCA_sklearn = pca.fit(matrix)
 
@@ -589,7 +590,8 @@ class PCA:
         `matplotlib.pyplot.Figure <https://matplotlib.org/stable/api/figure_api.html#matplotlib.figure.Figure>`_
         """
         data = self._get_pca_data()
-
+        if 'matplotlib' not in sys.modules:
+            import pyplot as plt, colormaps, colors as mcolors
         fig, axes = plt.subplots()
 
         x = data.eigenvectors[:, 0]
@@ -664,6 +666,8 @@ class BoxPlot:
         -------
         ``matplotlib.pyplot.Figure``
         """
+        if 'matplotlib' not in sys.modules:
+            import pyplot as plt, colormaps, colors as mcolors
         if fig_axes is None:
             plt.clf()
             fig, axes = plt.subplots()
@@ -682,7 +686,7 @@ class BoxPlot:
 
     def draw_plotly(
             self,
-            figure: Figure = None,
+            figure = None,
             title="",
             violin: bool = False,
             points: bool | str = False,

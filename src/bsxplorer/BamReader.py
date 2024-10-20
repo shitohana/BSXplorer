@@ -17,12 +17,11 @@ import numpy as np
 
 import polars as pl
 import pysam
-from matplotlib import pyplot as plt
 from numba import jit, prange
 from progress.bar import Bar
 from pyarrow import dataset as pads, compute as pc
 
-from .UniversalReader_batches import UniversalBatch
+from . import UniversalBatch
 from .utils import AvailableBAM
 
 
@@ -918,6 +917,8 @@ class BAMReader:
         """
         quals_stat, pos_stat, reg_stat = self.qc_data()
 
+        if 'matplotlib' not in sys.modules:
+            import matplotlib.pyplot as plt
         fig = plt.figure(constrained_layout=True)
         gs = fig.add_gridspec(2, 2)
 

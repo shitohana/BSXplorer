@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import sys
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -9,9 +10,7 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import polars as pl
-import seaborn as sns
 from dynamicTreeCut import cutreeHybrid
 from dynamicTreeCut.dynamicTreeCut import get_heights
 from fastcluster import linkage
@@ -26,7 +25,7 @@ default_n_threads = multiprocessing.cpu_count()
 os.environ['OPENBLAS_NUM_THREADS'] = f"{default_n_threads}"
 os.environ['MKL_NUM_THREADS'] = f"{default_n_threads}"
 os.environ['OMP_NUM_THREADS'] = f"{default_n_threads}"
-from sklearn.cluster import KMeans, MiniBatchKMeans
+from sklearn.cluster import KMeans
 
 
 # noinspection PyMissingOrEmptyDocstring
@@ -400,6 +399,8 @@ class ClusterPlot:
             args = dict(col_cluster=False) | kwargs
             args |= dict(cmap=cmap, method=method, metric=metric)
 
+            if 'seaborn' not in sys.modules:
+                import seaborn as sns
             fig = sns.clustermap(df, **args)
             return fig
 
@@ -430,7 +431,8 @@ class ClusterPlot:
             order = leaves_list(link)
 
             im = np.dstack([d.centers[order, :] for d in self.data])
-
+            if 'plotly.express' not in sys.modules:
+                import plotly.express as px
             figure = px.imshow(im, color_continuous_scale=cmap, animation_frame=2, aspect='auto', **kwargs)
             figure.update_layout(sliders=[{"currentvalue": {"prefix": "Sample = "}}])
             if self.sample_names is not None:

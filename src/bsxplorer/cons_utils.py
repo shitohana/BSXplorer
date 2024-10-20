@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import sys
 import time
 import warnings
 from abc import ABC, abstractmethod
@@ -15,16 +16,22 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.csv as pcsv
 from jinja2 import Template
-from matplotlib import pyplot as plt
-from matplotlib.figure import Figure
-from plotly import graph_objs as go
-from plotly.subplots import make_subplots
 
-from . import Genome, Metagene, PCA, MetageneFiles, BinomialData, ChrLevels, HeatMap
-from .BamReader import BAMReader
+from . import (
+    Genome,
+    Metagene,
+    PCA,
+    MetageneFiles,
+    BinomialData,
+    ChrLevels,
+    HeatMap,
+    BAMReader,
+    UniversalReader,
+    UniversalWriter,
+    UniversalReplicatesReader
+)
 from .SeqMapper import init_tempfile
 from .UniversalReader_batches import REPORT_TYPES_LIST
-from .UniversalReader_classes import UniversalWriter, UniversalReader, UniversalReplicatesReader
 
 
 def render_template(
@@ -769,12 +776,12 @@ class Renderer:
 
         self.__add_plotlyjs = True
 
-    def _save_mpl(self, fig: Figure, name: str):
+    def _save_mpl(self, fig, name: str):
         path = self.args.dir / "plots" / (name + f'.{self.args.export}')
         fig.savefig(path)
 
     @staticmethod
-    def _p2html(fig: go.Figure, full_html=False, include_plotlyjs=False, default_width="900px", default_height="675px"):
+    def _p2html(fig, full_html=False, include_plotlyjs=False, default_width="900px", default_height="675px"):
         return fig.to_html(full_html=full_html, include_plotlyjs=include_plotlyjs, default_width=default_width, default_height=default_height)
 
     @property
@@ -817,6 +824,8 @@ class Renderer:
             shared_yaxes=True,
             horizontal_spacing=.05
         )
+        if "plotly.subplots" not in sys.modules:
+            from plotly.subplots import make_subplots
         lp_fig = make_subplots(**lp_subplot_args)
 
         hm_subplot_args = dict(
@@ -916,6 +925,8 @@ class Renderer:
             self._save_mpl(line_plot.draw_mpl(tick_labels=self.args.ticks), name.format(type="line_plot"))
             self._save_mpl(heat_map.draw_mpl(tick_labels=self.args.ticks), name.format(type="heat-map"))
             self._save_mpl(box_plot.draw_mpl(), name.format(type="box_plot"))
+            if 'matplotlib' not in sys.modules:
+                import matplotlib.pyplot as plt
             plt.close()
 
         # Plotly
@@ -1014,25 +1025,18 @@ class Renderer:
 
         for filters in filters_list:
             context_report = TemplateContext(heading=f"Context {self._format_filters(filters)}")
-
+            if "plotly.subplots" not in sys.modules:
+                from plotly.subplots import make_subplots
             lp_fig = make_subplots()
-            # bp_fig = make_subplots(rows=len(chr_levels_list), subplot_titles=labels)
             for count, (level, label) in enumerate(zip(chr_levels_list, labels)):
                 line_plot = level.filter(**filters).line_plot(smooth=self.args.smooth)
-                # box_plot = level.filter(**filters).box_plot()
-
                 line_plot.draw_plotly(lp_fig, label=label)
-                # box_plot.draw_plotly(bp_fig, fig_rows=count + 1, fig_cols=1)
 
             context_report.plots.append(TemplatePlot(
                 "Line plot",
                 lp_fig.to_html(full_html=False, include_plotlyjs=self.__add_plotlyjs)
             ))
             if self.__add_plotlyjs: self.__add_plotlyjs = False
-            # context_report.plots.append(TemplatePlot(
-            #     "Box plot",
-            #     bp_fig.to_html(full_html=False, include_plotlyjs=self.__add_plotlyjs)
-            # ))
             html_body.context_reports.append(context_report)
 
             collect()

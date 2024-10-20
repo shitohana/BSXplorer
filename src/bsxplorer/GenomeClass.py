@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import itertools
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import polars as pl
-from pathlib import Path
-
-from matplotlib import pyplot as plt
 
 from .Plots import savgol_line
 from .utils import MetageneSchema
@@ -771,6 +770,8 @@ class RegAlignResult:
         -------
         ``matplotlib.pyplot.Figure``
         """
+        if 'matplotlib' not in sys.modules:
+            import matplotlib.pyplot as plt
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
         tick_labels = ["Upstream", "TSS", "Body", "TES", "Downstream"] if tick_labels is None else tick_labels
 
@@ -1058,7 +1059,8 @@ class EnrichmentResult:
         -------
         ``matplotlib.pyplot.Figure``
         """
-
+        if 'matplotlib' not in sys.modules:
+            import matplotlib.pyplot as plt
         exclude = list() if exclude is None else exclude
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
 
@@ -1118,6 +1120,8 @@ class EnrichmentResult:
         -------
         ``matplotlib.pyplot.Figure``
         """
+        if 'matplotlib' not in sys.modules:
+            import matplotlib.pyplot as plt
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
         tick_labels = ["Upstream", "TSS", "Body", "TES", "Downstream"] if tick_labels is None else tick_labels
 

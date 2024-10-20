@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import polars as pl
-import seaborn as sns
 from scipy import stats
 
-from .Plots import (
-    BoxPlot, savgol_line, LinePlotData, LinePlot, plot_stat_expr, HeatMapData, HeatMap,
-    BoxPlotData
+from . import (
+    BoxPlot, LinePlot, HeatMap, SequenceFile, Genome, UniversalReader
 )
-from .SeqMapper import CytosinesFileCM, SequenceFile
+
+from .Plots import (
+    savgol_line, LinePlotData, plot_stat_expr, HeatMapData, BoxPlotData
+)
+from .SeqMapper import CytosinesFileCM
 from .Base import (
     MetageneBase,
     MetageneFilesBase,
@@ -22,8 +25,6 @@ from .Base import (
 from .Clusters import ClusterSingle, ClusterMany
 from .UniversalReader_batches import ReportTypes
 from .utils import MetageneSchema, AvailableSumfunc, CONTEXTS
-from .GenomeClass import Genome
-from .UniversalReader_classes import UniversalReader
 
 
 class Metagene(MetageneBase):
@@ -1345,7 +1346,8 @@ class MetageneFiles(MetageneFilesBase):
         if q > 0:
             var = matrix.to_numpy().var(1)
             matrix = matrix[var > np.quantile(var, q)]
-
+        if "seaborn" not in sys.modules:
+            import seaborn as sns
         fig = sns.clustermap(matrix, **kwargs)
         return fig
 

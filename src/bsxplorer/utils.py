@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import re
+import sys
 from collections import OrderedDict
 from typing import Literal
 
@@ -139,3 +140,8 @@ def prepare_labels(major_labels: list, minor_labels: list):
         labels["up_mid"], labels["body_mid"], labels["down_mid"] = [""] * 3
 
     return labels
+
+
+def import_matplotlib():
+    if 'matplotlib' not in sys.modules:
+        import matplotlib.pyplot as plt

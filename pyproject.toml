@@ -22,6 +22,7 @@ dependencies = [
     "progress>=1.6",
     "psutil>=6.1.0",
     "pyarrow>=17.0.0",
+    "pydantic>=2.9.2",
     "pyreadr>=0.5.2",
     "pysam>=0.22.1",
     "scikit-learn>=1.5.2",
