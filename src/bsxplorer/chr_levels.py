@@ -168,7 +168,7 @@ class ChrLevels:
             Pvalue for confidence bands of the LinePlot.
         """
 
-        reader = UniversalReader(**(locals() | dict(report_type="bismark")))
+        reader = UniversalReader.model_validate(locals() | dict(report_type="bismark"))
         return cls._read_report(reader, chr_min_length, window_length, confidence)
 
     @classmethod
@@ -201,7 +201,7 @@ class ChrLevels:
         confidence
             Pvalue for confidence bands of the LinePlot.
         """
-        reader = UniversalReader(**(locals() | dict(report_type="cgmap")))
+        reader = UniversalReader.model_validate(locals() | dict(report_type="cgmap"))
         return cls._read_report(reader, chr_min_length, window_length, confidence)
 
     @classmethod
@@ -237,7 +237,7 @@ class ChrLevels:
         confidence
             Pvalue for confidence bands of the LinePlot.
         """
-        reader = UniversalReader(**(locals() | dict(report_type="bedgraph")))
+        reader = UniversalReader.model_validate(locals() | dict(report_type="bedgraph"))
         return cls._read_report(reader, chr_min_length, window_length, confidence)
 
     @classmethod
@@ -273,7 +273,7 @@ class ChrLevels:
         confidence
             Pvalue for confidence bands of the LinePlot.
         """
-        reader = UniversalReader(**(locals() | dict(report_type="coverage")))
+        reader = UniversalReader.model_validate(locals() | dict(report_type="coverage"))
         return cls._read_report(reader, chr_min_length, window_length, confidence)
 
     @classmethod
@@ -302,8 +302,8 @@ class ChrLevels:
         p_value
             Pvalue with which cytosine will be considered methylated.
         """
-        reader = UniversalReader(
-            **(locals() | dict(report_type="binom", methylation_pvalue=p_value))
+        reader = UniversalReader.model_validate(
+            (locals() | dict(report_type="binom", methylation_pvalue=p_value))
         )
         return cls._read_report(reader, chr_min_length, window_length, confidence)
 

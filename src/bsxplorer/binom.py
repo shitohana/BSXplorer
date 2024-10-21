@@ -111,19 +111,21 @@ class BinomialData:
         arrow_pvalue_schema = ARROW_SCHEMAS["binom"]
         polars_pvalue_schema = arrow2polars_convert(arrow_pvalue_schema)
 
-        with pq.ParquetWriter(save_path, arrow_pvalue_schema) as pq_writer:
-            with UniversalReader(file, report_type, use_threads, block_size_mb=block_size_mb, **kwargs) as reader:
-                for batch in reader:
-                    filtered = batch.data.filter(pl.col("count_total") >= min_coverage)
-                    # Binomial test for cytosine methylation
-                    cdf_col = 1 - binom.cdf(filtered["count_m"].cast(pl.Int64) - 1, filtered["count_total"], total_probability)
-                    # Write to p_valued file
-                    p_valued = (
-                        filtered.with_columns(pl.lit(cdf_col).cast(pl.Float64).alias("p_value"))
-                        .select(arrow_pvalue_schema.names)
-                        .cast(polars_pvalue_schema)
-                    )
-                    pq_writer.write(p_valued.to_arrow().cast(arrow_pvalue_schema))
+        with (
+            pq.ParquetWriter(save_path, arrow_pvalue_schema) as pq_writer,
+            UniversalReader(file, report_type=report_type, use_threads=use_threads, block_size_mb=block_size_mb, **kwargs) as reader
+        ):
+            for batch in reader:
+                filtered = batch.data.filter(pl.col("count_total") >= min_coverage)
+                # Binomial test for cytosine methylation
+                cdf_col = 1 - binom.cdf(filtered["count_m"].cast(pl.Int64) - 1, filtered["count_total"], total_probability)
+                # Write to p_valued file
+                p_valued = (
+                    filtered.with_columns(pl.lit(cdf_col).cast(pl.Float64).alias("p_value"))
+                    .select(arrow_pvalue_schema.names)
+                    .cast(polars_pvalue_schema)
+                )
+                pq_writer.write(p_valued.to_arrow().cast(arrow_pvalue_schema))
 
         print("DONE")
         print(f"\nTotal cytosine residues: {metadata['cytosine_residues']}.\nAverage proportion of methylated reads to total reads for cytosine residue: {round(metadata['density_sum'] / metadata['cytosine_residues'] * 100, 3)}%")
@@ -206,8 +208,8 @@ class BinomialData:
         gene_stats = None
         with UniversalReader(
                 self.preprocessed_path,
-                "binom",
-                use_threads,
+                report_type="binom",
+                use_threads=use_threads,
                 methylation_pvalue=methylation_pvalue
         ) as reader:
             for full_batch in reader:

@@ -31,7 +31,7 @@ from . import (
     UniversalReplicatesReader
 )
 from .sequence import init_tempfile
-from .universal_batches import REPORT_TYPES_LIST
+from .universal_batches import ReportTypes
 
 
 def render_template(
@@ -333,7 +333,7 @@ class BamScript:
         parser.add_argument("-f", "--fasta", help="Path to .fasta file with reference sequence for full cytosine report.", default=None, type=file_path_type)
         parser.add_argument("--bamtype", help="Type of aligner which was used for generating BAM.", default="bismark", type=str, choices=BAM_TYPES)
         parser.add_argument('-m', '--mode', default="report", choices=MODES)
-        parser.add_argument('--to_type', choices=REPORT_TYPES_LIST, help="Specifies the output file type if mode is set to 'report'.", default="bismark")
+        parser.add_argument('--to_type', choices=ReportTypes, help="Specifies the output file type if mode is set to 'report'.", default="bismark")
         parser.add_argument('--stat', choices=STATS, help="Specifies the BAM stat type if mode is set to 'stats'", default="ME")
         parser.add_argument('--stat_param', type=int, default=4, help="See docs for specifical stat parameters.")
         parser.add_argument('--stat_md', type=int, default=4, help="Minimum number of reads for cytosine to be analysed (if mode is 'stats')")
@@ -618,7 +618,7 @@ class CategoryScript(ConsoleScript):
                 print(f"Merged replicates will be saved as {temp}")
 
                 with UniversalWriter(temp, report_types[0]) as writer:
-                    readers = [UniversalReader(file, report_type, self.args.threads,
+                    readers = [UniversalReader(file, report_type=report_type, use_threads=self.args.threads,
                                                block_size_mb=self.args.block_mb, bar=False)
                                for file, report_type in zip(report_files, report_types)]
 
@@ -733,7 +733,7 @@ class ChrLevelsScript(ConsoleScript):
                 print(f"Merged replicates will be saved as {temp}")
 
                 with UniversalWriter(temp, report_types[0]) as writer:
-                    readers = [UniversalReader(file, report_type, self.args.threads,
+                    readers = [UniversalReader(file, report_type=report_type, use_threads=self.args.threads,
                                                block_size_mb=self.args.block_mb, bar=False)
                                for file, report_type in zip(report_files, report_types)]
 
