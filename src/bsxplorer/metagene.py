@@ -27,9 +27,8 @@ from .plots import (
 from .schemas import ReportSchema
 from .sequence import CytosinesFileCM, SequenceFile
 from .types import Context, ExistentPath, GenomeDf, Strand
-from .universal_batches import ReportTypes
-from .universal_reader import UniversalReader
-from .utils import CONTEXTS, AvailableSumfunc, MetageneSchema
+from .IO import UniversalReader
+from .utils import CONTEXTS, AvailableSumfunc, MetageneSchema, ReportTypes
 
 
 class Metagene(MetageneBase):

@@ -20,7 +20,7 @@ from numba import jit, prange
 from progress.bar import Bar
 from pyarrow import compute as pc, dataset as pads
 
-from .universal_batches import UniversalBatch
+from .IO import UniversalBatch
 from .utils import AvailableBAM
 
 

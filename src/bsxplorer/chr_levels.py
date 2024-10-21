@@ -9,7 +9,7 @@ from pyreadr import write_rds
 
 from .plots import BoxPlot, BoxPlotData, LinePlot, LinePlotData, savgol_line
 from .types import ExistentPath
-from .universal_reader import UniversalReader
+from .IO import UniversalReader
 from .utils import interval_chr
 
 

@@ -7,9 +7,9 @@ import polars as pl
 from pyarrow import parquet as pq
 from scipy.stats import binom
 
-from .universal_batches import ReportTypes
-from .universal_reader import UniversalReader
-from .utils import arrow2polars_convert
+from .schemas import ReportSchema
+from .IO import UniversalReader
+from .utils import ReportTypes
 
 
 class BinomialData:
@@ -108,8 +108,8 @@ class BinomialData:
         print("Writing p_values file into:", save_path.absolute())
         total_probability = metadata["density_sum"] / metadata["cytosine_residues"]
 
-        arrow_pvalue_schema = ARROW_SCHEMAS["binom"]
-        polars_pvalue_schema = arrow2polars_convert(arrow_pvalue_schema)
+        arrow_pvalue_schema = ReportSchema.BINOM.arrow
+        polars_pvalue_schema = ReportSchema.BINOM.polars
 
         with (
             pq.ParquetWriter(save_path, arrow_pvalue_schema) as pq_writer,
@@ -195,7 +195,7 @@ class BinomialData:
         >>> c_binom = bsxplorer.BinomialData(preprocessed_path)
         >>> data = c_binom.region_pvalue(genome)
         """
-        polars_pvalue_schema = arrow2polars_convert(ARROW_SCHEMAS["binom"])
+        polars_pvalue_schema = ReportSchema.BINOM.polars
         genome = genome.cast({k: v for k, v in polars_pvalue_schema.items() if k in genome.columns})
         genome = genome.rename({"strand": "gene_strand"})
 

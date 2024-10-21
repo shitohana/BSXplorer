@@ -31,7 +31,7 @@ from . import (
     UniversalReplicatesReader
 )
 from .sequence import init_tempfile
-from .universal_batches import ReportTypes
+from .utils import ReportTypes
 
 
 def render_template(
