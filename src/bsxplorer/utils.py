@@ -7,11 +7,13 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Literal, Union, Optional
 
+import numpy as np
 import polars as pl
 import polars.polars
 import pyarrow as pa
 from progress.bar import Bar
 from pydantic import AfterValidator
+from scipy import stats
 from typing_extensions import Annotated
 
 
@@ -132,52 +134,7 @@ UniversalBatchSchema = OrderedDict(
 )
 
 
-def genome_cast(genome: pl.DataFrame):
-    return (
-        genome
-        .cast(dict(
-            chr=UniversalBatchSchema["chr"],
-            upstream=UniversalBatchSchema["position"],
-            start=UniversalBatchSchema["position"],
-            end=UniversalBatchSchema["position"],
-            downstream=UniversalBatchSchema["position"],
-        ))
-    )
 
-
-def genome_check(genome: pl.DataFrame):
-    assert all(col in genome.columns for col in ["chr", "upstream", "downstream", "start", "end"]), polars.polars.SchemaError('Not all necessary fields are present in DataFrame (must have "chr", "upstream", "downstream", "start", "end")')
-    return genome
-
-
-def path_cast(path: str | Path):
-    if not isinstance(path, Path):
-        path = Path(path)
-    path = path.expanduser().absolute()
-    return path
-
-
-def path_check(path: Path):
-    assert path.exists(), FileNotFoundError(str(path))
-    return path
-
-
-def context_check(context: str | None):
-    if context is not None:
-        assert context in CONTEXTS, ValueError(f"Context {context} is not supported ({CONTEXTS})")
-    return context
-
-
-def strand_check(strand: str | None):
-    if strand is not None:
-        assert strand in STRANDS, ValueError(f"Context {strand} is not supported ({STRANDS})")
-    return strand
-
-
-GenomeDf = Annotated[pl.DataFrame, AfterValidator(genome_check), AfterValidator(genome_cast)]
-ExistentPath = Annotated[Union[str, Path], AfterValidator(path_cast), AfterValidator(path_check)]
-Context = Annotated[Optional[Literal["CG", "CHG", "CHH"]], AfterValidator(context_check)]
-Strand = Annotated[Optional[Literal["+", "-"]], AfterValidator(strand_check)]
 
 def prepare_labels(major_labels: list, minor_labels: list):
     labels = dict(
@@ -204,3 +161,23 @@ def prepare_labels(major_labels: list, minor_labels: list):
 
     return labels
 
+
+def interval_chr(sum_density: list[int], sum_counts: list[int], alpha=0.95):
+    """
+    Evaluate confidence interval for point
+
+    :param sum_density: Sums of methylated counts in fragment
+    :param sum_counts: Sums of all read cytosines in fragment
+    :param alpha: Probability for confidence band
+    """
+    with np.errstate(invalid="ignore"):
+        sum_density, sum_counts = np.array(sum_density), np.array(sum_counts)
+        average = sum_density.sum() / len(sum_counts)
+
+        variance = np.average((sum_density - average) ** 2)
+
+        n = sum(sum_counts) - 1
+
+        i = stats.t.interval(alpha, df=n, loc=average, scale=np.sqrt(variance / n))
+
+        return {"lower": i[0], "upper": i[1]}

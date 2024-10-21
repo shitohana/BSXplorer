@@ -74,3 +74,62 @@ where = ["src/bsxplorer", "src"]
 
 [tool.setuptools.package-data]
 cython = ["*.pyx", "*.cpp", "*.c"]
+
+[tool.ruff]
+exclude = [
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "site-packages",
+]
+line-length = 88
+target-version = "py39"
+fix=true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+docstring-code-line-length = 60
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    # numpy
+    "NPY"
+]
+ignore = ["D102", "D401"]
+fixable = ["ALL"]
+extend-safe-fixes = ["E501"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 88
+
+[tool.ruff.lint.pyupgrade]
+# Preserve types, even if a file imports `from __future__ import annotations`.
+keep-runtime-typing = true
