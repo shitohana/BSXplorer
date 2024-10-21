@@ -6,8 +6,7 @@ import sys
 import time
 import warnings
 from abc import ABC, abstractmethod
-
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from gc import collect
 from io import BytesIO
 from pathlib import Path
@@ -18,20 +17,20 @@ import pyarrow.csv as pcsv
 from jinja2 import Template
 
 from . import (
-    Genome,
-    Metagene,
     PCA,
-    MetageneFiles,
+    BAMReader,
     BinomialData,
     ChrLevels,
+    Genome,
     HeatMap,
-    BAMReader,
+    Metagene,
+    MetageneFiles,
     UniversalReader,
+    UniversalReplicatesReader,
     UniversalWriter,
-    UniversalReplicatesReader
 )
+from .misc.utils import ReportTypes
 from .sequence import init_tempfile
-from .utils import ReportTypes
 
 
 def render_template(

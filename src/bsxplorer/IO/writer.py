@@ -5,7 +5,7 @@ from pathlib import Path
 import pyarrow as pa
 from pyarrow import csv as pcsv
 
-from ..schemas import ReportSchema
+from ..misc.schemas import ReportSchema
 from .batches import UniversalBatch
 
 
@@ -29,9 +29,6 @@ class UniversalWriter:
     ):
         file = Path(file).expanduser().absolute()
         self.file = file
-
-        if report_type not in ReportSchema.__members__:
-            raise KeyError(report_type)
         self.report_type = report_type
 
         self.memory_pool = pa.system_memory_pool()

@@ -8,8 +8,8 @@ import polars as pl
 import pyarrow as pa
 from pyarrow import parquet as pq
 
-from ..schemas import ReportSchema, validate
-from ..utils import fraction_v
+from ..misc.schemas import ReportSchema, validate
+from ..misc.utils import fraction_v
 
 
 class BaseBatch:

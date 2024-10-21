@@ -9,10 +9,10 @@ from typing import Annotated, Literal, Optional, Union
 import pyarrow as pa
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
-from ..schemas import ReportSchema
-from ..types import ExistentPath
-from ..utils import ReportBar
-from .arrow_readers import ArrowParquetReader2, ArrowReaderCSV2
+from ..misc.schemas import ReportSchema
+from ..misc.types import ExistentPath
+from ..misc.utils import ReportBar
+from .arrow_readers import ArrowParquetReader, ArrowReaderCSV
 
 
 class UniversalReader(BaseModel):
@@ -122,7 +122,7 @@ class UniversalReader(BaseModel):
             ReportSchema.CGMAP,
             ReportSchema.BEDGRAPH,
         }:
-            return ArrowReaderCSV2(
+            return ArrowReaderCSV(
                 file=infile,
                 report_schema=self.report_schema,
                 memory_pool=self.memory_pool,
@@ -130,7 +130,7 @@ class UniversalReader(BaseModel):
                 **self.reader_kwargs,
             )
         if self.report_schema == ReportSchema.BINOM:
-            return ArrowParquetReader2(
+            return ArrowParquetReader(
                 file=infile,
                 report_schema=self.report_schema,
                 use_threads=self.use_threads,

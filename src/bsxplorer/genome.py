@@ -8,8 +8,8 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from .plots import savgol_line
-from .utils import MetageneSchema
+from .plot import savgol_line
+from .misc.utils import MetageneSchema
 
 
 class Genome:

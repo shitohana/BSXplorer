@@ -97,32 +97,6 @@ def fraction(n, limit):
 fraction_v = np.vectorize(fraction)
 
 
-def prepare_labels(major_labels: list, minor_labels: list):
-    labels = dict(
-        up_mid="Upstream",
-        body_start="TSS",
-        body_mid="Body",
-        body_end="c",
-        down_mid="Downstream"
-    )
-
-    if major_labels and len(major_labels) == 2:
-        labels["body_start"], labels["body_end"] = major_labels
-    elif major_labels:
-        print("Length of major tick labels != 2. Using default.")
-    else:
-        labels["body_start"], labels["body_end"] = [""] * 2
-
-    if minor_labels and len(minor_labels) == 3:
-        labels["up_mid"], labels["body_mid"], labels["down_mid"] = minor_labels
-    elif minor_labels:
-        print("Length of minor tick labels != 3. Using default.")
-    else:
-        labels["up_mid"], labels["body_mid"], labels["down_mid"] = [""] * 3
-
-    return labels
-
-
 def interval_chr(sum_density: list[int], sum_counts: list[int], alpha=0.95):
     """
     Evaluate confidence interval for point

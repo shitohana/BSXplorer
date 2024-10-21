@@ -9,9 +9,9 @@ from polars import DataFrame
 from pydantic import BaseModel, Field, field_validator, validate_call
 from pyreadr import write_rds
 
-from .types import GenomeDf
 from .IO import UniversalReader
-from .utils import (
+from .misc.types import GenomeDf
+from .misc.utils import (
     MetageneJoinedSchema,
     remove_extension,
 )

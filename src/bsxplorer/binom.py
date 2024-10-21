@@ -7,9 +7,9 @@ import polars as pl
 from pyarrow import parquet as pq
 from scipy.stats import binom
 
-from .schemas import ReportSchema
 from .IO import UniversalReader
-from .utils import ReportTypes
+from .misc.schemas import ReportSchema
+from .misc.utils import ReportTypes
 
 
 class BinomialData:

@@ -8,12 +8,12 @@ import pyarrow as pa
 from pyarrow import csv as pcsv, parquet as pq
 from pydantic import BaseModel, Field
 
-from ..schemas import ReportSchema
-from ..types import ExistentPath, Mb2Bytes
+from ..misc.schemas import ReportSchema
+from ..misc.types import ExistentPath, Mb2Bytes
 from .batches import UniversalBatch
 
 
-class ArrowParquetReader2(BaseModel):
+class ArrowParquetReader(BaseModel):
     file: ExistentPath
     report_schema: ReportSchema
     use_cols: Optional[list[str]] = Field(default=None)
@@ -38,7 +38,7 @@ class ArrowParquetReader2(BaseModel):
         return int(self.file.stat().st_size / self.reader.num_row_groups)
 
 
-class ArrowReaderCSV2(BaseModel):
+class ArrowReaderCSV(BaseModel):
     file: ExistentPath
     block_size_mb: Mb2Bytes
     report_schema: ReportSchema

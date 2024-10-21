@@ -14,7 +14,11 @@ from .base import (
     MetageneFilesBase,
 )
 from .cluster import ClusterMany, ClusterSingle
-from .plots import (
+from .IO import UniversalReader
+from .misc.schemas import ReportSchema
+from .misc.types import Context, ExistentPath, GenomeDf, Strand
+from .misc.utils import CONTEXTS, AvailableSumfunc, MetageneSchema, ReportTypes
+from .plot import (
     BoxPlot,
     BoxPlotData,
     HeatMap,
@@ -24,11 +28,7 @@ from .plots import (
     plot_stat_expr,
     savgol_line,
 )
-from .schemas import ReportSchema
 from .sequence import CytosinesFileCM, SequenceFile
-from .types import Context, ExistentPath, GenomeDf, Strand
-from .IO import UniversalReader
-from .utils import CONTEXTS, AvailableSumfunc, MetageneSchema, ReportTypes
 
 
 class Metagene(MetageneBase):

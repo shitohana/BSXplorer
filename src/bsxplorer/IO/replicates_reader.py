@@ -6,7 +6,7 @@ from collections import defaultdict
 import numpy as np
 import polars as pl
 
-from ..utils import ReportBar
+from ..misc.utils import ReportBar
 from .batches import UniversalBatch
 from .single_reader import UniversalReader
 

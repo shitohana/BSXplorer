@@ -7,10 +7,10 @@ import polars as pl
 from pydantic import Field, validate_call
 from pyreadr import write_rds
 
-from .plots import BoxPlot, BoxPlotData, LinePlot, LinePlotData, savgol_line
-from .types import ExistentPath
 from .IO import UniversalReader
-from .utils import interval_chr
+from .misc.types import ExistentPath
+from .misc.utils import interval_chr
+from .plot import BoxPlot, BoxPlotData, LinePlot, LinePlotData, savgol_line
 
 
 class ChrLevels:

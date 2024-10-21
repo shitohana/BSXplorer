@@ -1,4 +1,4 @@
-from .arrow_readers import ArrowParquetReader2, ArrowReaderCSV2
+from .arrow_readers import ArrowParquetReader, ArrowReaderCSV
 from .batches import UniversalBatch
 from .replicates_reader import UniversalReplicatesReader
 from .single_reader import UniversalReader
