@@ -8,13 +8,12 @@ import polars as pl
 from pydantic import Field, validate_call
 from pyreadr import write_rds
 
-from . import SequenceFile
 from .IO import UniversalReader
 from .misc.schemas import ReportSchema
 from .misc.types import ExistentPath
 from .misc.utils import CONTEXTS, STRANDS, interval_chr
 from .plot import BoxPlot, BoxPlotData, LinePlot, LinePlotData, savgol_line
-from .sequence import CytosinesFileCM
+from .sequence import CytosinesFileCM, SequenceFile
 
 
 class ChrLevels:
@@ -363,10 +362,10 @@ class ChrLevels:
 
     @validate_call
     def filter(
-            self,
-            context: Optional[CONTEXTS] = None,
-            strand: Optional[STRANDS] = None,
-            chr: Optional[str] = None
+        self,
+        context: Optional[CONTEXTS] = None,
+        strand: Optional[STRANDS] = None,
+        chr: Optional[str] = None,
     ):
         """
         Filter chromosome methylation levels data.
@@ -414,10 +413,7 @@ class ChrLevels:
         return x_ticks, x_labels, x_lines
 
     @validate_call
-    def line_plot_data(
-            self,
-            smooth: Annotated[int, Field(ge=0)] = 0
-    ):
+    def line_plot_data(self, smooth: Annotated[int, Field(ge=0)] = 0):
         y = self.plot_data["density"].to_numpy()
 
         upper, lower = None, None
@@ -434,10 +430,7 @@ class ChrLevels:
         x_ticks, x_labels, x_lines = self._ticks_data
         return LinePlotData(x, y, x_ticks, x_lines, lower, upper, x_labels=x_labels)
 
-    def line_plot(
-            self,
-            smooth: Annotated[int, Field(ge=0)] = 0
-    ):
+    def line_plot(self, smooth: Annotated[int, Field(ge=0)] = 0):
         return LinePlot(self.line_plot_data(smooth))
 
     @validate_call
