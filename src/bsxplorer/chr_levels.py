@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from typing import Annotated
+from functools import cached_property
+from typing import Annotated, Optional
 
 import numpy as np
 import polars as pl
 from pydantic import Field, validate_call
 from pyreadr import write_rds
 
+from . import SequenceFile
 from .IO import UniversalReader
+from .misc.schemas import ReportSchema
 from .misc.types import ExistentPath
-from .misc.utils import interval_chr
+from .misc.utils import CONTEXTS, STRANDS, interval_chr
 from .plot import BoxPlot, BoxPlotData, LinePlot, LinePlotData, savgol_line
+from .sequence import CytosinesFileCM
 
 
 class ChrLevels:
@@ -28,20 +32,17 @@ class ChrLevels:
         """
         self.report = df
 
-        # delete this in future and change to calculation of plot data
-        # when plot is drawn
-        self.plot_data = self.__calculate_plot_data(df)
-
-    @staticmethod
-    def __calculate_plot_data(df: pl.DataFrame):
+    @cached_property
+    def plot_data(self):
         group_cols = [pl.sum("sum"), pl.sum("count"), pl.min("start").alias("chr_pos")]
         mut_cols = [(pl.col("sum") / pl.col("count")).alias("density")]
 
-        if "upper" in df.columns:
+        if "upper" in self.report.columns:
             group_cols += [pl.mean("upper"), pl.mean("lower")]
 
         return (
-            df.sort(["chr", "window"])
+            self.report.lazy()
+            .sort(["chr", "window"])
             .group_by(["chr", "window", "context"], maintain_order=True)
             .agg(group_cols)
             .group_by(["chr", "window"], maintain_order=True)
@@ -49,6 +50,7 @@ class ChrLevels:
             .with_row_count("fragment")
             .explode(pl.all().exclude(["chr", "window", "fragment"]))
             .with_columns(mut_cols)
+            .collect()
         )
 
     @classmethod
@@ -168,7 +170,12 @@ class ChrLevels:
             Pvalue for confidence bands of the LinePlot.
         """
 
-        reader = UniversalReader.model_validate(locals() | dict(report_type="bismark"))
+        reader = UniversalReader(
+            file=file,
+            report_schema=ReportSchema.BISMARK,
+            block_size_mb=block_size_mb,
+            use_threads=use_threads,
+        )
         return cls._read_report(reader, chr_min_length, window_length, confidence)
 
     @classmethod
@@ -201,7 +208,12 @@ class ChrLevels:
         confidence
             Pvalue for confidence bands of the LinePlot.
         """
-        reader = UniversalReader.model_validate(locals() | dict(report_type="cgmap"))
+        reader = UniversalReader(
+            file=file,
+            report_schema=ReportSchema.CGMAP,
+            block_size_mb=block_size_mb,
+            use_threads=use_threads,
+        )
         return cls._read_report(reader, chr_min_length, window_length, confidence)
 
     @classmethod
@@ -209,7 +221,7 @@ class ChrLevels:
     def from_bedgraph(
         cls,
         file: ExistentPath,
-        cytosine_file: ExistentPath,
+        fasta: ExistentPath,
         chr_min_length: Annotated[int, Field(ge=1_000)] = 1_000_000,
         window_length: Annotated[int, Field(ge=1_000)] = 100_000,
         block_size_mb: Annotated[int, Field(gt=0)] = 100,
@@ -223,8 +235,9 @@ class ChrLevels:
         ----------
         file
             Path to the report file.
-        cytosine_file
-            Path to preprocessed by :class:`Sequence` cytosine file.
+        fasta
+            Path to FASTA genome sequence file or path to preprocessed with
+            :class:`Sequence` cytosine file.
         chr_min_length
             Minimum length of chromosome to be analyzed
         window_length
@@ -237,15 +250,25 @@ class ChrLevels:
         confidence
             Pvalue for confidence bands of the LinePlot.
         """
-        reader = UniversalReader.model_validate(locals() | dict(report_type="bedgraph"))
-        return cls._read_report(reader, chr_min_length, window_length, confidence)
+        with CytosinesFileCM(fasta) as cm:
+            cytosine_file = cm.cytosine_path
+            if not cm.is_cytosine:
+                SequenceFile(fasta).preprocess_cytosines(cytosine_file)
+            reader = UniversalReader(
+                file=file,
+                report_schema=ReportSchema.BEDGRAPH,
+                use_threads=use_threads,
+                cytosine_file=cytosine_file,
+                block_size_mb=block_size_mb,
+            )
+            return cls._read_report(reader, chr_min_length, window_length, confidence)
 
     @classmethod
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def from_coverage(
         cls,
         file: ExistentPath,
-        cytosine_file: ExistentPath,
+        fasta: ExistentPath,
         chr_min_length: Annotated[int, Field(ge=1_000)] = 1_000_000,
         window_length: Annotated[int, Field(ge=1_000)] = 100_000,
         block_size_mb: Annotated[int, Field(gt=0)] = 100,
@@ -259,8 +282,9 @@ class ChrLevels:
         ----------
         file
             Path to the report file.
-        cytosine_file
-            Path to preprocessed by :class:`Sequence` cytosine file.
+        fasta
+            Path to FASTA genome sequence file or path to preprocessed with
+            :class:`Sequence` cytosine file.
         chr_min_length
             Minimum length of chromosome to be analyzed
         window_length
@@ -273,8 +297,18 @@ class ChrLevels:
         confidence
             Pvalue for confidence bands of the LinePlot.
         """
-        reader = UniversalReader.model_validate(locals() | dict(report_type="coverage"))
-        return cls._read_report(reader, chr_min_length, window_length, confidence)
+        with CytosinesFileCM(fasta) as cm:
+            cytosine_file = cm.cytosine_path
+            if not cm.is_cytosine:
+                SequenceFile(fasta).preprocess_cytosines(cytosine_file)
+            reader = UniversalReader(
+                file=file,
+                report_schema=ReportSchema.COVERAGE,
+                use_threads=use_threads,
+                cytosine_file=cytosine_file,
+                block_size_mb=block_size_mb,
+            )
+            return cls._read_report(reader, chr_min_length, window_length, confidence)
 
     @classmethod
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -285,6 +319,7 @@ class ChrLevels:
         window_length: Annotated[int, Field(ge=1_000)] = 100_000,
         confidence: Annotated[float, Field(ge=0, lt=1)] = 0.0,
         p_value: Annotated[float, Field(gt=0, lt=1)] = 0.05,
+        use_threads: bool = False,
     ):
         """
         Initialize ChrLevels with .parquet file from :class:`Binom`.
@@ -301,9 +336,14 @@ class ChrLevels:
             Pvalue for confidence bands of the LinePlot.
         p_value
             Pvalue with which cytosine will be considered methylated.
+        use_threads
+            Will reading be multithreaded.
         """
-        reader = UniversalReader.model_validate(
-            (locals() | dict(report_type="binom", methylation_pvalue=p_value))
+        reader = UniversalReader(
+            file=file,
+            report_schema=ReportSchema.BINOM,
+            methylation_pvalue=p_value,
+            use_threads=use_threads,
         )
         return cls._read_report(reader, chr_min_length, window_length, confidence)
 
@@ -321,7 +361,13 @@ class ChrLevels:
             path, self.plot_data.to_pandas(), compress="gzip" if compress else None
         )
 
-    def filter(self, context: str = None, strand: str = None, chr: str = None):
+    @validate_call
+    def filter(
+            self,
+            context: Optional[CONTEXTS] = None,
+            strand: Optional[STRANDS] = None,
+            chr: Optional[str] = None
+    ):
         """
         Filter chromosome methylation levels data.
 
@@ -367,7 +413,11 @@ class ChrLevels:
         x_labels = ticks_data["chr"].to_list()
         return x_ticks, x_labels, x_lines
 
-    def line_plot_data(self, smooth: int = 0):
+    @validate_call
+    def line_plot_data(
+            self,
+            smooth: Annotated[int, Field(ge=0)] = 0
+    ):
         y = self.plot_data["density"].to_numpy()
 
         upper, lower = None, None
@@ -384,9 +434,13 @@ class ChrLevels:
         x_ticks, x_labels, x_lines = self._ticks_data
         return LinePlotData(x, y, x_ticks, x_lines, lower, upper, x_labels=x_labels)
 
-    def line_plot(self, smooth: int = 0):
+    def line_plot(
+            self,
+            smooth: Annotated[int, Field(ge=0)] = 0
+    ):
         return LinePlot(self.line_plot_data(smooth))
 
+    @validate_call
     def box_plot_data(self):
         pd_df = (
             self.report.group_by(["chr"])

@@ -13,10 +13,10 @@ from ..misc.schemas import ReportSchema
 from ..misc.types import ExistentPath
 from ..misc.utils import ReportBar
 from .arrow_readers import ArrowParquetReader, ArrowReaderCSV
+from .batches import UniversalBatch
 
 
 class UniversalReader(BaseModel):
-    # Fixme
     """
     Class for batched reading methylation reports.
 
@@ -137,7 +137,7 @@ class UniversalReader(BaseModel):
                 **self.reader_kwargs,
             )
 
-    def __iter__(self):
+    def __iter__(self) -> UniversalBatch:
         if ".gz" in self.file.suffixes:
             with (
                 tempfile.NamedTemporaryFile(
