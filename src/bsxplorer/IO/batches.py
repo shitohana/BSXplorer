@@ -3,17 +3,13 @@ from __future__ import annotations
 import functools
 import gc
 from copy import deepcopy
-from typing import Literal
 
 import polars as pl
 import pyarrow as pa
-import pyarrow.parquet as pq
+from pyarrow import parquet as pq
 
-from .schemas import ReportSchema, validate
-from .utils import fraction_v
-
-# Fixme
-ReportTypes = Literal["bismark", "cgmap", "binom", "bedgraph", "coverage"]
+from ..schemas import ReportSchema, validate
+from ..utils import fraction_v
 
 
 class BaseBatch:
@@ -144,8 +140,8 @@ class UniversalBatch(BaseBatch):
                 ]
             )
         elif (
-                report_schema == ReportSchema.COVERAGE or
-                report_schema == ReportSchema.BEDGRAPH
+            report_schema == ReportSchema.COVERAGE
+            or report_schema == ReportSchema.BEDGRAPH
         ):
             batch = pl.from_arrow(raw)
 
@@ -160,6 +156,9 @@ class UniversalBatch(BaseBatch):
             output = None
 
             for chrom in batch_stats["chr"]:
+                assert "cytosine_file" in kwargs, ValueError(
+                    "Cytosine file (param cytosine_file) needs to be specified"
+                )
                 chrom_min, chrom_max = (
                     batch_stats.filter(chr=chrom).select(["min", "max"]).row(0)
                 )
@@ -170,7 +169,9 @@ class UniversalBatch(BaseBatch):
                     ("position", ">=", chrom_min),
                     ("position", "<=", chrom_max),
                 ]
-                pa_filtered_sequence = pq.read_table(kwargs.get("cytosine_file"), filters=filters)
+                pa_filtered_sequence = pq.read_table(
+                    kwargs.get("cytosine_file"), filters=filters
+                )
 
                 modified_schema = pa_filtered_sequence.schema
                 modified_schema = modified_schema.set(1, pa.field("context", pa.utf8()))
@@ -208,18 +209,24 @@ class UniversalBatch(BaseBatch):
                 gc.collect()
 
                 if report_schema == ReportSchema.COVERAGE:
-                    mutated = (
-                        output
-                        .with_columns(
-                            [
-                                (pl.col("count_m") + pl.col("count_um")).alias("count_total"),
-                                pl.col("context").alias("trinuc"),
-                            ]
-                        )
-                        .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
+                    mutated = output.with_columns(
+                        [
+                            (pl.col("count_m") + pl.col("count_um")).alias(
+                                "count_total"
+                            ),
+                            pl.col("context").alias("trinuc"),
+                        ]
+                    ).with_columns(
+                        (pl.col("count_m") / pl.col("count_total")).alias("density")
                     )
                 else:
-                    converted = fraction_v((output["density"] / 100).to_list(), kwargs.get("max_out"))
+                    assert "max_out" in kwargs, ValueError(
+                        "Max coverage for bedGraph conversion (param max_out) needs to "
+                        "be specified"
+                    )
+                    converted = fraction_v(
+                        (output["density"] / 100).to_list(), kwargs.get("max_out")
+                    )
 
                     fractioned = output.with_columns(
                         [
