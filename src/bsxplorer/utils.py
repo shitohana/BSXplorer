@@ -4,6 +4,7 @@ import datetime
 import re
 import sys
 from collections import OrderedDict
+from fractions import Fraction
 from pathlib import Path
 from typing import Literal, Union, Optional
 
@@ -134,7 +135,10 @@ UniversalBatchSchema = OrderedDict(
 )
 
 
-
+def fraction(n, limit):
+    f = Fraction(n).limit_denominator(limit)
+    return f.numerator, f.denominator
+fraction_v = np.vectorize(fraction)
 
 def prepare_labels(major_labels: list, minor_labels: list):
     labels = dict(

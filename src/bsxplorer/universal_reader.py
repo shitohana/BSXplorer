@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import gc
 import gzip
 import shutil
 import tempfile
 import warnings
-from abc import abstractmethod
 from collections import defaultdict
-from fractions import Fraction
+from collections.abc import Generator
 from pathlib import Path
 from typing import Annotated, Literal, Optional
 
@@ -16,35 +14,20 @@ import numpy as np
 import polars as pl
 import pyarrow as pa
 from pyarrow import csv as pcsv, parquet as pq
-from pydantic import BaseModel, Field, validate_call, AliasChoices, AliasPath, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    Field,
+    computed_field,
+    field_validator,
+)
 
 from .schemas import ReportSchema
-from .types import ExistentPath
+from .types import ExistentPath, Mb2Bytes
 from .universal_batches import UniversalBatch
 from .utils import ReportBar
 
 
-# noinspection PyMissingOrEmptyDocstring
-def invalid_row_handler(row):
-    print(f"Got invalid row: {row}")
-    return "skip"
-
-
-# noinspection PyMissingOrEmptyDocstring
-@func_timeout.func_set_timeout(20)
-def open_csv(
-    file: str | Path,
-    read_options: pcsv.ReadOptions = None,
-    parse_options: pcsv.ParseOptions = None,
-    convert_options: pcsv.ConvertOptions = None,
-    memory_pool=None,
-):
-    return pcsv.open_csv(
-        file, read_options, parse_options, convert_options, memory_pool
-    )
-
-
-# noinspection PyMissingOrEmptyDocstring
 class ArrowParquetReader:
     def __init__(
         self,
@@ -141,294 +124,67 @@ class BinomReader(ArrowParquetReader):
         return UniversalBatch(mutated, batch)
 
 
-class ArrowReaderCSV:
-    __slots__ = ["file", "batch_size", "_current_batch", "reader"]
+class ArrowReaderCSV2(BaseModel):
+    file: ExistentPath
+    block_size_mb: Mb2Bytes
+    report_schema: ReportSchema
+    memory_pool: type[pa.MemoryPool] = Field(default_factory=pa.system_memory_pool)
+    kwargs: dict = Field(default_factory=dict)
+    use_threads: bool = Field(default=True)
 
-    @property
-    @abstractmethod
-    def pa_schema(self): ...
-
-    @abstractmethod
-    def convert_options(self, **kwargs): ...
-
-    @abstractmethod
-    def parse_options(self, **kwargs): ...
-
-    @abstractmethod
-    def read_options(self, **kwargs): ...
-
-    def __init__(self, file, block_size_mb):
-        self.file = file
-        self.batch_size = block_size_mb * 1024**2
-        self._current_batch = None
-
-    def __enter__(self):
-        return self
-
-    def __iter__(self):
-        return self
-
-    def get_reader(
-        self,
-        read_options: pcsv.ReadOptions = None,
-        parse_options: pcsv.ParseOptions = None,
-        convert_options: pcsv.ConvertOptions = None,
-        memory_pool=None,
-    ) -> pcsv.CSVStreamingReader:
-        """
-        This function is needed, because if Arrow tries to open CSV with wrong schema,
-        it gets stuck on it forever.
-        This function makes a timout on initializing reader
-        """
-        try:
-            reader = open_csv(
-                self.file, read_options, parse_options, convert_options, memory_pool
-            )
-
-            return reader
-        except pa.ArrowInvalid as e:
-            print(f"Error opening file: {self.file}")
-            raise e
-        except func_timeout.exceptions.FunctionTimedOut:
-            print(
-                "Time for oppening file exceeded. Check if input type is correct or try"
-                " making your batch size smaller."
-            )
-            exit(0)
-
-    def _mutate_next(self, batch: pa.RecordBatch) -> UniversalBatch:
-        return UniversalBatch(pl.from_arrow(batch), batch)
-
-    def __next__(self):
-        try:
-            raw = self.reader.read_next_batch()
-            batch = self._mutate_next(raw)
-            return batch
-        except pa.ArrowInvalid as e:
-            print(e)
-            return self.__next__()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.reader.close()
-
-
-# noinspection PyMissingOrEmptyDocstring
-class BismarkReader(ArrowReaderCSV):
-    pa_schema = ReportSchema.BISMARK.arrow
-
+    @computed_field
     def convert_options(self):
         return pcsv.ConvertOptions(
-            column_types=self.pa_schema, strings_can_be_null=False
+            column_types=self.report_schema.value.arrow, strings_can_be_null=False
         )
 
+    @computed_field
     def parse_options(self):
         return pcsv.ParseOptions(
             delimiter="\t",
             quote_char=False,
             escape_char=False,
             ignore_empty_lines=True,
-            invalid_row_handler=lambda _: "skip",
+            invalid_row_handler=lambda _: "skip",  # TODO maybe add logging
         )
 
-    def read_options(self, use_threads=True, block_size=None):
+    @computed_field
+    def read_options(self):
         return pcsv.ReadOptions(
-            use_threads=use_threads,
-            block_size=block_size,
+            use_threads=self.use_threads,
+            block_size=self.block_size_mb,
             skip_rows=0,
             skip_rows_after_names=0,
-            column_names=self.pa_schema.names,
+            column_names=self.report_schema.value.arrow.names,
         )
 
-    def __init__(
-        self,
-        file: str | Path,
-        use_threads: bool = True,
-        block_size_mb: int = 50,
-        memory_pool: type[pa.MemoryPool] = None,
-        **kwargs,
-    ):
-        super().__init__(file, block_size_mb)
-        self.reader = self.get_reader(
-            self.read_options(use_threads=use_threads, block_size=self.batch_size),
-            self.parse_options(),
-            self.convert_options(),
-            memory_pool=memory_pool,
-        )
-
-    def _mutate_next(self, batch: pa.RecordBatch):
-        mutated = (
-            pl.from_arrow(batch)
-            .with_columns((pl.col("count_m") + pl.col("count_um")).alias("count_total"))
-            .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
-        )
-        return UniversalBatch(mutated, batch)
-
-
-# noinspection PyMissingOrEmptyDocstring
-class CGMapReader(BismarkReader):
-    pa_schema = ReportSchema.CGMAP.value
-
-    def _mutate_next(self, batch: pa.RecordBatch):
-        mutated = pl.from_arrow(batch).with_columns(
-            [
-                pl.when(pl.col("nuc") == "C")
-                .then(pl.lit("+"))
-                .otherwise(pl.lit("-"))
-                .alias("strand"),
-                pl.when(pl.col("dinuc") == "CG")
-                # if dinuc == "CG" => trinuc = "CG"
-                .then(pl.col("dinuc"))
-                # otherwise trinuc = dinuc + context_last
-                .otherwise(
-                    pl.concat_str([pl.col("dinuc"), pl.col("context").str.slice(-1)])
-                )
-                .alias("trinuc"),
-            ]
-        )
-        return UniversalBatch(mutated, batch)
-
-
-# noinspection PyMissingOrEmptyDocstring
-class CoverageReader(ArrowReaderCSV):
-    pa_schema = ReportSchema.COVERAGE.value
-
-    read_options = BismarkReader.read_options
-    parse_options = BismarkReader.parse_options
-    convert_options = BismarkReader.convert_options
-
-    def __init__(
-        self,
-        file: str | Path,
-        cytosine_file: str | Path,
-        use_threads: bool = True,
-        block_size_mb: int = 50,
-        memory_pool: type[pa.MemoryPool] = None,
-        **kwargs,
-    ):
-        super().__init__(file, block_size_mb)
-        self.reader = self.get_reader(
-            self.read_options(use_threads=use_threads, block_size=self.batch_size),
-            self.parse_options(),
-            self.convert_options(),
-            memory_pool=memory_pool,
-        )
-
-        self.cytosine_file = cytosine_file
-        self._sequence_rows_read = 0
-        self._sequence_metadata = pq.read_metadata(cytosine_file)
-
-    def _align(self, pa_batch: pa.RecordBatch):
-        batch = pl.from_arrow(pa_batch)
-
-        # get batch stats
-        batch_stats = batch.group_by("chr").agg(
-            [
-                pl.col("position").max().alias("max"),
-                pl.col("position").min().alias("min"),
-            ]
-        )
-
-        output = None
-
-        for chrom in batch_stats["chr"]:
-            chrom_min, chrom_max = (
-                batch_stats.filter(chr=chrom).select(["min", "max"]).row(0)
+    @func_timeout.func_set_timeout(20)
+    def init_arrow(self) -> pcsv.CSVStreamingReader:
+        try:
+            reader = pcsv.open_csv(
+                self.file,
+                self.read_options,
+                self.parse_options,
+                self.convert_options,
+                self.memory_pool,
             )
+            return reader
+        except pa.ArrowInvalid:
+            print(f"Error openning file: {self.file}")
 
-            # Read and filter sequence
-            filters = [
-                ("chr", "=", chrom),
-                ("position", ">=", chrom_min),
-                ("position", "<=", chrom_max),
-            ]
-            pa_filtered_sequence = pq.read_table(self.cytosine_file, filters=filters)
+    def __iter__(self) -> Generator[UniversalBatch]:
+        reader = self.init_arrow()
+        while True:
+            try:
+                raw = reader.read_next_batch()
+                yield UniversalBatch.from_arrow(raw, self.report_schema, **self.kwargs)
 
-            modified_schema = pa_filtered_sequence.schema
-            modified_schema = modified_schema.set(1, pa.field("context", pa.utf8()))
-            modified_schema = modified_schema.set(2, pa.field("chr", pa.utf8()))
-
-            pa_filtered_sequence = pa_filtered_sequence.cast(modified_schema)
-
-            pl_sequence = (
-                pl.from_arrow(pa_filtered_sequence)
-                .with_columns(
-                    [
-                        pl.when(pl.col("strand").eq(True))
-                        .then(pl.lit("+"))
-                        .otherwise(pl.lit("-"))
-                        .alias("strand")
-                    ]
-                )
-                .cast(dict(position=batch.schema["position"]))
-            )
-
-            # Align batch with sequence
-            batch_filtered = batch.filter(pl.col("chr") == chrom)
-            aligned = (
-                batch_filtered.lazy()
-                .cast({"position": pl.UInt64})
-                .set_sorted("position")
-                .join(pl_sequence.lazy(), on="position", how="left")
-            ).collect()
-
-            self._sequence_rows_read += len(pl_sequence)
-
-            if output is None:
-                output = aligned
-            else:
-                output.extend(aligned)
-
-            gc.collect()
-
-        return output
-
-    def _mutate_next(self, batch: pa.RecordBatch):
-        mutated = (
-            self._align(batch)
-            .with_columns(
-                [
-                    (pl.col("count_m") + pl.col("count_um")).alias("count_total"),
-                    pl.col("context").alias("trinuc"),
-                ]
-            )
-            .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
-        )
-        return UniversalBatch(mutated, batch)
-
-
-# noinspection PyMissingOrEmptyDocstring
-class BedGraphReader(CoverageReader):
-    pa_schema = ReportSchema.BEDGRAPH.value
-
-    def __init__(
-        self, file: str | Path, cytosine_file: str | Path, max_count=100, **kwargs
-    ):
-        super().__init__(file, cytosine_file, **kwargs)
-        self.max_count = max_count
-
-    def _get_fraction(self, df: pl.DataFrame):
-        def fraction(n, limit):
-            f = Fraction(n).limit_denominator(limit)
-            return f.numerator, f.denominator
-
-        fraction_v = np.vectorize(fraction)
-        converted = fraction_v((df["density"] / 100).to_list(), self.max_count)
-
-        final = df.with_columns(
-            [
-                pl.lit(converted[0]).alias("count_m"),
-                pl.lit(converted[1]).alias("count_total"),
-            ]
-        )
-
-        return final
-
-    def _mutate_next(self, batch: pa.RecordBatch):
-        aligned = self._align(batch)
-        fractioned = self._get_fraction(aligned)
-        full = fractioned.with_columns(pl.col("context").alias("trinuc"))
-
-        return UniversalBatch(full, batch)
+            except pa.ArrowInvalid:
+                # Todo add logging
+                continue
+            except StopIteration:
+                break
+        reader.close()
 
 
 class UniversalReader(BaseModel):
@@ -436,34 +192,10 @@ class UniversalReader(BaseModel):
     """
     Class for batched reading methylation reports.
 
-    Parameters
-    ----------
-    file
-        Path to the methylation report file.
-    report_type
-        Type of the methylation report. Possible types: "bismark", "cgmap", "bedgraph",
-        "coverage", "binom"
-    use_threads
-        Will reading be multithreaded.
-    bar
-        Indicate the progres bar while reading.
-    kwargs
-        Specific keyword arguments to the reader.
-
-    Other Parameters
-    ----------------
-    cytosine_file: str | Path
-        Instance of :class:`Sequence` for reading bedGraph or .coverage reports.
-    methylation_pvalue: float
-        Pvalue with which cytosine will be considered methylated.
-    block_size_mb: int
-        Size of batch in bytes, which will be read from report file (for report types
-        other than "binom").
-
     Examples
     --------
     >>> reader = UniversalReader(
-    ...     "path/to/file.txt",
+    ...     file="path/to/file.txt",
     ...     report_type="bismark",
     ...     use_threads=True,
     ... )
@@ -471,14 +203,50 @@ class UniversalReader(BaseModel):
     >>>     do_something(batch)
     """
 
-    file: ExistentPath
-    report_schema: ReportSchema = Field(validation_alias=AliasChoices('report_schema', 'report_type'))
-    use_threads: bool = Field(default=True)
-    bar_enabled: Optional[bool] = Field(default=False, validation_alias=AliasChoices('bar_enabled', 'bar'))
+    file: ExistentPath = Field(
+        title="Methylation file", description="Path to the methylation report file"
+    )
+    report_schema: ReportSchema = Field(
+        validation_alias=AliasChoices("report_schema", "report_type"),
+        title="Schema of methylation report",
+        description="Either an instance of Enum :class:`ReportSchema` or one of the "
+        'possible types: "bismark", "cgmap", "bedgraph", "coverage", '
+        '"binom".',
+    )
+    use_threads: bool = Field(default=True, description="Will reading be multithreaded")
+    bar_enabled: Optional[bool] = Field(
+        default=False,
+        validation_alias=AliasChoices("bar_enabled", "bar"),
+        description="Indicate the progres bar while reading.",
+    )
     allocator: Optional[Literal["system", "default", "mimalloc", "jemalloc"]] = Field(
         default="system"
     )
-    reader_kwargs: Optional[dict] = Field(default_factory=dict)
+    cytosine_file: Optional[ExistentPath] = Field(
+        default=None,
+        title="Path to preprocessed cytosine file",
+        description="Instance of :class:`Sequence` for reading bedGraph "
+        "or .coverage reports.",
+    )
+    methylation_pvalue: Optional[Annotated[float, Field(gt=0, lt=1)]] = Field(
+        default=None,
+        title="Methylation PValue",
+        description="Pvalue with which cytosine will be considered methylated.",
+    )
+    block_size_mb: Optional[Annotated[int, Field(gt=0)]] = Field(
+        default=100,
+        title="Size of batch in mb",
+        description="Size of batch in bytes, which will be read from report file "
+        '(for report typesother than "binom").',
+    )
+
+    @property
+    def reader_kwargs(self):
+        return dict(
+            cytosine_file=self.cytosine_file,
+            methylation_pvalue=self.methylation_pvalue,
+            block_size_mb=self.block_size_mb,
+        )
 
     @field_validator("report_schema", mode="before")
     @classmethod
@@ -489,31 +257,6 @@ class UniversalReader(BaseModel):
             return value
         else:
             return ValueError
-
-    @validate_call
-    def __init__(
-        self,
-        file: ExistentPath,
-        report_schema: ReportSchema,
-        report_type: Optional[
-            Annotated[str, Field(deprecated="use report_schema instead")]
-        ] = None,
-        bar_enabled: bool = False,
-        use_threads: bool = False,
-        bar: Optional[
-            Annotated[bool, Field(deprecated="use bar_enabled instead")]
-        ] = None,
-        allocator: Optional[
-            Literal["system", "default", "mimalloc", "jemalloc"]
-        ] = "system",
-        *,
-        cytosine_file: Optional[ExistentPath] = None,
-        methylation_pvalue: Optional[Annotated[float, Field(gt=0, lt=1)]] = None,
-        block_size_mb: Optional[Annotated[int, Field(gt=0)]] = None,
-    ):
-        super().__init__(
-            **locals()
-        )
 
     @property
     def memory_pool(self) -> type[pa.MemoryPool]:
@@ -545,32 +288,17 @@ class UniversalReader(BaseModel):
         return self.file.stat().st_size
 
     def init_reader(self, infile: Path):
-        if self.report_schema == ReportSchema.BISMARK:
-            return BismarkReader(
-                infile,
-                use_threads=self.use_threads,
+        if self.report_schema in {
+            ReportSchema.BISMARK,
+            ReportSchema.COVERAGE,
+            ReportSchema.CGMAP,
+            ReportSchema.BEDGRAPH,
+        }:
+            return ArrowReaderCSV2(
+                file=infile,
+                report_schema=self.report_schema,
                 memory_pool=self.memory_pool,
-                **self.reader_kwargs,
-            )
-        if self.report_schema == ReportSchema.CGMAP:
-            return CGMapReader(
-                infile,
                 use_threads=self.use_threads,
-                memory_pool=self.memory_pool,
-                **self.reader_kwargs,
-            )
-        if self.report_schema == ReportSchema.BEDGRAPH:
-            return BedGraphReader(
-                infile,
-                use_threads=self.use_threads,
-                memory_pool=self.memory_pool,
-                **self.reader_kwargs,
-            )
-        if self.report_schema == ReportSchema.COVERAGE:
-            return CoverageReader(
-                infile,
-                use_threads=self.use_threads,
-                memory_pool=self.memory_pool,
                 **self.reader_kwargs,
             )
         if self.report_schema == ReportSchema.BINOM:
@@ -624,12 +352,12 @@ class UniversalReplicatesReader:
     Examples
     --------
     >>> reader1 = UniversalReader(
-    ...     "path/to/file1.txt",
+    ...     file="path/to/file1.txt",
     ...     report_type="bismark",
     ...     use_threads=True,
     ... )
     >>> reader2 = UniversalReader(
-    ...     "path/to/file2.txt",
+    ...     file="path/to/file2.txt",
     ...     report_type="bismark",
     ...     use_threads=True,
     ... )

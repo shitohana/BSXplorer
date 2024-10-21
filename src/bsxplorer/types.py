@@ -52,7 +52,16 @@ def strand_check(strand: str | None):
     return strand
 
 
+def mb2bytes(mb: int):
+    return mb * (1024**2)
+
+
 GenomeDf = Annotated[pl.DataFrame, AfterValidator(genome_check), AfterValidator(genome_cast)]
 ExistentPath = Annotated[Union[str, Path], AfterValidator(path_cast), AfterValidator(path_check)]
 Context = Annotated[Optional[Literal["CG", "CHG", "CHH"]], AfterValidator(context_check)]
 Strand = Annotated[Optional[Literal["+", "-"]], AfterValidator(strand_check)]
+Mb2Bytes = Annotated[int, AfterValidator(mb2bytes)]
+
+
+
+
