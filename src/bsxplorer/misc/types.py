@@ -75,3 +75,4 @@ Context = Annotated[
 ]
 Strand = Annotated[Optional[Literal["+", "-"]], AfterValidator(strand_check)]
 Mb2Bytes = Annotated[int, AfterValidator(mb2bytes)]
+Allocator = Literal["system", "default", "mimalloc", "jemalloc"]

@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal, Optional
 
 import numpy as np
 import polars as pl
-from pydantic import Field, validate_call
+from pydantic import AliasChoices, Field, validate_call
 from scipy import stats
 
 from .base import (
@@ -16,7 +16,7 @@ from .base import (
 from .cluster import ClusterMany, ClusterSingle
 from .IO import UniversalReader
 from .misc.schemas import ReportSchema
-from .misc.types import Context, ExistentPath, GenomeDf, Strand
+from .misc.types import Allocator, Context, ExistentPath, GenomeDf, Strand
 from .misc.utils import CONTEXTS, AvailableSumfunc, MetageneSchema, ReportTypes
 from .plot import (
     BoxPlot,
@@ -32,13 +32,178 @@ from .sequence import CytosinesFileCM, SequenceFile
 
 
 class Metagene(MetageneBase):
-    """Stores Metagene data."""
+    """
+    Class for reading, storing, analyzing and visualizing
+    methylation data
+
+    Attributes
+    ----------
+    report_df: pl.DataFrame
+        ``polars.DataFrame`` with cytosine methylation status.
+    plot_data: pl.DataFrame, optional
+        DataFrame of plotting data.
+    upstream_windows: int, default=0
+        Upstream windows number.
+    body_windows
+        Region body windows number.
+    downstream_windows:
+        Downstream windows number
+    strand: {'+', '-', '.'}, optional
+        Defines the strand if metagene was filtered by it.
+    context: {'CG', 'CHG', 'CHH'}, optional
+        Defines the context if metagene was filtered by it.
+    """
 
     def __init__(self, report_df: pl.DataFrame, **kwargs):
         super().__init__(report_df=report_df, **kwargs)
 
     @classmethod
     @validate_call(config=dict(arbitrary_types_allowed=True))
+    def from_report(
+        cls,
+        file: ExistentPath,
+        genome: GenomeDf,
+        schema: ReportSchema,
+        uw: Annotated[
+            int,
+            Field(
+                validation_alias=AliasChoices("uw", "up_windows", "upstream_windows"),
+                ge=0,
+            ),
+        ] = 100,
+        bw: Annotated[
+            int,
+            Field(
+                validation_alias=AliasChoices("bw", "body_windows", "body_windows"),
+                gt=0,
+            ),
+        ] = 100,
+        dw: Annotated[
+            int,
+            Field(
+                validation_alias=AliasChoices(
+                    "dw", "down_windows", "downstream_windows"
+                ),
+                ge=0,
+            ),
+        ] = 100,
+        use_threads: bool = True,
+        *,
+        sumfunc: AvailableSumfunc = "wmean",
+        block_size_mb: Optional[Annotated[int, Field(gt=0)]] = 100,
+        p_value: Optional[Annotated[float, Field(gt=0, lt=1)]] = 0.05,
+        fasta: Optional[ExistentPath] = None,
+        cytosine_file: Optional[ExistentPath] = None,
+        allocator: Allocator = "system",
+    ):
+        """
+        Read methylation report file and construct an instance
+        of Metagene.
+
+        Parameters
+        ----------
+        file: str or pathlib.Path
+            Path to methylation report file.
+        genome: pl.DataFrame
+            ``polars.Dataframe`` with genomic coordinates
+            (generated with :class:`Genome`).
+        schema: ReportSchema
+            One of ReportSchema values to specify report format.
+        uw: int
+            Number of windows upstream region to split into.
+            Aliases: up_windows, upstream_windows.
+        bw: int
+            Number of windows body region to split into
+            Aliases: body_windows, body_windows.
+        dw: int
+            Number of windows downstream region to split into
+            Aliases: down_windows, downstream_windows
+        use_threads: bool, default=True
+            Will reading be multi-threaded or single-threaded.
+            If multi-threaded option is used, number of threads
+            is defined by `multiprocessing.cpu_count()`
+        sumfunc: {'wmean', 'mean', 'min', 'max', 'median', '1pgeom'}
+            Summary function to calculate density for window with.
+        block_size_mb: int, optional
+            Block size for reading. (Block size ≠ amount of RAM used.
+            Reader allocates approximately block size * 20
+            memory for reading.)
+        p_value: float, optional
+            P-value of cytosine methylation for it to be
+            considered methylated.
+        fasta: str or Path, optional
+            Path to FASTA genome sequence file.
+        cytosine_file: str or Path, optional
+            Path to preprocessed with :class:`Sequence` cytosine
+            file.
+        allocator: {'system', 'default', 'mimalloc', 'jemalloc'}, optional
+            Memory allocation method used for reading.
+            Performance depends on your system and hardware and
+            should be estimated individually.
+
+        Returns
+        -------
+        Metagene
+            Instance of :class:`Metagene`.
+
+        Raises
+        ------
+        `pydantic.ValidationError`
+            When parameters are incompatible or inappropriate.
+
+        See Also
+        --------
+        :class:`MetageneFiles` :
+            Read and analyze several methylation reports.
+        :class:`ChrLevels` :
+            Read and analyze chromosome methylation levels.
+        :class:`UniversalReader` :
+            Read methylation reports and convert them to universal
+            schema for further customized analysis or converting
+            into another format.
+
+        Notes
+        -----
+        If both `fasta` and `cytosine_file` are specified, cytosine
+        data will be extracted from `fasta` file.
+
+        Examples
+        --------
+
+        >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
+        >>> path = "path/to/CGmap.txt"
+        >>> metagene = Metagene.from_report(
+        ...     path,
+        ...     genome,
+        ...     schema=ReportSchema.CGMAP,
+        ...     up_windows=100,
+        ...     body_windows=200,
+        ...     down_windows=100,
+        ... )
+
+        """
+        if fasta is not None:
+            cm = CytosinesFileCM(fasta)
+            cm.__enter__()
+            cytosine_file = cm.cytosine_path
+            SequenceFile(fasta).preprocess_cytosines(cytosine_file)
+        else:
+            cm = None
+        reader = UniversalReader(
+            file=file,
+            report_schema=schema,
+            use_threads=use_threads,
+            allocator=allocator,
+            cytosine_file=cytosine_file,
+            methylation_pvalue=p_value,
+            block_size_mb=block_size_mb,
+        )
+        out = cls.read_metagene(reader, genome, uw, bw, dw, sumfunc)
+        if cm is not None:
+            cm.__exit__()
+        return out
+
+    @classmethod
     def from_bismark(
         cls,
         file: ExistentPath,
@@ -51,58 +216,15 @@ class Metagene(MetageneBase):
         sumfunc: AvailableSumfunc = "wmean",
     ):
         """
-        Constructor for Metagene class from Bismark ``coverage2cytosine`` report.
-
-        Parameters
-        ----------
-        file
-            Path to bismark genomeWide report.
-        genome
-            ``polars.Dataframe`` with gene ranges (from :class:`Genome`)
-        up_windows
-            Number of windows upstream region to split into
-        body_windows
-            Number of windows body region to split into
-        down_windows
-            Number of windows downstream region to split into
-        block_size_mb
-            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates
-            approx. Block size * 20 memory for reading.)
-        use_threads
-            Do multi-threaded or single-threaded reading. If multi-threaded option is
-            used, number of threads is defined by `multiprocessing.cpu_count()`
-        sumfunc
-            Summary function to calculate density for window with.
-
-        Returns
-        -------
-        Metagene
-
-        Examples
-        --------
-        >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
-        >>>
-        >>> path = "path/to/bismark.CX_report.txt"
-        >>> metagene = Metagene.from_bismark(
-        ...     path,
-        ...     genome,
-        ...     up_windows=500,
-        ...     body_windows=1000,
-        ...     down_windows=500,
-        ... )
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
         """
-        reader = UniversalReader(
-            file=file,
-            report_schema=ReportSchema.BISMARK,
-            block_size_mb=block_size_mb,
-            use_threads=use_threads,
-        )
-        return cls.read_metagene(
-            reader, genome, up_windows, body_windows, down_windows, sumfunc
-        )
+        return cls.from_report(file, genome, ReportSchema.BISMARK,
+                               up_windows, body_windows, down_windows, use_threads,
+                               sumfunc=sumfunc, block_size_mb=block_size_mb)
 
     @classmethod
-    @validate_call(config=dict(arbitrary_types_allowed=True))
     def from_cgmap(
         cls,
         file: ExistentPath,
@@ -115,58 +237,15 @@ class Metagene(MetageneBase):
         sumfunc: AvailableSumfunc = "wmean",
     ):
         """
-        Constructor for Metagene class from BSSeeker2 CGmap file.
-
-        Parameters
-        ----------
-        file
-            Path to CGmap file report.
-        genome
-            ``polars.Dataframe`` with gene ranges (from :class:`Genome`)
-        up_windows
-            Number of windows upstream region to split into
-        body_windows
-            Number of windows body region to split into
-        down_windows
-            Number of windows downstream region to split into
-        block_size_mb
-            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates
-            approx. Block size * 20 memory for reading.)
-        use_threads
-            Do multi-threaded or single-threaded reading. If multi-threaded option is
-            used, number of threads is defined by `multiprocessing.cpu_count()`
-        sumfunc
-            Summary function to calculate density for window with.
-
-        Returns
-        -------
-        Metagene
-
-        Examples
-        --------
-        >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
-        >>>
-        >>> path = "path/to/CGmap.txt"
-        >>> metagene = Metagene.from_cgmap(
-        ...     path,
-        ...     genome,
-        ...     up_windows=500,
-        ...     body_windows=1000,
-        ...     down_windows=500,
-        ... )
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
         """
-        reader = UniversalReader(
-            file=file,
-            report_schema=ReportSchema.CGMAP,
-            block_size_mb=block_size_mb,
-            use_threads=use_threads,
-        )
-        return cls.read_metagene(
-            reader, genome, up_windows, body_windows, down_windows, sumfunc
-        )
+        return cls.from_report(file, genome, ReportSchema.CGMAP,
+                               up_windows, body_windows, down_windows, use_threads,
+                               sumfunc=sumfunc, block_size_mb=block_size_mb)
 
     @classmethod
-    @validate_call(config=dict(arbitrary_types_allowed=True))
     def from_binom(
         cls,
         file: ExistentPath,
@@ -178,62 +257,15 @@ class Metagene(MetageneBase):
         use_threads: bool = True,
     ):
         """
-        Constructor for Metagene class from :meth:`BinomialData.preprocess` ``.parquet``
-         file.
-
-        Only ``"mean"`` summary function is supported for construction :class:`Metagene`
-         from binom data.
-
-        Parameters
-        ----------
-        p_value
-            P-value of cytosine methylation for it to be considered methylated.
-        file
-            Path to preprocessed `.parquet` file.
-        genome
-            ``polars.Dataframe`` with gene ranges (from :class:`Genome`)
-        up_windows
-            Number of windows upstream region to split into
-        body_windows
-            Number of windows body region to split into
-        down_windows
-            Number of windows downstream region to split into
-        use_threads
-            Do multi-threaded or single-threaded reading. If multi-threaded option is
-            used, number of threads is defined by `multiprocessing.cpu_count()`
-
-        Returns
-        -------
-        Metagene
-
-        Examples
-        --------
-        >>> save_name = "preprocessed.parquet"
-        >>> BinomialData.preprocess(
-        ...     "path/to/bismark.CX_report.txt",
-        ...     report_type="bismark",
-        ...     name=save_name,
-        ... )
-        >>>
-        >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
-        >>> metagene = Metagene.from_binom(
-        ...     save_name,
-        ...     genome,
-        ...     up_windows=500,
-        ...     body_windows=1000,
-        ...     down_windows=500,
-        ... )
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
         """
-        reader = UniversalReader(
-            file=file,
-            report_schema=ReportSchema.BINOM,
-            methylation_pvalue=p_value,
-            use_threads=use_threads,
-        )
-        return cls.read_metagene(reader, genome, up_windows, body_windows, down_windows)
+        return cls.from_report(file, genome, ReportSchema.BINOM,
+                               up_windows, body_windows, down_windows, use_threads,
+                               p_value=p_value)
 
     @classmethod
-    @validate_call(config=dict(arbitrary_types_allowed=True))
     def from_bedgraph(
         cls,
         file: ExistentPath,
@@ -247,69 +279,15 @@ class Metagene(MetageneBase):
         use_threads: bool = True,
     ):
         """
-        Constructor for Metagene class from ``.bedGraph`` file.
-
-        Parameters
-        ----------
-        file
-            Path to ``.bedGraph`` file.
-        genome
-            ``polars.Dataframe`` with gene ranges (from :class:`Genome`)
-        fasta
-            Path to FASTA genome sequence file or path to preprocessed with
-            :class:`Sequence` cytosine file.
-        up_windows
-            Number of windows upstream region to split into
-        body_windows
-            Number of windows body region to split into
-        down_windows
-            Number of windows downstream region to split into
-        sumfunc
-            Summary function to calculate density for window with.
-        block_size_mb
-            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates
-            approx. Block size * 20 memory for reading.)
-        use_threads
-            Do multi-threaded or single-threaded reading. If multi-threaded option is
-            used, number of threads is defined by `multiprocessing.cpu_count()`
-
-        Returns
-        -------
-        Metagene
-
-        Examples
-        --------
-        >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
-        >>>
-        >>> path = "path/to/report.bedGraph"
-        >>> fasta = "path/to/sequence.fa"
-        >>> metagene = Metagene.from_bedGraph(
-        ...     path,
-        ...     genome,
-        ...     fasta,
-        ...     up_windows=500,
-        ...     body_windows=1000,
-        ...     down_windows=500,
-        ... )
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
         """
-        with CytosinesFileCM(fasta) as cm:
-            cytosine_file = cm.cytosine_path
-            if not cm.is_cytosine:
-                SequenceFile(fasta).preprocess_cytosines(cytosine_file)
-            reader = UniversalReader(
-                file=file,
-                report_schema=ReportSchema.BEDGRAPH,
-                use_threads=use_threads,
-                cytosine_file=cytosine_file,
-                block_size_mb=block_size_mb,
-            )
-
-            return cls.read_metagene(
-                reader, genome, up_windows, body_windows, down_windows, sumfunc
-            )
+        return cls.from_report(file, genome, ReportSchema.BEDGRAPH,
+                               up_windows, body_windows, down_windows, use_threads,
+                               fasta=fasta, sumfunc=sumfunc, block_size_mb=block_size_mb)
 
     @classmethod
-    @validate_call(config=dict(arbitrary_types_allowed=True))
     def from_coverage(
         cls,
         file: ExistentPath,
@@ -323,67 +301,13 @@ class Metagene(MetageneBase):
         use_threads: bool = True,
     ):
         """
-        Constructor for Metagene class from ``.cov`` file.
-
-        Parameters
-        ----------
-        file
-            Path to ``.cov`` file.
-        genome
-            ``polars.Dataframe`` with gene ranges (from :class:`Genome`)
-        fasta
-            Path to FASTA genome sequence file or path to preprocessed with
-            :class:`Sequence` cytosine file.
-        up_windows
-            Number of windows upstream region to split into
-        body_windows
-            Number of windows body region to split into
-        down_windows
-            Number of windows downstream region to split into
-        sumfunc
-            Summary function to calculate density for window with.
-        block_size_mb
-            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates
-            approx. Block size * 20 memory for reading.)
-        use_threads
-            Do multi-threaded or single-threaded reading. If multi-threaded option is
-            used, number of threads is defined by `multiprocessing.cpu_count()`
-
-
-        Returns
-        -------
-        Metagene
-
-        Examples
-        --------
-        >>> path = "path/to/report.cov"
-        >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
-        >>>
-        >>> fasta = "path/to/sequence.fa"
-        >>> metagene = Metagene.from_coverage(
-        ...     path,
-        ...     genome,
-        ...     fasta,
-        ...     up_windows=500,
-        ...     body_windows=1000,
-        ...     down_windows=500,
-        ... )
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
         """
-        with CytosinesFileCM(fasta) as cm:
-            cytosine_file = cm.cytosine_path
-            if not cm.is_cytosine:
-                SequenceFile(fasta).preprocess_cytosines(cytosine_file)
-
-            reader = UniversalReader(
-                file=file,
-                report_schema=ReportSchema.COVERAGE,
-                use_threads=use_threads,
-                cytosine_file=cytosine_file,
-                block_size_mb=block_size_mb,
-            )
-            return cls.read_metagene(
-                reader, genome, up_windows, body_windows, down_windows, sumfunc
-            )
+        return cls.from_report(file, genome, ReportSchema.COVERAGE,
+                               up_windows, body_windows, down_windows, use_threads,
+                               fasta=fasta, sumfunc=sumfunc, block_size_mb=block_size_mb)
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def filter(
@@ -487,7 +411,7 @@ class Metagene(MetageneBase):
         """
         if (
             self.upstream_windows is not None
-            and self.gene_windows is not None
+            and self.body_windows is not None
             and self.downstream_windows is not None
         ):
             from_fragments = self.total_windows
@@ -515,7 +439,7 @@ class Metagene(MetageneBase):
         metadata["downstream_windows"] = metadata["downstream_windows"] // (
             from_fragments // to_fragments
         )
-        metadata["gene_windows"] = metadata["gene_windows"] // (
+        metadata["body_windows"] = metadata["body_windows"] // (
             from_fragments // to_fragments
         )
 
@@ -564,7 +488,7 @@ class Metagene(MetageneBase):
         metadata = self.model_dump()
         if downstream:
             trimmed = trimmed.filter(
-                pl.col("fragment") < self.upstream_windows + self.gene_windows
+                pl.col("fragment") < self.upstream_windows + self.body_windows
             )
             metadata["downstream_windows"] = 0
 
@@ -990,7 +914,7 @@ class Metagene(MetageneBase):
             f"Metagene with {len(self)} windows total.\n"
             f"Filtered by {self.context} context and {self.strand} strand.\n"
             f"Upstream windows: {self.upstream_windows}.\n"
-            f"Body windows: {self.gene_windows}.\n"
+            f"Body windows: {self.body_windows}.\n"
             f"Downstream windows: {self.downstream_windows}.\n"
         )
 
@@ -1303,7 +1227,7 @@ class MetageneFiles(MetageneFilesBase):
             merged,
             upstream_windows=self.samples[0].upstream_windows,
             downstream_windows=self.samples[0].downstream_windows,
-            gene_windows=self.samples[0].gene_windows,
+            body_windows=self.samples[0].gene_windows,
         )
 
     def line_plot(

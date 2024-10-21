@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import functools
 import gzip
-from typing import Annotated, Literal, Optional
+from typing import Annotated, ClassVar, Literal, Optional
 
 import polars as pl
-from polars import DataFrame
-from pydantic import BaseModel, Field, field_validator, validate_call
+from pydantic import BaseModel, ConfigDict, Field, field_validator, validate_call
 from pyreadr import write_rds
 
 from .IO import UniversalReader
@@ -19,7 +18,7 @@ from .misc.utils import (
 
 class MetageneModel(BaseModel):
     upstream_windows: int = Field(ge=0, title="Upstream windows number", default=0)
-    gene_windows: int = Field(gt=0, title="Region body windows number")
+    body_windows: int = Field(gt=0, title="Region body windows number")
     downstream_windows: int = Field(ge=0, title="Downstream windows number", default=0)
     strand: Optional[Literal["+", "-", "."]] = Field(
         default=None,
@@ -31,10 +30,8 @@ class MetageneModel(BaseModel):
         title="Methylation context",
         description="Defines the context if metagene was filtered by it.",
     )
-
-    class Config:
-        validate_assignment = True
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(validate_assignment=True,
+                              arbitrary_types_allowed=True)
 
 
 class MetageneBase(MetageneModel):
@@ -42,13 +39,35 @@ class MetageneBase(MetageneModel):
     Base class for :class:`Metagene` and plots.
     """
 
-    report_df: DataFrame = Field(
+    report_df: pl.DataFrame = Field(
         exclude=True,
         title="Methylation data",
         description="pl.DataFrame with cytosine methylation status.",
     )
     plot_data: Optional[pl.DataFrame] = Field(
         exclude=True, title="Plot data (optional)", default=None
+    )
+    df_schema: ClassVar[dict] = dict(
+        chr=pl.Categorical,
+        strand=pl.Categorical,
+        position=pl.UInt64,
+        gene=pl.Categorical,
+        context=pl.Categorical,
+        id=pl.Categorical,
+        fragment=pl.UInt32,
+        sum=pl.Float32,
+        count=pl.UInt32,
+    )
+    joined_df_schema: ClassVar[dict] = dict(
+        chr=pl.Categorical,
+        strand=pl.Categorical,
+        gene=pl.Categorical,
+        start=pl.UInt64,
+        id=pl.Categorical,
+        context=pl.Categorical,
+        fragment=pl.UInt32,
+        sum=pl.Float32,
+        count=pl.UInt32,
     )
 
     @classmethod
@@ -239,7 +258,7 @@ class MetageneBase(MetageneModel):
 
     @functools.cached_property
     def total_windows(self):
-        return self.upstream_windows + self.downstream_windows + self.gene_windows
+        return self.upstream_windows + self.downstream_windows + self.body_windows
 
     @functools.cached_property
     def _x_ticks(self):
@@ -247,7 +266,7 @@ class MetageneBase(MetageneModel):
             self.upstream_windows / 2,
             self.upstream_windows,
             self.total_windows / 2,
-            self.gene_windows + self.upstream_windows,
+            self.body_windows + self.upstream_windows,
             self.total_windows - (self.downstream_windows / 2),
         ]
 
@@ -255,7 +274,7 @@ class MetageneBase(MetageneModel):
     def _borders(self):
         return [
             self.upstream_windows,
-            self.gene_windows + self.upstream_windows,
+            self.body_windows + self.upstream_windows,
         ]
 
     def __len__(self):
@@ -293,7 +312,7 @@ class MetageneFilesBase(BaseModel):
                 map(lambda sample: sample.upstream_windows, samples),
             )
             and functools.reduce(
-                lambda a, b: a == b, map(lambda sample: sample.gene_windows, samples)
+                lambda a, b: a == b, map(lambda sample: sample.body_windows, samples)
             )
             and functools.reduce(
                 lambda a, b: a == b,

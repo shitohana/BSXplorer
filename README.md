@@ -21,6 +21,7 @@ Table of contents
       * [Other functionality](#other-functionality)
     * [Console usage](#console-usage)
   * [What's new](#whats-new)
+  * [Installation problems](#installation-problems)
     
 
 BSXplorer
@@ -369,3 +370,26 @@ be visualized.
 * Fixes to `Category` report.
 * Added console command for processing BAM files.
 
+## Installation problems
+
+If you have Apple Silicon Mac, you can encounter `error: clang: error: unsupported option '-fopenmp'` problem
+when `bsxplorer` package is being installed. To solve this problem, you should install llvm via brew:
+
+```shell
+brew install llvm
+```
+
+Then you need to find the directory where llvm has been installed and locate `bin`, `bin/clang` and `bin/clang++` folders.
+
+```shell
+brew list llvm
+```
+
+And update PATH and Compiler variables:
+```shell
+export PATH="/usr/local/opt/llvm/bin:$PATH"
+export CC="/usr/local/opt/llvm/bin/clang"
+export CXX="/usr/local/opt/llvm/bin/clang++"
+```
+
+This ensures that the Homebrew-installed Clang with OpenMP is used during compilation.

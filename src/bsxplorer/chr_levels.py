@@ -11,7 +11,7 @@ from pyreadr import write_rds
 from .IO import UniversalReader
 from .misc.schemas import ReportSchema
 from .misc.types import ExistentPath
-from .misc.utils import CONTEXTS, STRANDS, interval_chr
+from .misc.utils import ContextsType, StrandsType, interval_chr
 from .plot import BoxPlot, BoxPlotData, LinePlot, LinePlotData, savgol_line
 from .sequence import CytosinesFileCM, SequenceFile
 
@@ -363,8 +363,8 @@ class ChrLevels:
     @validate_call
     def filter(
         self,
-        context: Optional[CONTEXTS] = None,
-        strand: Optional[STRANDS] = None,
+        context: Optional[ContextsType] = None,
+        strand: Optional[StrandsType] = None,
         chr: Optional[str] = None,
     ):
         """

@@ -76,7 +76,9 @@ class ReportBar(Bar):
 
 
 CONTEXTS = ["CG", "CHG", "CHH"]
+ContextsType = Literal["CG", "CHG", "CHH"]
 STRANDS = ["+", "-"]
+StrandsType = Literal["+", "-"]
 ReportTypes = Literal["bismark", "cgmap", "binom", "bedgraph", "coverage"]
 AvailableSumfunc = Literal["wmean", "mean", "min", "max", "median", "1pgeom"]
 AvailableBAM = Literal["bismark"]

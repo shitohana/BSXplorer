@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import functools
-import gc
 from copy import deepcopy
 
 import polars as pl
 import pyarrow as pa
-from pyarrow import parquet as pq
 
 from ..misc.schemas import ReportSchema, validate
-from ..misc.utils import fraction_v
 
 
 class BaseBatch:
@@ -110,155 +107,8 @@ class UniversalBatch(BaseBatch):
 
     @classmethod
     def from_arrow(cls, raw: pa.Table, report_schema: ReportSchema, **kwargs):
-        if report_schema == ReportSchema.BISMARK:
-            mutated = (
-                pl.from_arrow(raw)
-                .with_columns(
-                    (pl.col("count_m") + pl.col("count_um")).alias("count_total")
-                )
-                .with_columns(
-                    (pl.col("count_m") / pl.col("count_total")).alias("density")
-                )
-            )
-        elif report_schema == ReportSchema.CGMAP:
-            mutated = pl.from_arrow(raw).with_columns(
-                [
-                    pl.when(pl.col("nuc") == "C")
-                    .then(pl.lit("+"))
-                    .otherwise(pl.lit("-"))
-                    .alias("strand"),
-                    pl.when(pl.col("dinuc") == "CG")
-                    # if dinuc == "CG" => trinuc = "CG"
-                    .then(pl.col("dinuc"))
-                    # otherwise trinuc = dinuc + context_last
-                    .otherwise(
-                        pl.concat_str(
-                            [pl.col("dinuc"), pl.col("context").str.slice(-1)]
-                        )
-                    )
-                    .alias("trinuc"),
-                ]
-            )
-        elif (
-            report_schema == ReportSchema.COVERAGE
-            or report_schema == ReportSchema.BEDGRAPH
-        ):
-            batch = pl.from_arrow(raw)
-
-            # get batch stats
-            batch_stats = batch.group_by("chr").agg(
-                [
-                    pl.col("position").max().alias("max"),
-                    pl.col("position").min().alias("min"),
-                ]
-            )
-
-            output = None
-
-            for chrom in batch_stats["chr"]:
-                assert "cytosine_file" in kwargs, ValueError(
-                    "Cytosine file (param cytosine_file) needs to be specified"
-                )
-                chrom_min, chrom_max = (
-                    batch_stats.filter(chr=chrom).select(["min", "max"]).row(0)
-                )
-
-                # Read and filter sequence
-                filters = [
-                    ("chr", "=", chrom),
-                    ("position", ">=", chrom_min),
-                    ("position", "<=", chrom_max),
-                ]
-                pa_filtered_sequence = pq.read_table(
-                    kwargs.get("cytosine_file"), filters=filters
-                )
-
-                modified_schema = pa_filtered_sequence.schema
-                modified_schema = modified_schema.set(1, pa.field("context", pa.utf8()))
-                modified_schema = modified_schema.set(2, pa.field("chr", pa.utf8()))
-
-                pa_filtered_sequence = pa_filtered_sequence.cast(modified_schema)
-
-                pl_sequence = (
-                    pl.from_arrow(pa_filtered_sequence)
-                    .with_columns(
-                        [
-                            pl.when(pl.col("strand").eq(True))
-                            .then(pl.lit("+"))
-                            .otherwise(pl.lit("-"))
-                            .alias("strand")
-                        ]
-                    )
-                    .cast(dict(position=batch.schema["position"]))
-                )
-
-                # Align batch with sequence
-                batch_filtered = batch.filter(pl.col("chr") == chrom)
-                aligned = (
-                    batch_filtered.lazy()
-                    .cast({"position": pl.UInt64})
-                    .set_sorted("position")
-                    .join(pl_sequence.lazy(), on="position", how="left")
-                ).collect()
-
-                if output is None:
-                    output = aligned
-                else:
-                    output.extend(aligned)
-
-                gc.collect()
-
-                if report_schema == ReportSchema.COVERAGE:
-                    mutated = output.with_columns(
-                        [
-                            (pl.col("count_m") + pl.col("count_um")).alias(
-                                "count_total"
-                            ),
-                            pl.col("context").alias("trinuc"),
-                        ]
-                    ).with_columns(
-                        (pl.col("count_m") / pl.col("count_total")).alias("density")
-                    )
-                else:
-                    assert "max_out" in kwargs, ValueError(
-                        "Max coverage for bedGraph conversion (param max_out) needs to "
-                        "be specified"
-                    )
-                    converted = fraction_v(
-                        (output["density"] / 100).to_list(), kwargs.get("max_out")
-                    )
-
-                    fractioned = output.with_columns(
-                        [
-                            pl.lit(converted[0]).alias("count_m"),
-                            pl.lit(converted[1]).alias("count_total"),
-                        ]
-                    )
-                    mutated = fractioned.with_columns(pl.col("context").alias("trinuc"))
-
-        elif report_schema == ReportSchema.BINOM:
-            assert "p_value" in kwargs, ValueError(
-                "Methylation P-value (param p_value) needs to be specified"
-            )
-            mutated = (
-                pl.from_arrow(raw)
-                .with_columns(
-                    (pl.col("p_value") <= kwargs["p_value"])
-                    .cast(pl.UInt8)
-                    .alias("count_m")
-                )
-                .with_columns(
-                    [
-                        pl.col("context").alias("trinuc"),
-                        pl.lit(1).alias("count_total"),
-                        pl.col("count_m").cast(pl.Float64).alias("density"),
-                    ]
-                )
-            )
-        else:
-            raise ValueError(report_schema)
-
-        return cls(mutated, report_schema)
+        mutated = report_schema.get_universal(raw, **kwargs)
+        return cls(mutated, raw)
 
     def filter_data(self, **kwargs):
         """

@@ -1,5 +1,4 @@
 #include "bsx.h"
-#include <omp.h>
 
 std::string sequence::convert_trinuc(std::string trinuc, bool strand) {
     std::transform(trinuc.begin(), trinuc.end(), trinuc.begin(), ::toupper);
@@ -55,4 +54,25 @@ sequence::ContextData sequence::get_trinuc(std::string seq) {
         else                       { data.context.push_back("CHH"); }
     };
     return data;
+};
+
+std::vector<std::pair<int, sequence::ContextData>> sequence::get_trinuc_parallel(std::string seq, int num_threads){
+    long seq_size = seq.size();
+    int batch_size = (seq_size / num_threads) + 1;
+    int i;
+    long batch_start = -1;
+    long batch_end = -1;
+    ContextData res;
+    std::vector<std::pair<int, ContextData>> out;
+    #pragma omp parallel for shared(seq, batch_size, seq_size) private(i, batch_start, batch_end)
+    for (i = 0; i < seq_size; i += batch_size) {
+        batch_start = (i - 2) > 0 ? i - 2 : 0;
+        batch_end = (i + batch_size + 2) < seq_size - 1 ? i + batch_size + 2 : (i + batch_size >= seq_size) ? seq_size - 1 : i + batch_size;
+        res = get_trinuc(seq.substr(batch_start, batch_end - batch_start));
+        #pragma omp critical
+        {
+            out.push_back({i, res});
+        };
+    };
+    return out;
 };

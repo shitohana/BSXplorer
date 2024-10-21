@@ -10,7 +10,7 @@ import pyarrow as pa
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from ..misc.schemas import ReportSchema
-from ..misc.types import ExistentPath
+from ..misc.types import ExistentPath, Allocator
 from ..misc.utils import ReportBar
 from .arrow_readers import ArrowParquetReader, ArrowReaderCSV
 from .batches import UniversalBatch
@@ -47,7 +47,7 @@ class UniversalReader(BaseModel):
         validation_alias=AliasChoices("bar_enabled", "bar"),
         description="Indicate the progres bar while reading.",
     )
-    allocator: Optional[Literal["system", "default", "mimalloc", "jemalloc"]] = Field(
+    allocator: Allocator = Field(
         default="system"
     )
     cytosine_file: Optional[ExistentPath] = Field(
