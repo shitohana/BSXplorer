@@ -9,14 +9,17 @@ from abc import abstractmethod
 from collections import defaultdict
 from fractions import Fraction
 from pathlib import Path
+from typing import Annotated, Literal, Optional
 
 import func_timeout
 import numpy as np
 import polars as pl
 import pyarrow as pa
 from pyarrow import csv as pcsv, parquet as pq
+from pydantic import BaseModel, Field, validate_call, AliasChoices, AliasPath, field_validator
 
 from .schemas import ReportSchema
+from .types import ExistentPath
 from .universal_batches import UniversalBatch
 from .utils import ReportBar
 
@@ -211,7 +214,7 @@ class ArrowReaderCSV:
 
 # noinspection PyMissingOrEmptyDocstring
 class BismarkReader(ArrowReaderCSV):
-    pa_schema = ReportSchema.BISMARK.value
+    pa_schema = ReportSchema.BISMARK.arrow
 
     def convert_options(self):
         return pcsv.ConvertOptions(
@@ -241,7 +244,7 @@ class BismarkReader(ArrowReaderCSV):
         file: str | Path,
         use_threads: bool = True,
         block_size_mb: int = 50,
-        memory_pool: pa.MemoryPool = None,
+        memory_pool: type[pa.MemoryPool] = None,
         **kwargs,
     ):
         super().__init__(file, block_size_mb)
@@ -299,7 +302,7 @@ class CoverageReader(ArrowReaderCSV):
         cytosine_file: str | Path,
         use_threads: bool = True,
         block_size_mb: int = 50,
-        memory_pool: pa.MemoryPool = None,
+        memory_pool: type[pa.MemoryPool] = None,
         **kwargs,
     ):
         super().__init__(file, block_size_mb)
@@ -428,7 +431,8 @@ class BedGraphReader(CoverageReader):
         return UniversalBatch(full, batch)
 
 
-class UniversalReader:
+class UniversalReader(BaseModel):
+    # Fixme
     """
     Class for batched reading methylation reports.
 
@@ -467,96 +471,67 @@ class UniversalReader:
     >>>     do_something(batch)
     """
 
+    file: ExistentPath
+    report_schema: ReportSchema = Field(validation_alias=AliasChoices('report_schema', 'report_type'))
+    use_threads: bool = Field(default=True)
+    bar_enabled: Optional[bool] = Field(default=False, validation_alias=AliasChoices('bar_enabled', 'bar'))
+    allocator: Optional[Literal["system", "default", "mimalloc", "jemalloc"]] = Field(
+        default="system"
+    )
+    reader_kwargs: Optional[dict] = Field(default_factory=dict)
+
+    @field_validator("report_schema", mode="before")
+    @classmethod
+    def _check_report_schema(cls, value):
+        if isinstance(value, str):
+            return ReportSchema(value.upper())
+        elif isinstance(value, ReportSchema):
+            return value
+        else:
+            return ValueError
+
+    @validate_call
     def __init__(
         self,
-        file: str | Path,
-        report_type: ReportSchema,
+        file: ExistentPath,
+        report_schema: ReportSchema,
+        report_type: Optional[
+            Annotated[str, Field(deprecated="use report_schema instead")]
+        ] = None,
+        bar_enabled: bool = False,
         use_threads: bool = False,
-        bar: bool = True,
-        **kwargs,
+        bar: Optional[
+            Annotated[bool, Field(deprecated="use bar_enabled instead")]
+        ] = None,
+        allocator: Optional[
+            Literal["system", "default", "mimalloc", "jemalloc"]
+        ] = "system",
+        *,
+        cytosine_file: Optional[ExistentPath] = None,
+        methylation_pvalue: Optional[Annotated[float, Field(gt=0, lt=1)]] = None,
+        block_size_mb: Optional[Annotated[int, Field(gt=0)]] = None,
     ):
-        super().__init__()
-        self.__validate(file, report_type)
-        self.__decompressed = self.__decompress()
-        if self.__decompressed is not None:
-            self.file = Path(self.__decompressed.name)
-
-        self.memory_pool = pa.system_memory_pool()
-        self.reader = self.__readers[report_type](
-            file, use_threads=use_threads, memory_pool=self.memory_pool, **kwargs
+        super().__init__(
+            **locals()
         )
-        self.report_type = report_type
-        self._bar_on = bar
-        self.bar = None
-
-    __readers = {
-        "bismark": BismarkReader,
-        "cgmap": CGMapReader,
-        "bedgraph": BedGraphReader,
-        "coverage": CoverageReader,
-        "binom": BinomReader,
-    }
-
-    def __validate(self, file, report_type):
-        file = Path(file).expanduser().absolute()
-        if not file.exists():
-            raise FileNotFoundError(file)
-        if not file.is_file():
-            raise IsADirectoryError(file)
-        self.file = file
-
-        if report_type not in self.__readers:
-            raise KeyError(report_type)
-        self.report_type: str = report_type
-
-    def __decompress(self):
-        if ".gz" in self.file.suffixes:
-            temp_file = tempfile.NamedTemporaryFile(
-                dir=self.file.parent, prefix=self.file.stem
-            )
-            print(f"Temporarily unpack {self.file} to {temp_file.name}")
-
-            with gzip.open(self.file, mode="rb") as file:
-                shutil.copyfileobj(file, temp_file)
-
-            return temp_file
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.__decompressed is not None:
-            self.__decompressed.close()
-        if self.bar is not None:
-            self.bar.goto(self.bar.max)
-            self.bar.finish()
-        self.reader.__exit__(exc_type, exc_val, exc_tb)
-        self.memory_pool.release_unused()
-
-    def __iter__(self):
-        if self._bar_on:
-            self.bar = ReportBar(max=self.file_size)
-            self.bar.start()
-        return self
-
-    def __next__(self) -> UniversalBatch:
-        full_batch = self.reader.__next__()
-
-        if self.bar is not None:
-            self.bar.next(self.batch_size)
-
-        return full_batch
 
     @property
-    def batch_size(self):
-        """
+    def memory_pool(self) -> type[pa.MemoryPool]:
+        if self.allocator == "system":
+            return pa.system_memory_pool()
+        if self.allocator == "default":
+            return pa.default_memory_pool()
+        if self.allocator == "mimalloc":
+            return pa.mimalloc_memory_pool()
+        if self.allocator == "jemalloc":
+            return pa.jemalloc_memory_pool()
 
-        Returns
-        -------
-        int
-            Size of batch in bytes.
-        """
-        return self.reader.batch_size
+    @property
+    def _bar(self) -> ReportBar | None:
+        if self.bar_enabled:
+            return ReportBar(max=self.file_size)
+        else:
+            return None
 
     @property
     def file_size(self):
@@ -568,6 +543,72 @@ class UniversalReader:
             File size in bytes.
         """
         return self.file.stat().st_size
+
+    def init_reader(self, infile: Path):
+        if self.report_schema == ReportSchema.BISMARK:
+            return BismarkReader(
+                infile,
+                use_threads=self.use_threads,
+                memory_pool=self.memory_pool,
+                **self.reader_kwargs,
+            )
+        if self.report_schema == ReportSchema.CGMAP:
+            return CGMapReader(
+                infile,
+                use_threads=self.use_threads,
+                memory_pool=self.memory_pool,
+                **self.reader_kwargs,
+            )
+        if self.report_schema == ReportSchema.BEDGRAPH:
+            return BedGraphReader(
+                infile,
+                use_threads=self.use_threads,
+                memory_pool=self.memory_pool,
+                **self.reader_kwargs,
+            )
+        if self.report_schema == ReportSchema.COVERAGE:
+            return CoverageReader(
+                infile,
+                use_threads=self.use_threads,
+                memory_pool=self.memory_pool,
+                **self.reader_kwargs,
+            )
+        if self.report_schema == ReportSchema.BINOM:
+            return BinomReader(
+                infile,
+                use_threads=self.use_threads,
+                memory_pool=self.memory_pool,
+                **self.reader_kwargs,
+            )
+
+    def __iter__(self):
+        if ".gz" in self.file.suffixes:
+            with (
+                tempfile.NamedTemporaryFile(
+                    dir=self.file.parent, prefix=self.file.stem, delete=False
+                ) as infile,
+                gzip.open(self.file, mode="rb") as zip_file,
+            ):
+                print(f"Temporarily unpack {self.file} to {infile.name}")
+                shutil.copyfileobj(zip_file, infile)
+                infile = Path(infile.name)
+        else:
+            infile = self.file
+
+        if self._bar is not None:
+            self._bar.finish()
+
+        for batch in self.init_reader(infile):
+            if self._bar is not None:
+                self._bar.next()
+            yield batch
+
+        if self._bar is not None:
+            self._bar.goto(self._bar.max)
+            self._bar.finish()
+        self.memory_pool.release_unused()
+        if ".gz" in self.file.suffixes:
+            infile.unlink()
 
 
 class UniversalReplicatesReader:
@@ -605,7 +646,12 @@ class UniversalReplicatesReader:
         self.haste_limit = 1e9
         self.bar = None
 
-        if any(map(lambda reader: reader.report_type in ["bedgraph"], self.readers)):
+        if any(
+            map(
+                lambda reader: reader.report_type.name.lower() in ["bedgraph"],
+                self.readers,
+            )
+        ):
             warnings.warn(
                 "Merging bedGraph may lead to incorrect results. Please, "
                 "use other report types.",
@@ -875,13 +921,13 @@ class UniversalWriter:
         if self.writer is None:
             self.__enter__()
 
-        if self.report_type == "bismark":
+        if self.report_type == ReportSchema.BISMARK:
             fmt_df = universal_batch.cast(ReportSchema.BISMARK)
-        elif self.report_type == "cgmap":
+        elif self.report_type == ReportSchema.CGMAP:
             fmt_df = universal_batch.cast(ReportSchema.CGMAP)
-        elif self.report_type == "bedgraph":
+        elif self.report_type == ReportSchema.BEDGRAPH:
             fmt_df = universal_batch.cast(ReportSchema.BEDGRAPH)
-        elif self.report_type == "coverage":
+        elif self.report_type == ReportSchema.COVERAGE:
             fmt_df = universal_batch.cast(ReportSchema.COVERAGE)
         else:
             raise KeyError(f"{self.report_type} not supported")

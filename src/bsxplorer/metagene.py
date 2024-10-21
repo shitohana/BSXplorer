@@ -24,6 +24,7 @@ from .plots import (
     plot_stat_expr,
     savgol_line,
 )
+from .schemas import ReportSchema
 from .sequence import CytosinesFileCM, SequenceFile
 from .types import Context, ExistentPath, GenomeDf, Strand
 from .universal_batches import ReportTypes
@@ -91,7 +92,12 @@ class Metagene(MetageneBase):
         ...     down_windows=500,
         ... )
         """
-        reader = UniversalReader(**(locals() | dict(report_type="bismark")))
+        reader = UniversalReader(
+            file=file,
+            report_schema=ReportSchema.BISMARK,
+            block_size_mb=block_size_mb,
+            use_threads=use_threads,
+        )
         return cls.read_metagene(
             reader, genome, up_windows, body_windows, down_windows, sumfunc
         )
@@ -150,7 +156,12 @@ class Metagene(MetageneBase):
         ...     down_windows=500,
         ... )
         """
-        reader = UniversalReader(**(locals() | dict(report_type="cgmap")))
+        reader = UniversalReader(
+            file=file,
+            report_schema=ReportSchema.CGMAP,
+            block_size_mb=block_size_mb,
+            use_threads=use_threads,
+        )
         return cls.read_metagene(
             reader, genome, up_windows, body_windows, down_windows, sumfunc
         )
@@ -215,7 +226,10 @@ class Metagene(MetageneBase):
         ... )
         """
         reader = UniversalReader(
-            file, "binom", methylation_pvalue=p_value, use_threads=use_threads
+            file=file,
+            report_schema=ReportSchema.BINOM,
+            methylation_pvalue=p_value,
+            use_threads=use_threads,
         )
         return cls.read_metagene(reader, genome, up_windows, body_windows, down_windows)
 
@@ -283,10 +297,9 @@ class Metagene(MetageneBase):
             cytosine_file = cm.cytosine_path
             if not cm.is_cytosine:
                 SequenceFile(fasta).preprocess_cytosines(cytosine_file)
-
             reader = UniversalReader(
-                file,
-                report_type="bedgraph",
+                file=file,
+                report_schema=ReportSchema.BEDGRAPH,
                 use_threads=use_threads,
                 cytosine_file=cytosine_file,
                 block_size_mb=block_size_mb,
@@ -363,8 +376,8 @@ class Metagene(MetageneBase):
                 SequenceFile(fasta).preprocess_cytosines(cytosine_file)
 
             reader = UniversalReader(
-                file,
-                report_type="bedgraph",
+                file=file,
+                report_schema=ReportSchema.COVERAGE,
                 use_threads=use_threads,
                 cytosine_file=cytosine_file,
                 block_size_mb=block_size_mb,
@@ -733,7 +746,7 @@ class Metagene(MetageneBase):
             Probability for confidence bands (e.g. 0.95)
         smooth
             Number of windows for
-            `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter 
+            `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter
             (set 0 for no smoothing). Applied only if `flank_windows` and
             `body_windows` params are specified.
         resolution
@@ -1467,7 +1480,7 @@ class MetageneFiles(MetageneFilesBase):
             matrix = matrix[var > np.quantile(var, q)]
         if "seaborn" not in sys.modules:
             import seaborn as sns
-        if 'seaborn' not in sys.modules:
+        if "seaborn" not in sys.modules:
             import seaborn as sns
         fig = sns.clustermap(matrix, **kwargs)
         return fig

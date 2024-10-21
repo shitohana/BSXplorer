@@ -14,14 +14,13 @@ from typing import Any, Literal
 
 import numba as nb
 import numpy as np
-
 import polars as pl
 import pysam
 from numba import jit, prange
 from progress.bar import Bar
-from pyarrow import dataset as pads, compute as pc
+from pyarrow import compute as pc, dataset as pads
 
-from . import UniversalBatch
+from .universal_batches import UniversalBatch
 from .utils import AvailableBAM
 
 

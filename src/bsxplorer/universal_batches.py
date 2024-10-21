@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import functools
 from copy import deepcopy
+from typing import Literal
 
 import polars as pl
 import pyarrow as pa
 
 from .schemas import ReportSchema, validate
+
+# Fixme
+ReportTypes = Literal["bismark", "cgmap", "binom", "bedgraph", "coverage"]
 
 
 class BaseBatch:
