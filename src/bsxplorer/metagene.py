@@ -9,12 +9,12 @@ import polars as pl
 from pydantic import Field, validate_call
 from scipy import stats
 
-from .Base import (
+from .base import (
     MetageneBase,
     MetageneFilesBase,
 )
-from .Clusters import ClusterMany, ClusterSingle
-from .Plots import (
+from .cluster import ClusterMany, ClusterSingle
+from .plots import (
     BoxPlot,
     BoxPlotData,
     HeatMap,
@@ -24,10 +24,10 @@ from .Plots import (
     plot_stat_expr,
     savgol_line,
 )
-from .SeqMapper import CytosinesFileCM, SequenceFile
+from .sequence import CytosinesFileCM, SequenceFile
 from .types import Context, ExistentPath, GenomeDf, Strand
-from .UniversalReader_batches import ReportTypes
-from .UniversalReader_classes import UniversalReader
+from .universal_batches import ReportTypes
+from .universal_reader import UniversalReader
 from .utils import CONTEXTS, AvailableSumfunc, MetageneSchema
 
 

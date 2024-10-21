@@ -7,9 +7,9 @@ import polars as pl
 from pydantic import Field, validate_call
 from pyreadr import write_rds
 
-from .Plots import BoxPlot, BoxPlotData, LinePlot, LinePlotData, savgol_line
+from .plots import BoxPlot, BoxPlotData, LinePlot, LinePlotData, savgol_line
 from .types import ExistentPath
-from .UniversalReader_classes import UniversalReader
+from .universal_reader import UniversalReader
 from .utils import interval_chr
 
 

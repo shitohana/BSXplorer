@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from .Plots import savgol_line
+from .plots import savgol_line
 from .utils import MetageneSchema
 
 

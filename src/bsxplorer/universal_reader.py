@@ -17,7 +17,8 @@ import polars as pl
 import pyarrow as pa
 from pyarrow import csv as pcsv, parquet as pq
 
-from .UniversalReader_batches import UniversalBatch, ARROW_SCHEMAS, ReportTypes, REPORT_TYPES_LIST
+from .schemas import ReportSchema
+from .universal_batches import UniversalBatch, ARROW_SCHEMAS, ReportTypes, REPORT_TYPES_LIST
 from .utils import ReportBar
 
 
@@ -802,13 +803,13 @@ class UniversalWriter:
             self.__enter__()
 
         if self.report_type == "bismark":
-            fmt_df = universal_batch.to_bismark()
+            fmt_df = universal_batch.cast(ReportSchema.BISMARK)
         elif self.report_type == "cgmap":
-            fmt_df = universal_batch.to_cgmap()
+            fmt_df = universal_batch.cast(ReportSchema.CGMAP)
         elif self.report_type == "bedgraph":
-            fmt_df = universal_batch.to_bedGraph()
+            fmt_df = universal_batch.cast(ReportSchema.BEDGRAPH)
         elif self.report_type == "coverage":
-            fmt_df = universal_batch.to_coverage()
+            fmt_df = universal_batch.cast(ReportSchema.COVERAGE)
         else:
             raise KeyError(f"{self.report_type} not supported")
 

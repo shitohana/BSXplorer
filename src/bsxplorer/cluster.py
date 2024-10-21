@@ -18,8 +18,8 @@ from scipy.cluster.hierarchy import leaves_list, optimal_leaf_ordering
 from scipy.spatial.distance import pdist
 from scipy.stats import pearsonr
 
-from .Base import MetageneBase, MetageneFilesBase
-from .Plots import flank_lines_plotly
+from .base import MetageneBase, MetageneFilesBase
+from .plots import flank_lines_plotly
 
 default_n_threads = multiprocessing.cpu_count()
 os.environ['OPENBLAS_NUM_THREADS'] = f"{default_n_threads}"

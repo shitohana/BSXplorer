@@ -30,8 +30,8 @@ from . import (
     UniversalWriter,
     UniversalReplicatesReader
 )
-from .SeqMapper import init_tempfile
-from .UniversalReader_batches import REPORT_TYPES_LIST
+from .sequence import init_tempfile
+from .universal_batches import REPORT_TYPES_LIST
 
 
 def render_template(

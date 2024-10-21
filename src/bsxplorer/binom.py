@@ -7,8 +7,8 @@ import polars as pl
 from pyarrow import parquet as pq
 from scipy.stats import binom
 
-from .UniversalReader_batches import ARROW_SCHEMAS, ReportTypes
-from .UniversalReader_classes import UniversalReader
+from .universal_batches import ARROW_SCHEMAS, ReportTypes
+from .universal_reader import UniversalReader
 from .utils import arrow2polars_convert
 
 

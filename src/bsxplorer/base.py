@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator, validate_call
 from pyreadr import write_rds
 
 from .types import GenomeDf
-from .UniversalReader_classes import UniversalReader
+from .universal_reader import UniversalReader
 from .utils import (
     MetageneJoinedSchema,
     remove_extension,
