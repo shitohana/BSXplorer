@@ -42,7 +42,9 @@ class ArrowReaderCSV(BaseModel):
     file: ExistentPath
     block_size_mb: Mb2Bytes
     report_schema: ReportSchema
-    memory_pool: Union[type[pa.MemoryPool], pa.MemoryPool] = Field(default_factory=pa.system_memory_pool, exclude=True)
+    memory_pool: Union[type[pa.MemoryPool], pa.MemoryPool] = Field(
+        default_factory=pa.system_memory_pool, exclude=True
+    )
     kwargs: dict = Field(default_factory=dict)
     use_threads: bool = Field(default=True)
 

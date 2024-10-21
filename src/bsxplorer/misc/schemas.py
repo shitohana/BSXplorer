@@ -141,9 +141,10 @@ class ReportSchema(Enum):
 
 def validate(df: pl.DataFrame, schema: ReportSchema):
     assert all(c in df.columns for c in schema.polars.names()), KeyError(
-        f"Not all columns from schema in batch (missing {list(set(schema.polars.names()) - set(df.columns))})"
+        f"Not all columns from schema in batch "
+        f"(missing {list(set(schema.polars.names()) - set(df.columns))})"
     )
     try:
         return df.select(schema.polars.names()).cast(schema.polars)  # type: ignore
     except Exception as e:
-        raise pl.SchemaError(e)
+        raise pl.SchemaError(e) from None

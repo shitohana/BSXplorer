@@ -14,6 +14,7 @@ from scipy import stats
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
+
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
@@ -23,30 +24,34 @@ def remove_extension(path):
     re.sub("\.[^./]+$", "", path)
 
 
-MetageneSchema = dotdict(dict(
-    chr=pl.Categorical,
-    strand=pl.Categorical,
-    position=pl.UInt64,
-    gene=pl.Categorical,
-    context=pl.Categorical,
-    id=pl.Categorical,
-    fragment=pl.UInt32,
-    sum=pl.Float32,
-    count=pl.UInt32,
-))
+MetageneSchema = dotdict(
+    dict(
+        chr=pl.Categorical,
+        strand=pl.Categorical,
+        position=pl.UInt64,
+        gene=pl.Categorical,
+        context=pl.Categorical,
+        id=pl.Categorical,
+        fragment=pl.UInt32,
+        sum=pl.Float32,
+        count=pl.UInt32,
+    )
+)
 
 
-MetageneJoinedSchema = dotdict(dict(
-    chr=pl.Categorical,
-    strand=pl.Categorical,
-    gene=pl.Categorical,
-    start=pl.UInt64,
-    id=pl.Categorical,
-    context=pl.Categorical,
-    fragment=pl.UInt32,
-    sum=pl.Float32,
-    count=pl.UInt32,
-))
+MetageneJoinedSchema = dotdict(
+    dict(
+        chr=pl.Categorical,
+        strand=pl.Categorical,
+        gene=pl.Categorical,
+        start=pl.UInt64,
+        id=pl.Categorical,
+        context=pl.Categorical,
+        fragment=pl.UInt32,
+        sum=pl.Float32,
+        count=pl.UInt32,
+    )
+)
 
 
 class ReportBar(Bar):
@@ -85,7 +90,7 @@ UniversalBatchSchema = OrderedDict(
     trinuc=pl.Utf8,
     count_m=pl.UInt32,
     count_total=pl.UInt32,
-    density=pl.Float64
+    density=pl.Float64,
 )
 
 
