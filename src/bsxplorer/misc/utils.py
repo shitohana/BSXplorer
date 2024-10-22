@@ -34,6 +34,7 @@ class PatchedModel(BaseModel):
             else:
                 raise e
 
+
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
 
@@ -60,7 +61,6 @@ MetageneSchema = dotdict(
     )
 )
 
-
 MetageneJoinedSchema = dotdict(
     dict(
         chr=pl.Categorical,
@@ -82,11 +82,11 @@ class ReportBar(Bar):
 
     @property
     def progress2mb(self):
-        return int(self.index) / (1024**2)
+        return int(self.index) / (1024 ** 2)
 
     @property
     def max2mb(self):
-        return int(self.max) / (1024**2)
+        return int(self.max) / (1024 ** 2)
 
     @property
     def elapsed_fmt(self):
@@ -121,6 +121,14 @@ UniversalBatchSchema = OrderedDict(
 def fraction(n, limit):
     f = Fraction(n).limit_denominator(limit)
     return f.numerator, f.denominator
+
+
+def reverse_strand(df, max_fragment):
+    return (
+        df.filter(pl.col("strand") == "-")
+        .with_columns((max_fragment - pl.col("fragment")).alias("fragment"))
+        .sort("fragment")
+    )
 
 
 fraction_v = np.vectorize(fraction)

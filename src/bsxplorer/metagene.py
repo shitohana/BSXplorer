@@ -1,23 +1,29 @@
+"""
+This module implements Metagene and MetageneFiles classes - high-level interfaces
+to read, store and analyze methylation report data.
+"""
+# TODO: 1. Check and fix clusterization of single or multiple metagenes
+# TODO: 2. Revise MetageneFiles.dendrogram
+# TODO: 3. Maybe move save_* methods to abstract class
+# TODO: 4. Revise MetageneFiles.merge
 from __future__ import annotations
 
 import functools
 import gzip
 import sys
-from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal, Optional, Union
 
 import numpy as np
 import polars as pl
 from pydantic import (
     AliasChoices,
-    BaseModel,
     ConfigDict,
     Field,
     PrivateAttr,
+    computed_field,
     validate_call,
 )
 from pyreadr import write_rds
-from scipy import stats
 
 from .base import (
     MetageneFilesBase,
@@ -40,8 +46,6 @@ from .plot import (
     HeatMapData,
     LinePlot,
     LinePlotData,
-    plot_stat_expr,
-    savgol_line,
 )
 from .process_report import read_report
 from .sequence import CytosinesFileCM, SequenceFile
@@ -56,6 +60,8 @@ class Metagene(PatchedModel):
     ----------
     report_df: pl.DataFrame
         ``polars.DataFrame`` with cytosine methylation status.
+    genome:
+        ``polars.DataFrame`` of genome to which metagene was aligned to.
     upstream_windows: int, default=0
         Upstream windows number.
     body_windows
@@ -66,6 +72,14 @@ class Metagene(PatchedModel):
         Defines the strand if metagene was filtered by it.
     context: {'CG', 'CHG', 'CHH'}, optional
         Defines the context if metagene was filtered by it.
+    reader: UniversalReader
+        Model of universal reader, used to read report.
+    sumfunc: str
+        Summary function used to calculate density
+    fasta: str | Path, optional
+        Path to FASTA sequence, which was used to read bedGraph or
+        coverage report.
+
     """
 
     # Private
@@ -106,12 +120,14 @@ class Metagene(PatchedModel):
     def report_df(self, value: pl.DataFrame) -> None:
         self._report_df = value
 
+    @computed_field
     @functools.cached_property
-    def total_windows(self):
+    def total_windows(self) -> int:
         return self.upstream_windows + self.downstream_windows + self.body_windows
 
-    @functools.cached_property
-    def _x_ticks(self):
+    @computed_field
+    @property
+    def _x_ticks(self) -> list[float]:
         return [
             self.upstream_windows / 2,
             self.upstream_windows,
@@ -120,8 +136,9 @@ class Metagene(PatchedModel):
             self.total_windows - (self.downstream_windows / 2),
         ]
 
-    @functools.cached_property
-    def _borders(self):
+    @computed_field
+    @property
+    def _borders(self) -> list[float]:
         return [
             self.upstream_windows,
             self.body_windows + self.upstream_windows,
@@ -308,26 +325,26 @@ class Metagene(PatchedModel):
         coords: Optional[list[str]] = None,
     ):
         """
-        Method for filtering metagene.
+        Filter metagene by predicates or selected regions.
 
         Parameters
         ----------
-        context
+        context: {'CG', 'CHG', 'CHH'}, optional
             Methylation context (CG, CHG, CHH) to filter (only one).
-        strand
+        strand: {'+', '-'}, optional
             Strand to filter (+ or -).
-        chr
+        chr: str, optional
             Chromosome name to filter.
-        genome
+        genome: polars.DataFrame, optional
             DataFrame with annotation to filter with (from :class:`Genome`)
-        id
+        id: list[str], optional
             List of gene ids to filter (should be specified in annotation file)
-        coords
+        coords: list[str], optional
             List of genomic locuses to filter (column 'gene' of report_df)
 
         Returns
         -------
-            Filtered :class:`Metagene`.
+        Metagene
         """
         model = self.model_dump()
         model["context"] = context
@@ -367,12 +384,21 @@ class Metagene(PatchedModel):
 
         Parameters
         ----------
-        to_fragments
-            Number of TOTAL (including flanking regions) fragments per gene.
+        to_fragments: int, optional
+            Number of TOTAL (upstream + body + downstream) fragments per gene.
+            The ratio of flanking regions to body region fragment number is
+            preserved in this operation.
 
         Returns
         -------
-            Resized :class:`Metagene`.
+        Metagene
+
+        Notes
+        -----
+        To resize the metagene data, mean value of methylation for fragments
+        is calculated. For example, if there were 100 windows and the metagene
+        is being resized to 20 - mean density of methylation for each sequential
+        fragments is being calculated.
 
         Examples
         --------
@@ -443,14 +469,14 @@ class Metagene(PatchedModel):
 
         Parameters
         ----------
-        upstream
-            Trim upstream region?
-        downstream
-            Trim downstream region?
+        upstream: bool
+            Trim upstream region.
+        downstream: bool
+            Trim downstream region.
 
         Returns
         -------
-            Trimmed :class:`Metagene`
+        Metagene
 
         Examples
         --------
@@ -520,23 +546,31 @@ class Metagene(PatchedModel):
         """
         return ClusterSingle(self, count_threshold, na_rm)
 
-    def save_rds(self, filename, compress: bool = False):
+    def save_rds(self, filename, compress: bool = False) -> None:
         """
         Save Metagene in RDS format.
 
-        :param filename: Path for file.
-        :param compress: Whether to compress to gzip or not.
+        Parameters
+        ----------
+        filename
+            Path for file.
+        compress
+            Whether to compress to gzip or not.
         """
         write_rds(
             filename, self.report_df.to_pandas(), compress="gzip" if compress else None
         )
 
-    def save_tsv(self, filename, compress=False):
+    def save_tsv(self, filename, compress=False) -> None:
         """
-        Save Metagene in TSV.
+        Save Metagene as TSV file.
 
-        :param filename: Path for file.
-        :param compress: Whether to compress to gzip or not.
+        Parameters
+        ----------
+        filename
+            Path for file.
+        compress
+            Whether to compress to gzip or not.
         """
         if compress:
             with gzip.open(filename + ".gz", "wb") as file:
@@ -544,134 +578,6 @@ class Metagene(PatchedModel):
                 self.report_df.write_csv(file, separator="\t")
         else:
             self.report_df.write_csv(filename, separator="\t")
-
-    @staticmethod
-    def _reverse_strand(df, max_fragment):
-        return (
-            df.filter(pl.col("strand") == "-")
-            .with_columns((max_fragment - pl.col("fragment")).alias("fragment"))
-            .sort("fragment")
-        )
-
-    def line_plot_data(
-        self,
-        resolution: int = None,
-        smooth: int = 50,
-        confidence: float = 0.0,
-        stat: str = "wmean",
-        merge_strands: bool = True,
-        label="",
-    ):
-        """
-
-        Parameters
-        ----------
-        confidence
-            Probability for confidence bands (e.g. 0.95)
-        smooth
-            Number of windows for
-            `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter
-            (set 0 for no smoothing). Applied only if `flank_windows` and
-            `body_windows` params are specified.
-        resolution
-            Number of fragments to resize to. Keep None if no resize is needed.
-        stat
-            Summary function to use for plot. Possible options: ``mean``, ``wmean``,
-            ``log``, ``wlog``, ``qN``
-        merge_strands
-            Does negative strand need to be reversed
-        label
-            Label for the data.
-
-        Returns
-        -------
-        :class:`LinePlotData`
-        """  # noqa: E501
-        resized = self if resolution is None else self.resize(resolution)
-        df = resized.report_df
-
-        # Merge strands
-        if merge_strands:
-            df = df.filter(pl.col("strand") != "-").extend(
-                self._reverse_strand(df, df["fragment"].max())
-            )
-
-        # Apply stats expr
-        res = (
-            df.group_by("fragment")
-            .agg(
-                [
-                    plot_stat_expr(stat).alias("density"),
-                    pl.col("sum"),
-                    pl.col("count"),
-                    pl.sum("count").alias("n"),
-                    (pl.col("sum") / pl.col("count")).mean().alias("average"),
-                    (pl.col("sum") - (pl.col("sum") / pl.col("count")))
-                    .mean()
-                    .pow(2)
-                    .alias("variance"),
-                ]
-            )
-            .sort("fragment")
-        )
-
-        if 0 < confidence < 1 and stat in ["mean", "wmean"]:
-            res = (
-                res.with_columns(
-                    (pl.col("variance") / pl.col("n")).sqrt().alias("scale")
-                )
-                .with_columns(
-                    pl.struct(["n", "average", "scale"])
-                    .map_elements(
-                        lambda field: stats.t.interval(
-                            confidence,
-                            df=field["n"] - 1,
-                            loc=field["average"],
-                            scale=field["scale"],
-                        ),
-                        return_dtype=pl.List(pl.Float64),
-                    )
-                    .alias("interval")
-                )
-                .with_columns(
-                    pl.col("interval").list.to_struct(fields=["lower", "upper"])
-                )
-                .unnest("interval")
-            )
-        elif 0 < confidence < 1 and stat not in ["mean", "wmean"]:
-            raise ValueError(
-                "Confidence bands available only for mean and wmean stat parameters."
-            )
-
-        # Fill empty windows
-        template = pl.DataFrame(
-            dict(fragment=list(range(self.total_windows))),
-            schema=dict(fragment=res.schema["fragment"]),
-        )
-
-        joined = template.join(res, on="fragment", how="left")
-
-        # Calculate CI
-        lower = None
-        upper = None
-        if 0 < confidence < 1 and stat in ["mean", "wmean"]:
-            upper = savgol_line(joined["upper"].to_numpy(), smooth) * 100
-            lower = savgol_line(joined["lower"].to_numpy(), smooth) * 100
-
-        # Smooth and convert to percents
-        y = savgol_line(joined["density"].to_numpy(), smooth) * 100
-        x = np.arange(len(y))
-
-        return LinePlotData(
-            x,
-            y,
-            resized._x_ticks,
-            resized._borders,
-            lower,
-            upper,
-            label,
-            ["Upstream", "", "Body", "", "Downstream"],
-        )
 
     def line_plot(
         self,
@@ -682,46 +588,45 @@ class Metagene(PatchedModel):
         merge_strands: bool = True,
     ) -> LinePlot:
         """
-        Create :class:`LinePlot` method.
+        Create :class:`LinePlot`. To generate values for plot
+        weightened mean (or specified by ``stat``) density of each fragments
+        between all regions is calculated
 
         Parameters
         ----------
-        confidence
-            Probability for confidence bands (e.g. 0.95)
-        smooth
+        confidence: float, default=0.0
+            Probability for confidence bands (e.g. 0.95). Set 0
+            to disable confidence bands.
+        smooth: int, default=0
             Number of windows for
             `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter
-            (set 0 for no smoothing). Applied only if `flank_windows` and
-            `body_windows` params are specified.
-        resolution
+            (set 0 for no smoothing).
+        resolution: int, optional, default=None
             Number of fragments to resize to. Keep None if no resize is needed.
-        stat
-            Summary function to use for plot. Possible options: ``mean``, ``wmean``,
-            ``log``, ``wlog``, ``qN``
-        merge_strands
+        stat: {'mean', 'wmean', 'log', 'wlog', 'qN'}, default='wmean'
+            Summary function to use for plot.
+        merge_strands: bool, default=True
             Does negative strand need to be reversed
 
         Returns
         -------
-            :class:`LinePlot`
+        LinePlot
 
         Notes
         -----
-        - ``mean`` – Default mean between bins, when count of cytosine residues in bin
-        IS NOT taken into account
-
-        - ``wmean`` – Weighted mean between bins. Cytosine residues in bin IS taken
-        into account
-
-        - ``log`` – NOT weighted geometric mean.
-
-        - ``wlog`` - Weighted geometric mean.
-
-        - ``qN`` – Return quantile by ``N`` percent (e.g. "``q50``")
+        -   ``mean`` – Default mean between bins, when count of cytosine residues in bin
+            IS NOT taken into account
+        -   ``wmean`` – Weighted mean between bins. Cytosine residues in bin IS taken
+            into account
+        -   ``log`` – NOT weighted geometric mean.
+        -   ``wlog`` - Weighted geometric mean.
+        -   ``qN`` – Return quantile by ``N`` percent (e.g. "``q50``")
 
         See Also
         --------
             :doc:`LinePlot example<../../markdowns/test>`
+            LinePlot : For more information about plotting parameters.
+            contexts_line_plot : Comparative plot of methylation contexts
 
         Examples
         --------
@@ -766,13 +671,9 @@ class Metagene(PatchedModel):
 
         .. image:: ../../images/lineplot/ara_multi_plotly.png
 
-        See Also
-        --------
-        LinePlot : For more information about plottling parameters.
         """  # noqa: E501
-        resized = self.resize(resolution)
-        lp_data = resized.line_plot_data(
-            resolution, smooth, confidence, stat, merge_strands
+        lp_data = LinePlotData.from_metagene_df(
+            self.report_df, self.model_dump(), smooth, confidence, stat, merge_strands
         )
         return LinePlot(lp_data)
 
@@ -784,89 +685,40 @@ class Metagene(PatchedModel):
         confidence: float = 0.0,
         merge_strands: bool = True,
     ) -> LinePlot:
-        resized = self.resize(resolution)
+        """
+        Generate comparative line plot of methylation contexts
 
+        Parameters
+        ----------
+        confidence: float, default=0.0
+            Probability for confidence bands (e.g. 0.95). Set 0
+            to disable confidence bands.
+        smooth: int, default=0
+            Number of windows for
+            `SavGol <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>`_ filter
+            (set 0 for no smoothing).
+        resolution: int, optional, default=None
+            Number of fragments to resize to. Keep None if no resize is needed.
+        stat: {'mean', 'wmean', 'log', 'wlog', 'qN'}, default='wmean'
+            Summary function to use for plot.
+        merge_strands: bool, default=True
+            Does negative strand need to be reversed
+
+        Returns
+        -------
+        LinePlot
+        """
         lp_data = [
             filtered.line_plot_data(
                 resolution, smooth, confidence, stat, merge_strands, context
             )
             for context, filtered in zip(
-                CONTEXTS, map(lambda context: resized.filter(context=context), CONTEXTS)
+                CONTEXTS, map(lambda context: self.filter(context=context), CONTEXTS)
             )
             if len(filtered) > 0
         ]
 
         return LinePlot(lp_data)
-
-    def heat_map_data(self, nrow: int = 100, ncol: int = 100, label=None):
-        resized = self.resize(ncol)
-        report_df = resized.report_df
-        # Merge strands
-        report_df = report_df.filter(pl.col("strand") != "-").extend(
-            self._reverse_strand(report_df, report_df["fragment"].max())
-        )
-
-        # sort by rows and add row numbers
-        hm_data = (
-            report_df.lazy()
-            .group_by("gene")
-            .agg(
-                [pl.col("fragment"), (pl.col("sum") / pl.col("count")).alias("density")]
-            )
-            .with_columns(
-                (pl.col("density").list.sum() / (resized.total_windows + 1)).alias(
-                    "order"
-                )
-            )
-            .sort("order", descending=True)
-            .with_row_count(name="row")
-            .with_columns(
-                (pl.col("row") / (pl.max("row") + 1) * nrow)
-                .floor()
-                .alias("row")
-                .cast(pl.UInt16)
-            )
-            .explode(["fragment", "density"])
-            .group_by(["row", "fragment"])
-            .agg(pl.mean("density"))
-        )
-
-        # prepare full template
-        template = (
-            pl.LazyFrame(data={"row": list(range(nrow))})
-            .with_columns(
-                pl.lit(list(range(0, resized.total_windows))).alias("fragment")
-            )
-            .explode("fragment")
-            .with_columns(
-                [
-                    pl.col("fragment").cast(MetageneSchema.fragment),
-                    pl.col("row").cast(pl.UInt16),
-                ]
-            )
-        )
-
-        # join template with actual data
-        hm_data = (  # template join with orig
-            template.join(hm_data, on=["row", "fragment"], how="left")
-            .fill_null(0)
-            .sort(["row", "fragment"])
-            .group_by("row", maintain_order=True)
-            .agg(pl.col("density"))
-            .collect()["density"]
-            .to_list()
-        )
-
-        # convert to matrix and percents
-        hm_data = np.array(hm_data, dtype=np.float32) * 100
-
-        return HeatMapData(
-            hm_data,
-            resized._x_ticks,
-            resized._borders,
-            label if label is not None else "",
-            ["Upstream", "", "Body", "", "Downstream"],
-        )
 
     def heat_map(
         self,
@@ -874,18 +726,23 @@ class Metagene(PatchedModel):
         ncol: int = 100,
     ) -> HeatMap:
         """
-        Create :class:`HeatMap` method.
+        Create :class:`HeatMap`. To generate heatmap values, genes
+        are ranked by their total methylation density value; split into
+        ``nrow`` groups; for each row group weighted average of methylation
+        density for each fragment is calculated.
+
 
         Parameters
         ----------
-        nrow
+        nrow: int
+            Number of rows in the resulting heat-map.
+        ncol: int
             Number of fragments to resize to. Keep None if no resize is needed.
-        ncol
-            Number of columns in the resulting heat-map.
+
 
         Returns
         -------
-            :class:`HeatMap`
+        HeatMap
 
         Examples
         --------
@@ -927,11 +784,16 @@ class Metagene(PatchedModel):
         Metagene.line_plot : For more information about `stat` parameter.
         HeatMap : For more information about plotting parameters.
         """
-        hm_data = self.heat_map_data(nrow, ncol)
+        hm_data = HeatMapData.from_metagene_df(
+            self.report_df, self.model_dump(), nrow, ncol
+        )
         return HeatMap(hm_data)
 
+    @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def box_plot_data(
-        self, filter_context: Literal["CG", "CHG", "CHH"] | None = None, label=""
+        self,
+        filter_context: Optional[Literal["CG", "CHG", "CHH"]] = None,
+        label: str = "",
     ):
         df = (
             self.filter(context=filter_context).report_df
@@ -959,8 +821,10 @@ class Metagene(PatchedModel):
             return BoxPlotData.empty(label)
 
     def context_box_plot(self):
-        data = [self.box_plot_data(context, context) for context in CONTEXTS]
-
+        data = [
+            BoxPlotData.from_metagene_df(self.report_df, context, context)
+            for context in CONTEXTS
+        ]
         return BoxPlot(data)
 
     @classmethod
@@ -1122,13 +986,14 @@ class MetageneFiles(MetageneFilesBase):
     @classmethod
     def from_list(
         cls,
-        filenames: list[str | Path],
-        genomes: pl.DataFrame | list[pl.DataFrame],
-        labels: list[str] = None,
+        filenames: list[ExistentPath],
+        genomes: Union[GenomeDf, list[GenomeDf]],
+        report_schema: Union[ReportSchema, list[ReportSchema]],
+        labels: Optional[list[str]] = None,
         up_windows: int = 0,
         body_windows: int = 2000,
         down_windows: int = 0,
-        report_type: ReportTypes = "bismark",
+        report_type: Optional[ReportTypes] = None,
         block_size_mb: int = 50,
         use_threads: bool = True,
         sumfunc: AvailableSumfunc = "wmean",
@@ -1170,7 +1035,6 @@ class MetageneFiles(MetageneFilesBase):
 
         See Also
         --------
-        ________
         Metagene
 
         Examples
@@ -1220,13 +1084,8 @@ class MetageneFiles(MetageneFilesBase):
         When :class:`MetageneFiles` is initialized explicitly, number of windows needs
         or be the same in evety sample
         """
-        read_fnc = {
-            "bismark": Metagene.from_bismark,
-            "binom": Metagene.from_binom,
-            "cgmap": Metagene.from_cgmap,
-            "bedgraph": Metagene.from_bedgraph,
-            "coverage": Metagene.from_coverage,
-        }
+        if report_type is not None:
+            report_schema = ReportSchema.__getitem__(report_type.upper())
 
         if not isinstance(genomes, list):
             genomes = [genomes] * len(filenames)
@@ -1235,23 +1094,22 @@ class MetageneFiles(MetageneFilesBase):
                 raise AttributeError(
                     "Number of genomes and filenames provided does not match"
                 )
-
-        default_args = dict(
-            up_windows=up_windows,
-            body_windows=body_windows,
-            down_windows=down_windows,
-            use_threads=use_threads,
-        )
-
-        if report_type not in ["binom"]:
-            default_args |= dict(block_size_mb=block_size_mb, sumfunc=sumfunc)
+        if not isinstance(report_schema, list):
+            report_schema = [report_schema] * len(filenames)
 
         samples: list[Metagene] = []
-        for file, genome in zip(filenames, genomes):
-            sample = read_fnc[report_type](
-                file=file, genome=genome, **default_args, **kwargs
+        for file, genome, schema in zip(filenames, genomes, report_schema):
+            sample = Metagene.from_report(
+                file,
+                genome,
+                schema,
+                up_windows,
+                body_windows,
+                down_windows,
+                use_threads,
+                sumfunc=sumfunc,
+                block_size_mb=block_size_mb,
             )
-
             samples.append(sample)
 
         return cls(samples, labels)
@@ -1494,18 +1352,19 @@ class MetageneFiles(MetageneFilesBase):
         .. image:: ../../images/heatmap/ara_bradi_plotly.png
         """
         hm_data = [
-            sample.heat_map_data(nrow, ncol, label)
+            HeatMapData.from_metagene_df(
+                sample.report_df, sample.dump_model(), nrow, ncol, label
+            )
             for sample, label in zip(self.samples, self.labels)
         ]
         return HeatMap(hm_data)
 
     def box_plot_data(self, filter_context: Literal["CG", "CHG", "CHH"] | None = None):
         return [
-            sample.box_plot_data(filter_context, label)
+            BoxPlotData.from_metagene_df(sample.report_df, filter_context, label)
             for label, sample in zip(self.labels, self.samples)
         ]
 
-    # Todo add fixes from issue14-16#fix
     def box_plot(self):
         return BoxPlot(self.box_plot_data())
 

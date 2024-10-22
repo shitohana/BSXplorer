@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import sys
-
+from matplotlib import pyplot as plt
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -61,8 +60,6 @@ class LinePlot:
 
         `Linestyles <https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html>`_ : For possible linestyles.
         """
-        if 'matplotlib' not in sys.modules:
-            import matplotlib.pyplot as plt
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
 
         for line_data in self.data:
