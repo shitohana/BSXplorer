@@ -8,8 +8,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Literal
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import polars as pl
 from dynamicTreeCut import cutreeHybrid
 from dynamicTreeCut.dynamicTreeCut import get_heights
@@ -18,7 +20,6 @@ from scipy.cluster.hierarchy import leaves_list, optimal_leaf_ordering
 from scipy.spatial.distance import pdist
 from scipy.stats import pearsonr
 
-from .base import MetageneBase, MetageneFilesBase
 from .plot import flank_lines_plotly
 
 default_n_threads = multiprocessing.cpu_count()
@@ -52,7 +53,7 @@ class _ClusterBase(ABC):
 
     def _process_metagene(
             self,
-            metagene: MetageneBase,
+            metagene,
             count_threshold=5,
             na_rm: float | None = None
     ) -> (np.ndarray, np.ndarray):
@@ -115,7 +116,7 @@ class _ClusterBase(ABC):
 class ClusterSingle(_ClusterBase):
     """Class for operating with single sample regions clustering"""
 
-    def __init__(self, metagene: MetageneBase, count_threshold=5, na_rm: float | None = None, empty=False):
+    def __init__(self, metagene, count_threshold=5, na_rm: float | None = None, empty=False):
         if not empty:
             self.matrix, self.names = self._process_metagene(metagene, count_threshold, na_rm)
             self._x_ticks = metagene._x_ticks
@@ -198,7 +199,7 @@ class ClusterSingle(_ClusterBase):
 class ClusterMany(_ClusterBase):
     """Class for operating with multiple samples regions clustering"""
 
-    def __init__(self, metagenes: MetageneFilesBase, count_threshold=5, na_rm: float | None = None):
+    def __init__(self, metagenes, count_threshold=5, na_rm: float | None = None):
         intersect_list = set.intersection(*[set(metagene.report_df["gene"].to_list()) for metagene in metagenes.samples])
         for i in range(len(metagenes.samples)):
             metagenes.samples[i].report_df = metagenes.samples[i].report_df.filter(pl.col("gene").is_in(intersect_list))
@@ -431,8 +432,6 @@ class ClusterPlot:
             order = leaves_list(link)
 
             im = np.dstack([d.centers[order, :] for d in self.data])
-            if 'plotly.express' not in sys.modules:
-                import plotly.express as px
             figure = px.imshow(im, color_continuous_scale=cmap, animation_frame=2, aspect='auto', **kwargs)
             figure.update_layout(sliders=[{"currentvalue": {"prefix": "Sample = "}}])
             if self.sample_names is not None:

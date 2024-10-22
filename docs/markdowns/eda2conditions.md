@@ -160,8 +160,10 @@ The metagenes are constructed using the mean statistics with the `sumfunc="mean"
 args = dict(genome=te, up_windows=50, body_windows=100, down_windows=50, sumfunc="mean")
 
 # Read replicates metagenes
-metagene_mock = bsxplorer.MetageneFiles.from_list(["DRR336466.CX_report.txt.gz", "DRR336467.CX_report.txt.gz"], labels=["mock-1", "mock-2"], **args)
-metagene_inf = bsxplorer.MetageneFiles.from_list(["DRR336468.CX_report.txt.gz", "DRR336469.CX_report.txt.gz"], labels=["inf-1", "inf-2"], **args)
+metagene_mock = bsxplorer.MetageneFiles.from_list(["DRR336466.CX_report.txt.gz", "DRR336467.CX_report.txt.gz"],
+                                                  labels=["mock-1", "mock-2"], **args)
+metagene_inf = bsxplorer.MetageneFiles.from_list(["DRR336468.CX_report.txt.gz", "DRR336469.CX_report.txt.gz"],
+                                                 labels=["inf-1", "inf-2"], **args)
 
 # Merge biological replicates
 metagene_mock = metagene_mock.merge()

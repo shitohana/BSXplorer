@@ -2,6 +2,7 @@
 This module implements Metagene and MetageneFiles classes - high-level interfaces
 to read, store and analyze methylation report data.
 """
+
 # TODO: 1. Check and fix clusterization of single or multiple metagenes
 # TODO: 2. Revise MetageneFiles.dendrogram
 # TODO: 3. Maybe move save_* methods to abstract class
@@ -11,7 +12,7 @@ from __future__ import annotations
 import functools
 import gzip
 import sys
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 import numpy as np
 import polars as pl
@@ -21,13 +22,12 @@ from pydantic import (
     Field,
     PrivateAttr,
     computed_field,
+    field_validator,
+    model_validator,
     validate_call,
 )
 from pyreadr import write_rds
 
-from .base import (
-    MetageneFilesBase,
-)
 from .cluster import ClusterMany, ClusterSingle
 from .IO import UniversalReader
 from .misc.schemas import ReportSchema
@@ -38,6 +38,7 @@ from .misc.utils import (
     MetageneSchema,
     PatchedModel,
     ReportTypes,
+    remove_extension,
 )
 from .plot import (
     BoxPlot,
@@ -975,58 +976,135 @@ class Metagene(PatchedModel):
         )
 
 
-class MetageneFiles(MetageneFilesBase):
+class MetageneFiles(PatchedModel):
     """
-    Stores and plots multiple data for :class:`Metagene`.
+    Class for reading, storing, analyzing and visualizing multiple
+    methylation reports at once.
 
-    If you want to compare Bismark data with different genomes, create this class with
-    a list of :class:`Bismark` classes.
+    Attributes
+    ----------
+    samples: list[Metagene]
+        List of :class:`Metagene` instances.
+    labels: list[str], optional
+        List of sample labels.
     """
+
+    samples: list[Metagene]
+    labels: Optional[list[str]] = Field(default_factory=list)
+
+    @field_validator("samples")
+    @classmethod
+    def _validate_saples(cls, samples: list[Metagene]):
+        assert (
+            functools.reduce(
+                lambda a, b: a == b,
+                map(lambda sample: sample.upstream_windows, samples),
+            )
+            and functools.reduce(
+                lambda a, b: a == b, map(lambda sample: sample.body_windows, samples)
+            )
+            and functools.reduce(
+                lambda a, b: a == b,
+                map(lambda sample: sample.downstream_windows, samples),
+            )
+        ), ValueError("Samples have different number of windows!")
+        return samples
+
+    @model_validator(mode="after")
+    def _validate_values(self) -> Any:
+        if not self.labels:
+            self.labels = list(map(str, range(len(self.samples))))
+        assert len(self.labels) == self.samples, ValueError(
+            "Samples and labels lists should be equal length!"
+        )
+        return self
 
     @classmethod
+    @validate_call(config=dict(arbitrary_types_allowed=True))
     def from_list(
         cls,
         filenames: list[ExistentPath],
         genomes: Union[GenomeDf, list[GenomeDf]],
-        report_schema: Union[ReportSchema, list[ReportSchema]],
+        schema: Union[ReportSchema, list[ReportSchema]],
         labels: Optional[list[str]] = None,
-        up_windows: int = 0,
-        body_windows: int = 2000,
-        down_windows: int = 0,
-        report_type: Optional[ReportTypes] = None,
-        block_size_mb: int = 50,
+        up_windows: Annotated[
+            int,
+            Field(
+                validation_alias=AliasChoices("up_windows", "uw", "upstream_windows"),
+                ge=0,
+            ),
+        ] = 100,
+        body_windows: Annotated[
+            int,
+            Field(
+                validation_alias=AliasChoices("body_windows", "bw", "body_windows"),
+                gt=0,
+            ),
+        ] = 100,
+        down_windows: Annotated[
+            int,
+            Field(
+                validation_alias=AliasChoices(
+                    "down_windows", "dw", "downstream_windows"
+                ),
+                ge=0,
+            ),
+        ] = 100,
         use_threads: bool = True,
+        *,
+        report_type: Optional[ReportTypes] = None,
+        block_size_mb: Optional[Annotated[int, Field(gt=0)]] = 100,
         sumfunc: AvailableSumfunc = "wmean",
-        **kwargs,
+        p_value: Optional[Annotated[float, Field(gt=0, lt=1)]] = 0.05,
+        fasta: Optional[ExistentPath] = None,
+        cytosine_file: Optional[ExistentPath] = None,
+        allocator: Allocator = "system",
     ) -> MetageneFiles:
         """
         Create istance of :class:`MetageneFiles` from list of paths.
 
         Parameters
         ----------
-        filenames
-            List of filenames to read from
-        genomes
+        filenames: list[str or pathlib.Path]
+            List of methylation report paths to read from
+        genomes: pl.DataFrame or list[pl.DataFrame]
             Annotation DataFrame or list of Annotations (may be different annotations)
-        labels
-            Labels for plots for Metagenes
-        up_windows
-            Number of windows upstream region to split into
-        body_windows
+        schema: ReportSchema or list[ReportSchema]
+            One or list of ReportSchema(s) values to specify report format(s).
+        labels: list[str]
+            List of sample labels.
+        up_windows: int
+            Number of windows upstream region to split into.
+            Aliases: uw, upstream_windows.
+        body_windows: int
             Number of windows body region to split into
-        down_windows
+            Aliases: bw, body_windows.
+        down_windows: int
             Number of windows downstream region to split into
+            Aliases: dw, downstream_windows
         report_type
+            .. deprecated:: 1.3
+               Will be removed and replaced by ``schema`` param
             Type of input report. Possible options: ``bismark``, ``cgmap``, ``binom``,
             ``bedgraph``, ``coverage``.
-        block_size_mb
-            Block size for reading. (Block size ≠ amount of RAM used. Reader allocates
-            approx. Block size * 20 memory for reading.)
-        use_threads
-            Do multi-threaded or single-threaded reading. If multi-threaded option is
-            used, number of threads is defined by `multiprocessing.cpu_count()`
-        sumfunc
+        sumfunc: {'wmean', 'mean', 'min', 'max', 'median', '1pgeom'}
             Summary function to calculate density for window with.
+        block_size_mb: int, optional
+            Block size for reading. (Block size ≠ amount of RAM used.
+            Reader allocates approximately block size * 20
+            memory for reading.)
+        p_value: float, optional
+            P-value of cytosine methylation for it to be
+            considered methylated.
+        fasta: str or Path, optional
+            Path to FASTA genome sequence file.
+        cytosine_file: str or Path, optional
+            Path to preprocessed with :class:`Sequence` cytosine
+            file.
+        allocator: {'system', 'default', 'mimalloc', 'jemalloc'}, optional
+            Memory allocation method used for reading.
+            Performance depends on your system and hardware and
+            should be estimated individually.
 
         Returns
         -------
@@ -1049,12 +1127,14 @@ class MetageneFiles(MetageneFilesBase):
         ... ).gene_body(min_length=2000)
         >>>
         >>> metagenes = MetageneFiles.from_list(
-        >>>     ["path/to/bradi.txt", "path/to/ara.txt"],
-        >>>     [brd_genome, ara_genome],
-        >>>     ["BraDi", "AraTh"],
-        >>>     report_type="bismark",
-        >>>     up_windows=250, body_windows=500, down_windows=250
-        >>> )
+        ...     ["path/to/bradi.txt", "path/to/ara.txt"],
+        ...     [brd_genome, ara_genome],
+        ...     [ReportSchema.BISMARK, ReportSchema.CGMAP]
+        ...     ["BraDi", "AraTh"],
+        ...     up_windows=250,
+        ...     body_windows=500,
+        ...     down_windows=250,
+        ... )
 
         :class:`MetageneFiles` can be initialized explicitly:
 
@@ -1085,7 +1165,7 @@ class MetageneFiles(MetageneFilesBase):
         or be the same in evety sample
         """
         if report_type is not None:
-            report_schema = ReportSchema.__getitem__(report_type.upper())
+            schema = ReportSchema.__getitem__(report_type.upper())
 
         if not isinstance(genomes, list):
             genomes = [genomes] * len(filenames)
@@ -1094,11 +1174,11 @@ class MetageneFiles(MetageneFilesBase):
                 raise AttributeError(
                     "Number of genomes and filenames provided does not match"
                 )
-        if not isinstance(report_schema, list):
-            report_schema = [report_schema] * len(filenames)
+        if not isinstance(schema, list):
+            schema = [schema] * len(filenames)
 
         samples: list[Metagene] = []
-        for file, genome, schema in zip(filenames, genomes, report_schema):
+        for file, genome, schema in zip(filenames, genomes, schema):
             sample = Metagene.from_report(
                 file,
                 genome,
@@ -1109,10 +1189,14 @@ class MetageneFiles(MetageneFilesBase):
                 use_threads,
                 sumfunc=sumfunc,
                 block_size_mb=block_size_mb,
+                p_value=p_value,
+                fasta=fasta,
+                cytosine_file=cytosine_file,
+                allocator=allocator,
             )
             samples.append(sample)
 
-        return cls(samples, labels)
+        return cls(samples=samples, labels=labels)
 
     def filter(
         self,
@@ -1159,14 +1243,14 @@ class MetageneFiles(MetageneFilesBase):
 
     def trim_flank(self, upstream=True, downstream=True):
         """
-        :meth:`Metagene.trim_flank` all metagenes.
+        Trim Metagenes flanking regions.
 
         Parameters
         ----------
-        upstream
-            Trim upstream region?
-        downstream
-            Trim downstream region?
+        upstream: bool
+            Trim upstream region.
+        downstream: bool
+            Trim downstream region.
 
         Returns
         -------
@@ -1239,8 +1323,70 @@ class MetageneFiles(MetageneFilesBase):
             merged,
             upstream_windows=self.samples[0].upstream_windows,
             downstream_windows=self.samples[0].downstream_windows,
-            body_windows=self.samples[0].gene_windows,
+            body_windows=self.samples[0].body_windows,
         )
+
+    def save_rds(self, base_filename, compress: bool = False, merge: bool = False):
+        """
+        Save Metagene in Rds.
+
+        Parameters
+        ----------
+        base_filename
+            Base path for file (final path will be ``base_filename+label.rds``).
+        compress
+            Whether to compress to gzip or not.
+        merge
+            Do samples need to be merged into single :class:`Metagene` before saving.
+        """
+        if merge:
+            merged = pl.concat(
+                [
+                    sample.report_df.lazy().with_columns(pl.lit(label))
+                    for sample, label in zip(self.samples, self.labels)
+                ]
+            )
+            write_rds(
+                base_filename, merged.to_pandas(), compress="gzip" if compress else None
+            )
+        if not merge:
+            for sample, label in zip(self.samples, self.labels):
+                sample.save_rds(
+                    f"{remove_extension(base_filename)}_{label}.rds",
+                    compress="gzip" if compress else None,
+                )
+
+    def save_tsv(self, base_filename, compress: bool = False, merge: bool = False):
+        """
+        Save Metagenes in TSV.
+
+        Parameters
+        ----------
+        base_filename
+            Base path for file (final path will be ``base_filename+label.tsv``).
+        compress
+            Whether to compress to gzip or not.
+        merge
+            Do samples need to be merged into single :class:`Metagene` before saving.
+        """
+        if merge:
+            merged = pl.concat(
+                [
+                    sample.report_df.lazy().with_columns(pl.lit(label))
+                    for sample, label in zip(self.samples, self.labels)
+                ]
+            )
+            if compress:
+                with gzip.open(base_filename + ".gz", "wb") as file:
+                    # noinspection PyTypeChecker
+                    merged.write_csv(file, separator="\t")
+            else:
+                merged.write_csv(base_filename, separator="\t")
+        if not merge:
+            for sample, label in zip(self.samples, self.labels):
+                sample.save_tsv(
+                    f"{remove_extension(base_filename)}_{label}.tsv", compress=compress
+                )
 
     def line_plot(
         self,

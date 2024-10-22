@@ -8,8 +8,8 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from .plot import savgol_line
 from .misc.utils import MetageneSchema
+from .plot import savgol_line
 
 
 class Genome:
@@ -567,32 +567,6 @@ class Genome:
         # calculates length to next gene on same chr_strand
         length_after = (pl.col('start').shift(-1) - pl.col('end')).fill_null(flank_length)
 
-        # decided not to use this conditions
-        '''
-        upstream_length_conditioned = (
-            # when before length is enough
-            # we set upstream length to specified
-            pl.when(pl.col('upstream') >= flank_length).then(flank_length)
-            # when genes are intersecting (current start < previous end)
-            # we don't take this as upstream region
-            .when(pl.col('upstream') < 0).then(0)
-            # when length between genes is not enough for full specified length
-            # we divide it into half
-            .otherwise((pl.col('upstream') - (pl.col('upstream') % 2)) // 2)
-        )
-
-        downstream_length_conditioned = (
-            # when before length is enough
-            # we set upstream length to specified
-            pl.when(pl.col('downstream') >= flank_length).then(flank_length)
-            # when genes are intersecting (current start < previous end)
-            # we don't take this as upstream region
-            .when(pl.col('downstream') < 0).then(0)
-            # when length between genes is not enough for full specified length
-            # we divide it into half
-            .otherwise((pl.col('downstream') - pl.col('downstream') % 2) // 2)
-        )
-        '''
         if (genes["end"] < genes["start"]).sum() > 0:
             forward = (
                 genes.filter(pl.col("start") <= pl.col("end"))
