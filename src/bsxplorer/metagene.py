@@ -1,23 +1,38 @@
 from __future__ import annotations
 
+import functools
+import gzip
 import sys
 from pathlib import Path
-from typing import Annotated, Any, Literal, Optional
+from typing import Annotated, Literal, Optional
 
 import numpy as np
 import polars as pl
-from pydantic import AliasChoices, Field, validate_call
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    validate_call,
+)
+from pyreadr import write_rds
 from scipy import stats
 
 from .base import (
-    MetageneBase,
     MetageneFilesBase,
 )
 from .cluster import ClusterMany, ClusterSingle
 from .IO import UniversalReader
 from .misc.schemas import ReportSchema
 from .misc.types import Allocator, Context, ExistentPath, GenomeDf, Strand
-from .misc.utils import CONTEXTS, AvailableSumfunc, MetageneSchema, ReportTypes
+from .misc.utils import (
+    CONTEXTS,
+    AvailableSumfunc,
+    MetageneSchema,
+    PatchedModel,
+    ReportTypes,
+)
 from .plot import (
     BoxPlot,
     BoxPlotData,
@@ -28,10 +43,11 @@ from .plot import (
     plot_stat_expr,
     savgol_line,
 )
+from .process_report import read_report
 from .sequence import CytosinesFileCM, SequenceFile
 
 
-class Metagene(MetageneBase):
+class Metagene(PatchedModel):
     """
     Class for reading, storing, analyzing and visualizing
     methylation data
@@ -40,8 +56,6 @@ class Metagene(MetageneBase):
     ----------
     report_df: pl.DataFrame
         ``polars.DataFrame`` with cytosine methylation status.
-    plot_data: pl.DataFrame, optional
-        DataFrame of plotting data.
     upstream_windows: int, default=0
         Upstream windows number.
     body_windows
@@ -54,8 +68,82 @@ class Metagene(MetageneBase):
         Defines the context if metagene was filtered by it.
     """
 
-    def __init__(self, report_df: pl.DataFrame, **kwargs):
-        super().__init__(report_df=report_df, **kwargs)
+    # Private
+    _report_df: pl.DataFrame = PrivateAttr()
+    _genome: GenomeDf = PrivateAttr()
+
+    # Reader
+    reader: UniversalReader
+
+    # Metagene specific reading
+    sumfunc: AvailableSumfunc = Field(default="wmean")
+    fasta: Optional[ExistentPath] = (None,)
+
+    # Windows
+    upstream_windows: int = Field(ge=0, default=0)
+    body_windows: int = Field(gt=0)
+    downstream_windows: int = Field(ge=0, default=0)
+
+    # Filters
+    strand: Optional[Literal["+", "-", "."]] = Field(
+        default=None,
+    )
+    context: Optional[Literal["CG", "CHG", "CHH"]] = Field(
+        default=None,
+    )
+
+    model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
+
+    @property
+    def genome(self) -> pl.DataFrame:
+        return self._genome
+
+    @property
+    def report_df(self) -> pl.DataFrame:
+        return self._report_df
+
+    @report_df.setter
+    def report_df(self, value: pl.DataFrame) -> None:
+        self._report_df = value
+
+    @functools.cached_property
+    def total_windows(self):
+        return self.upstream_windows + self.downstream_windows + self.body_windows
+
+    @functools.cached_property
+    def _x_ticks(self):
+        return [
+            self.upstream_windows / 2,
+            self.upstream_windows,
+            self.total_windows / 2,
+            self.body_windows + self.upstream_windows,
+            self.total_windows - (self.downstream_windows / 2),
+        ]
+
+    @functools.cached_property
+    def _borders(self):
+        return [
+            self.upstream_windows,
+            self.body_windows + self.upstream_windows,
+        ]
+
+    def __init__(self, genome: GenomeDf, report_df: pl.DataFrame = None, **kwargs):
+        super().__init__(**kwargs)
+        object.__setattr__(self, "_genome", genome)
+
+        if report_df is None:
+            report_df = read_report(
+                self.reader,
+                self.genome,
+                self.upstream_windows,
+                self.body_windows,
+                self.downstream_windows,
+                self.sumfunc,
+            )
+        object.__setattr__(self, "_report_df", report_df)
+
+    def __len__(self):
+        return len(self.report_df)
 
     @classmethod
     @validate_call(config=dict(arbitrary_types_allowed=True))
@@ -64,25 +152,25 @@ class Metagene(MetageneBase):
         file: ExistentPath,
         genome: GenomeDf,
         schema: ReportSchema,
-        uw: Annotated[
+        up_windows: Annotated[
             int,
             Field(
-                validation_alias=AliasChoices("uw", "up_windows", "upstream_windows"),
+                validation_alias=AliasChoices("up_windows", "uw", "upstream_windows"),
                 ge=0,
             ),
         ] = 100,
-        bw: Annotated[
+        body_windows: Annotated[
             int,
             Field(
-                validation_alias=AliasChoices("bw", "body_windows", "body_windows"),
+                validation_alias=AliasChoices("body_windows", "bw", "body_windows"),
                 gt=0,
             ),
         ] = 100,
-        dw: Annotated[
+        down_windows: Annotated[
             int,
             Field(
                 validation_alias=AliasChoices(
-                    "dw", "down_windows", "downstream_windows"
+                    "down_windows", "dw", "downstream_windows"
                 ),
                 ge=0,
             ),
@@ -109,15 +197,15 @@ class Metagene(MetageneBase):
             (generated with :class:`Genome`).
         schema: ReportSchema
             One of ReportSchema values to specify report format.
-        uw: int
+        up_windows: int
             Number of windows upstream region to split into.
-            Aliases: up_windows, upstream_windows.
-        bw: int
+            Aliases: uw, upstream_windows.
+        body_windows: int
             Number of windows body region to split into
-            Aliases: body_windows, body_windows.
-        dw: int
+            Aliases: bw, body_windows.
+        down_windows: int
             Number of windows downstream region to split into
-            Aliases: down_windows, downstream_windows
+            Aliases: dw, downstream_windows
         use_threads: bool, default=True
             Will reading be multi-threaded or single-threaded.
             If multi-threaded option is used, number of threads
@@ -187,8 +275,8 @@ class Metagene(MetageneBase):
             cm.__enter__()
             cytosine_file = cm.cytosine_path
             SequenceFile(fasta).preprocess_cytosines(cytosine_file)
-        else:
-            cm = None
+        # Todo add model validation for universal reader
+        # (if bedgraph or coverage, check if cytosine file is present
         reader = UniversalReader(
             file=file,
             report_schema=schema,
@@ -198,120 +286,20 @@ class Metagene(MetageneBase):
             methylation_pvalue=p_value,
             block_size_mb=block_size_mb,
         )
-        out = cls.read_metagene(reader, genome, uw, bw, dw, sumfunc)
-        if cm is not None:
-            cm.__exit__()
-        return out
 
-    @classmethod
-    def from_bismark(
-        cls,
-        file: ExistentPath,
-        genome: GenomeDf,
-        up_windows: Annotated[int, Field(ge=0)] = 100,
-        body_windows: Annotated[int, Field(gt=0)] = 200,
-        down_windows: Annotated[int, Field(ge=0)] = 100,
-        block_size_mb: Annotated[int, Field(gt=0)] = 100,
-        use_threads: bool = True,
-        sumfunc: AvailableSumfunc = "wmean",
-    ):
-        """
-        .. deprecated:: 1.3
-            Will be removed and replaced by `from_report`
-            for easier implementation of custom methylation report formats.
-        """
-        return cls.from_report(file, genome, ReportSchema.BISMARK,
-                               up_windows, body_windows, down_windows, use_threads,
-                               sumfunc=sumfunc, block_size_mb=block_size_mb)
-
-    @classmethod
-    def from_cgmap(
-        cls,
-        file: ExistentPath,
-        genome: GenomeDf,
-        up_windows: Annotated[int, Field(ge=0)] = 100,
-        body_windows: Annotated[int, Field(gt=0)] = 200,
-        down_windows: Annotated[int, Field(ge=0)] = 100,
-        block_size_mb: Annotated[int, Field(gt=0)] = 100,
-        use_threads: bool = True,
-        sumfunc: AvailableSumfunc = "wmean",
-    ):
-        """
-        .. deprecated:: 1.3
-            Will be removed and replaced by `from_report`
-            for easier implementation of custom methylation report formats.
-        """
-        return cls.from_report(file, genome, ReportSchema.CGMAP,
-                               up_windows, body_windows, down_windows, use_threads,
-                               sumfunc=sumfunc, block_size_mb=block_size_mb)
-
-    @classmethod
-    def from_binom(
-        cls,
-        file: ExistentPath,
-        genome: GenomeDf,
-        up_windows: Annotated[int, Field(ge=0)] = 100,
-        body_windows: Annotated[int, Field(gt=0)] = 200,
-        down_windows: Annotated[int, Field(ge=0)] = 100,
-        p_value: Annotated[float, Field(gt=0, lt=1)] = 0.05,
-        use_threads: bool = True,
-    ):
-        """
-        .. deprecated:: 1.3
-            Will be removed and replaced by `from_report`
-            for easier implementation of custom methylation report formats.
-        """
-        return cls.from_report(file, genome, ReportSchema.BINOM,
-                               up_windows, body_windows, down_windows, use_threads,
-                               p_value=p_value)
-
-    @classmethod
-    def from_bedgraph(
-        cls,
-        file: ExistentPath,
-        genome: GenomeDf,
-        fasta: ExistentPath,
-        up_windows: Annotated[int, Field(ge=0)] = 100,
-        body_windows: Annotated[int, Field(gt=0)] = 200,
-        down_windows: Annotated[int, Field(ge=0)] = 100,
-        sumfunc: AvailableSumfunc = "wmean",
-        block_size_mb: Annotated[int, Field(gt=0)] = 100,
-        use_threads: bool = True,
-    ):
-        """
-        .. deprecated:: 1.3
-            Will be removed and replaced by `from_report`
-            for easier implementation of custom methylation report formats.
-        """
-        return cls.from_report(file, genome, ReportSchema.BEDGRAPH,
-                               up_windows, body_windows, down_windows, use_threads,
-                               fasta=fasta, sumfunc=sumfunc, block_size_mb=block_size_mb)
-
-    @classmethod
-    def from_coverage(
-        cls,
-        file: ExistentPath,
-        genome: GenomeDf,
-        fasta: ExistentPath,
-        up_windows: Annotated[int, Field(ge=0)] = 100,
-        body_windows: Annotated[int, Field(gt=0)] = 200,
-        down_windows: Annotated[int, Field(ge=0)] = 100,
-        sumfunc: AvailableSumfunc = "wmean",
-        block_size_mb: Annotated[int, Field(gt=0)] = 100,
-        use_threads: bool = True,
-    ):
-        """
-        .. deprecated:: 1.3
-            Will be removed and replaced by `from_report`
-            for easier implementation of custom methylation report formats.
-        """
-        return cls.from_report(file, genome, ReportSchema.COVERAGE,
-                               up_windows, body_windows, down_windows, use_threads,
-                               fasta=fasta, sumfunc=sumfunc, block_size_mb=block_size_mb)
+        return cls(
+            reader=reader,
+            genome=genome,
+            sumfunc=sumfunc,
+            fasta=fasta,
+            upstream_windows=up_windows,
+            body_windows=body_windows,
+            downstream_windows=down_windows,
+        )
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
     def filter(
-        self: Any,
+        self,
         context: Context = None,
         strand: Strand = None,
         chr: Optional[str] = None,
@@ -368,10 +356,12 @@ class Metagene(MetageneBase):
             df = df.filter(strand=strand)
         if context is not None:
             df = df.filter(chr=chr)
-        return self.__class__(df, **model)
+        copy = self.model_copy(deep=True)
+        copy.report_df = df
+        return copy
 
     @validate_call(config=dict(arbitrary_types_allowed=True))
-    def resize(self: Any, to_fragments: Annotated[Optional[int], Field(gt=0)] = None):
+    def resize(self, to_fragments: Annotated[Optional[int], Field(gt=0)] = None):
         """
         Mutate DataFrame to fewer fragments.
 
@@ -443,7 +433,9 @@ class Metagene(MetageneBase):
             from_fragments // to_fragments
         )
 
-        return self.__class__(resized, **metadata)
+        copy = self.model_copy(deep=True)
+        copy.report_df = resized
+        return copy
 
     def trim_flank(self, upstream=True, downstream=True) -> Metagene:
         """
@@ -493,12 +485,16 @@ class Metagene(MetageneBase):
             metadata["downstream_windows"] = 0
 
         if upstream:
-            trimmed = trimmed.filter(
-                pl.col("fragment") > self.upstream_windows - 1
-            ).with_columns(pl.col("fragment") - self.upstream_windows)
+            trimmed = (
+                trimmed.filter(pl.col("fragment") > self.upstream_windows - 1)
+                .with_columns(pl.col("fragment") - self.upstream_windows)
+                .collect()
+            )
             metadata["upstream_windows"] = 0
 
-        return self.__class__(trimmed.collect(), **metadata)
+        copy = self.model_copy(deep=True)
+        copy.report_df = trimmed
+        return copy
 
     # TODO finish annotation
     def cluster(
@@ -523,6 +519,31 @@ class Metagene(MetageneBase):
         ClusterSingle : For possible analysis options
         """
         return ClusterSingle(self, count_threshold, na_rm)
+
+    def save_rds(self, filename, compress: bool = False):
+        """
+        Save Metagene in RDS format.
+
+        :param filename: Path for file.
+        :param compress: Whether to compress to gzip or not.
+        """
+        write_rds(
+            filename, self.report_df.to_pandas(), compress="gzip" if compress else None
+        )
+
+    def save_tsv(self, filename, compress=False):
+        """
+        Save Metagene in TSV.
+
+        :param filename: Path for file.
+        :param compress: Whether to compress to gzip or not.
+        """
+        if compress:
+            with gzip.open(filename + ".gz", "wb") as file:
+                # noinspection PyTypeChecker
+                self.report_df.write_csv(file, separator="\t")
+        else:
+            self.report_df.write_csv(filename, separator="\t")
 
     @staticmethod
     def _reverse_strand(df, max_fragment):
@@ -909,20 +930,6 @@ class Metagene(MetageneBase):
         hm_data = self.heat_map_data(nrow, ncol)
         return HeatMap(hm_data)
 
-    def __str__(self):
-        representation = (
-            f"Metagene with {len(self)} windows total.\n"
-            f"Filtered by {self.context} context and {self.strand} strand.\n"
-            f"Upstream windows: {self.upstream_windows}.\n"
-            f"Body windows: {self.body_windows}.\n"
-            f"Downstream windows: {self.downstream_windows}.\n"
-        )
-
-        return representation
-
-    def __repr__(self):
-        return self.__str__()
-
     def box_plot_data(
         self, filter_context: Literal["CG", "CHG", "CHH"] | None = None, label=""
     ):
@@ -955,6 +962,153 @@ class Metagene(MetageneBase):
         data = [self.box_plot_data(context, context) for context in CONTEXTS]
 
         return BoxPlot(data)
+
+    @classmethod
+    def from_bismark(
+        cls,
+        file: ExistentPath,
+        genome: GenomeDf,
+        up_windows: Annotated[int, Field(ge=0)] = 100,
+        body_windows: Annotated[int, Field(gt=0)] = 200,
+        down_windows: Annotated[int, Field(ge=0)] = 100,
+        block_size_mb: Annotated[int, Field(gt=0)] = 100,
+        use_threads: bool = True,
+        sumfunc: AvailableSumfunc = "wmean",
+    ):
+        """
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
+        """
+        return cls.from_report(
+            file,
+            genome,
+            ReportSchema.BISMARK,
+            up_windows,
+            body_windows,
+            down_windows,
+            use_threads,
+            sumfunc=sumfunc,
+            block_size_mb=block_size_mb,
+        )
+
+    @classmethod
+    def from_cgmap(
+        cls,
+        file: ExistentPath,
+        genome: GenomeDf,
+        up_windows: Annotated[int, Field(ge=0)] = 100,
+        body_windows: Annotated[int, Field(gt=0)] = 200,
+        down_windows: Annotated[int, Field(ge=0)] = 100,
+        block_size_mb: Annotated[int, Field(gt=0)] = 100,
+        use_threads: bool = True,
+        sumfunc: AvailableSumfunc = "wmean",
+    ):
+        """
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
+        """
+        return cls.from_report(
+            file,
+            genome,
+            ReportSchema.CGMAP,
+            up_windows,
+            body_windows,
+            down_windows,
+            use_threads,
+            sumfunc=sumfunc,
+            block_size_mb=block_size_mb,
+        )
+
+    @classmethod
+    def from_binom(
+        cls,
+        file: ExistentPath,
+        genome: GenomeDf,
+        up_windows: Annotated[int, Field(ge=0)] = 100,
+        body_windows: Annotated[int, Field(gt=0)] = 200,
+        down_windows: Annotated[int, Field(ge=0)] = 100,
+        p_value: Annotated[float, Field(gt=0, lt=1)] = 0.05,
+        use_threads: bool = True,
+    ):
+        """
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
+        """
+        return cls.from_report(
+            file,
+            genome,
+            ReportSchema.BINOM,
+            up_windows,
+            body_windows,
+            down_windows,
+            use_threads,
+            p_value=p_value,
+        )
+
+    @classmethod
+    def from_coverage(
+        cls,
+        file: ExistentPath,
+        genome: GenomeDf,
+        fasta: ExistentPath,
+        up_windows: Annotated[int, Field(ge=0)] = 100,
+        body_windows: Annotated[int, Field(gt=0)] = 200,
+        down_windows: Annotated[int, Field(ge=0)] = 100,
+        sumfunc: AvailableSumfunc = "wmean",
+        block_size_mb: Annotated[int, Field(gt=0)] = 100,
+        use_threads: bool = True,
+    ):
+        """
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
+        """
+        return cls.from_report(
+            file,
+            genome,
+            ReportSchema.COVERAGE,
+            up_windows,
+            body_windows,
+            down_windows,
+            use_threads,
+            fasta=fasta,
+            sumfunc=sumfunc,
+            block_size_mb=block_size_mb,
+        )
+
+    @classmethod
+    def from_bedgraph(
+        cls,
+        file: ExistentPath,
+        genome: GenomeDf,
+        fasta: ExistentPath,
+        up_windows: Annotated[int, Field(ge=0)] = 100,
+        body_windows: Annotated[int, Field(gt=0)] = 200,
+        down_windows: Annotated[int, Field(ge=0)] = 100,
+        sumfunc: AvailableSumfunc = "wmean",
+        block_size_mb: Annotated[int, Field(gt=0)] = 100,
+        use_threads: bool = True,
+    ):
+        """
+        .. deprecated:: 1.3
+            Will be removed and replaced by `from_report`
+            for easier implementation of custom methylation report formats.
+        """
+        return cls.from_report(
+            file,
+            genome,
+            ReportSchema.BEDGRAPH,
+            up_windows,
+            body_windows,
+            down_windows,
+            use_threads,
+            fasta=fasta,
+            sumfunc=sumfunc,
+            block_size_mb=block_size_mb,
+        )
 
 
 class MetageneFiles(MetageneFilesBase):
@@ -1401,8 +1555,6 @@ class MetageneFiles(MetageneFilesBase):
         if q > 0:
             var = matrix.to_numpy().var(1)
             matrix = matrix[var > np.quantile(var, q)]
-        if "seaborn" not in sys.modules:
-            import seaborn as sns
         if "seaborn" not in sys.modules:
             import seaborn as sns
         fig = sns.clustermap(matrix, **kwargs)

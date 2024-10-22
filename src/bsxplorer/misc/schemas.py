@@ -46,6 +46,19 @@ class BaseSchema:
         return polars2arrow[dtype]  # type: ignore
 
 
+MetageneSchema = BaseSchema(pl.Schema(dict(
+    chr=pl.Categorical,
+    strand=pl.Enum(["+", "-", "."]),
+    gene=pl.Categorical,
+    start=pl.UInt64,
+    id=pl.Categorical,
+    context=pl.Enum(["CG", "CHG", "CHH"]),
+    fragment=pl.UInt32,
+    sum=pl.Float32,
+    count=pl.UInt32,
+)))
+
+
 class ReportSchema(Enum):
     __slots__ = ["polars", "arrow"]
 
