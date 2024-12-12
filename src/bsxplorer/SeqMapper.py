@@ -29,34 +29,57 @@ def convert_trinuc(trinuc, reverse=False):
         trinucleotide context
     """
     if reverse:
-        if   trinuc[1] == "C": return "CG"
-        elif trinuc[0] == "C": return "CHG"
-        else:                  return "CHH"
+        if trinuc[1] == "C":
+            return "CG"
+        elif trinuc[0] == "C":
+            return "CHG"
+        else:
+            return "CHH"
     else:
-        if   trinuc[1] == "G": return "CG"
-        elif trinuc[2] == "G": return "CHG"
-        else:                  return "CHH"
+        if trinuc[1] == "G":
+            return "CG"
+        elif trinuc[2] == "G":
+            return "CHG"
+        else:
+            return "CHH"
+
 
 @njit
 def convert_reverse(trinuc):
     out = ""
     for nuc in trinuc:
-        if nuc == "C": out += "G"
-        if nuc == "G": out += "C"
-        if nuc == "A": out += "T"
-        if nuc == "T": out += "A"
-        if nuc == "U": out += "R"
-        if nuc == "R": out += "U"
-        if nuc == "Y": out += "K"
-        if nuc == "K": out += "Y"
-        if nuc == "S": out += "S"
-        if nuc == "W": out += "W"
-        if nuc == "B": out += "N"
-        if nuc == "D": out += "N"
-        if nuc == "H": out += "N"
-        if nuc == "V": out += "N"
-        if nuc == "N": out += "N"
+        if nuc == "C":
+            out += "G"
+        if nuc == "G":
+            out += "C"
+        if nuc == "A":
+            out += "T"
+        if nuc == "T":
+            out += "A"
+        if nuc == "U":
+            out += "R"
+        if nuc == "R":
+            out += "U"
+        if nuc == "Y":
+            out += "K"
+        if nuc == "K":
+            out += "Y"
+        if nuc == "S":
+            out += "S"
+        if nuc == "W":
+            out += "W"
+        if nuc == "B":
+            out += "N"
+        if nuc == "D":
+            out += "N"
+        if nuc == "H":
+            out += "N"
+        if nuc == "V":
+            out += "N"
+        if nuc == "N":
+            out += "N"
     return out
+
 
 @njit
 def get_trinuc(record_seq: str, reverse=False):
@@ -84,10 +107,12 @@ def get_trinuc(record_seq: str, reverse=False):
     up_shift = 1 if reverse else 3
     down_shift = -2 if reverse else 0
 
-    for position in range(2 if reverse else 0, len(record_seq) if reverse else len(record_seq) - 2):
+    for position in range(
+        2 if reverse else 0, len(record_seq) if reverse else len(record_seq) - 2
+    ):
         if record_seq[position] == nuc:
             positions.append(position + 1)
-            trinuc = record_seq[position + down_shift:position + up_shift]
+            trinuc = record_seq[position + down_shift : position + up_shift]
             if reverse:
                 trinucs.append(convert_reverse(trinuc)[::-1])
             else:
@@ -98,8 +123,27 @@ def get_trinuc(record_seq: str, reverse=False):
 
 
 def possible_trinucs():
-    nuc_symbols = ["A", "C", "G", "T", "U", "R", "Y", "K", "M", "S", "W", "B", "D", "H", "V", "N"]
-    possible_trinuc = ["C" + "".join(product) for product in itertools.product(nuc_symbols, repeat=2)]
+    nuc_symbols = [
+        "A",
+        "C",
+        "G",
+        "T",
+        "U",
+        "R",
+        "Y",
+        "K",
+        "M",
+        "S",
+        "W",
+        "B",
+        "D",
+        "H",
+        "V",
+        "N",
+    ]
+    possible_trinuc = [
+        "C" + "".join(product) for product in itertools.product(nuc_symbols, repeat=2)
+    ]
     return possible_trinuc
 
 
@@ -142,13 +186,14 @@ class SequenceFile:
     file
         Path to FASTA genome sequence file.
     """
+
     def __init__(self, file: str | Path):
         self.file = Path(file).expanduser().absolute()
 
     @property
     def _handle(self):
         if self.file.suffix == ".gz":
-            return gzip.open(self.file, 'rt')
+            return gzip.open(self.file, "rt")
         else:
             return open(self.file.absolute())
 
@@ -166,12 +211,12 @@ class SequenceFile:
         return ids
 
     cytosine_file_schema = pa.schema([
-            ("chr", pa.dictionary(pa.int8(), pa.utf8())),
-            ("position", pa.int32()),
-            ("strand", pa.bool_()),
-            ("context", pa.dictionary(pa.int16(), pa.utf8())),
-            ("trinuc", pa.dictionary(pa.int16(), pa.utf8()))
-        ])
+        ("chr", pa.dictionary(pa.int8(), pa.utf8())),
+        ("position", pa.int32()),
+        ("strand", pa.bool_()),
+        ("context", pa.dictionary(pa.int16(), pa.utf8())),
+        ("trinuc", pa.dictionary(pa.int16(), pa.utf8())),
+    ])
 
     def close(self):
         """
@@ -181,12 +226,16 @@ class SequenceFile:
 
     @staticmethod
     def _unify_dictionaries(table: pa.Table, dummy_table: pa.Table):
-        return pa.concat_tables([dummy_table, table]).unify_dictionaries()[len(dummy_table):]
+        return pa.concat_tables([dummy_table, table]).unify_dictionaries()[
+            len(dummy_table) :
+        ]
 
     @property
     def _dummy_table(self) -> pa.Table:
         contexts = ["CG", "CHG", "CHH"]
-        chrom_ids, trinucs, contexts = list(zip(*itertools.zip_longest(possible_trinucs(), self.record_ids, contexts)))
+        chrom_ids, trinucs, contexts = list(
+            zip(*itertools.zip_longest(possible_trinucs(), self.record_ids, contexts))
+        )
         max_length = len(chrom_ids)
 
         schema_table = pa.Table.from_arrays(
@@ -194,10 +243,13 @@ class SequenceFile:
                 [chrom if chrom is not None else chrom_ids[0] for chrom in chrom_ids],
                 list(itertools.repeat(-1, max_length)),
                 list(itertools.repeat(True, max_length)),
-                [context if context is not None else contexts[0] for context in contexts],
-                [trinuc if trinuc is not None else trinucs[0] for trinuc in trinucs]
+                [
+                    context if context is not None else contexts[0]
+                    for context in contexts
+                ],
+                [trinuc if trinuc is not None else trinucs[0] for trinuc in trinucs],
             ],
-            schema=self.cytosine_file_schema
+            schema=self.cytosine_file_schema,
         )
 
         return schema_table
@@ -224,32 +276,37 @@ class SequenceFile:
         self._handle.seek(0)
 
 
-
 class SequenceRegion:
     def __init__(self, record: SeqIO.SeqRecord):
         self.record = record
         self.sequence = str(record.seq)
 
     def parse_cytosines(self):
-        positions, trinucs, contexts = zip(*[get_trinuc(self.sequence), get_trinuc(self.sequence, reverse=True)])
+        positions, trinucs, contexts = zip(*[
+            get_trinuc(self.sequence),
+            get_trinuc(self.sequence, reverse=True),
+        ])
         length = len(positions)
 
         arrow_table = pa.Table.from_arrays(
             arrays=[
                 list(itertools.repeat(self.record.id, length * 2)),
                 positions,
-                list(itertools.repeat(True, length)) + list(itertools.repeat(True, length)),
+                list(itertools.repeat(True, length))
+                + list(itertools.repeat(True, length)),
                 contexts,
-                trinucs
+                trinucs,
             ],
-            schema=SequenceFile.cytosine_file_schema
+            schema=SequenceFile.cytosine_file_schema,
         ).sort_by("position")
 
         return arrow_table
 
 
 class CytosinesFileCM:
-    def __init__(self, path: str | Path, temp_dir: str = Path.cwd(), save: bool = False):
+    def __init__(
+        self, path: str | Path, temp_dir: str = Path.cwd(), save: bool = False
+    ):
         self.path = Path(path).expanduser().absolute()
         self.save = save
         self.temp_dir = temp_dir
@@ -268,7 +325,9 @@ class CytosinesFileCM:
         if self.is_cytosine:
             self.cytosine_path = self.path
         else:
-            self.temp_file = tempfile.NamedTemporaryFile(dir=self.temp_dir, delete=not self.save)
+            self.temp_file = tempfile.NamedTemporaryFile(
+                dir=self.temp_dir, delete=not self.save
+            )
             self.cytosine_path = self.temp_dir / Path(self.path.name + ".parquet")
             Path(self.temp_file.name).rename(self.cytosine_path)
 

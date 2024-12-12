@@ -1,4 +1,11 @@
-from .cons_utils import render_template, ConsoleScript, MetageneScript, CategoryScript, ChrLevelsScript, Path, BamScript
+from .cons_utils import (
+    render_template,
+    ConsoleScript,
+    MetageneScript,
+    CategoryScript,
+    ChrLevelsScript,
+    Path, menu_parser,
+)
 
 
 def _save(script: ConsoleScript):
@@ -19,9 +26,3 @@ def category():
 
 def chr_levels():
     _save(ChrLevelsScript())
-
-
-def bam():
-    script = BamScript()
-    script.main()
-

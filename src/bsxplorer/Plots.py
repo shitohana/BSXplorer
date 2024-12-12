@@ -31,7 +31,10 @@ def plot_stat_expr(stat):
     if stat == "log":
         stat_expr = (pl.col("sum") / pl.col("count")).log1p().mean().exp() - 1
     elif stat == "wlog":
-        stat_expr = (((pl.col("sum") / pl.col("count")).log1p() * pl.col("count")).sum() / pl.sum("count")).exp() - 1
+        stat_expr = (
+            ((pl.col("sum") / pl.col("count")).log1p() * pl.col("count")).sum()
+            / pl.sum("count")
+        ).exp() - 1
     elif stat == "mean":
         stat_expr = (pl.col("sum") / pl.col("count")).mean()
     elif re.search("^q(\d+)", stat):
@@ -48,7 +51,7 @@ def lp_ticks(ticks: dict, major_labels: list, minor_labels: list):
         body_start="TSS",
         body_mid="Body",
         body_end="TES",
-        down_mid="Downstream"
+        down_mid="Downstream",
     )
 
     if major_labels and len(major_labels) == 2:
@@ -86,12 +89,19 @@ def flank_lines_mpl(axes: Axes, x_ticks, x_labels: list, borders: list = None):
     axes.set_xticks(x_ticks, labels=x_labels)
 
     for border in borders:
-        axes.axvline(x=border, linestyle='--', color='k', alpha=.3)
+        axes.axvline(x=border, linestyle="--", color="k", alpha=0.3)
 
     return axes
 
 
-def flank_lines_plotly(figure: go.Figure, x_ticks, x_labels, borders: list = None, fig_rows=None, fig_cols=None):
+def flank_lines_plotly(
+    figure: go.Figure,
+    x_ticks,
+    x_labels,
+    borders: list = None,
+    fig_rows=None,
+    fig_cols=None,
+):
     borders = list() if borders is None else borders
     if x_labels is None or not x_labels:
         x_labels = [""] * 5
@@ -102,17 +112,26 @@ def flank_lines_plotly(figure: go.Figure, x_ticks, x_labels, borders: list = Non
     for row in fig_rows:
         for col in fig_cols:
             figure.for_each_xaxis(
-                lambda xaxis: xaxis.update(dict(
-                    tickmode='array',
-                    tickvals=x_ticks,
-                    ticktext=x_labels,
-                    showticklabels=True,
-                )),
-                row=row, col=col
+                lambda xaxis: xaxis.update(
+                    dict(
+                        tickmode="array",
+                        tickvals=x_ticks,
+                        ticktext=x_labels,
+                        showticklabels=True,
+                    )
+                ),
+                row=row,
+                col=col,
             )
 
             for border in borders:
-                figure.add_vline(x=border, line_dash="dash", line_color="rgba(0,0,0,0.2)", row=row, col=col)
+                figure.add_vline(
+                    x=border,
+                    line_dash="dash",
+                    line_color="rgba(0,0,0,0.2)",
+                    row=row,
+                    col=col,
+                )
 
     return figure
 
@@ -124,7 +143,7 @@ class LinePlotData:
     x_ticks: Iterable
     borders: Iterable
     lower: np.ndarray | None = None
-    upper: np.ndarray | None = None,
+    upper: np.ndarray | None = (None,)
     label: str = ""
     x_labels: list[str] | None = None
 
@@ -139,16 +158,17 @@ class LinePlot:
         Instance of :class:`LinePlotData` (e.g. generated from :func:`Metagene.line_plot_data`)
 
     """
+
     def __init__(self, data: list[LinePlotData] | LinePlotData):
         self.data = data if isinstance(data, list) else [data]
 
     def draw_mpl(
-            self,
-            fig_axes: tuple = None,
-            label: str = "",
-            tick_labels: list[str] = None,
-            show_border: bool = True,
-            **kwargs
+        self,
+        fig_axes: tuple = None,
+        label: str = "",
+        tick_labels: list[str] = None,
+        show_border: bool = True,
+        **kwargs,
     ) -> Figure:
         """
         Draws line-plot on given matplotlib axes.
@@ -188,34 +208,36 @@ class LinePlot:
                 line_data.x,
                 line_data.y,
                 label=line_data.label if line_data.label else label,
-                **kwargs
+                **kwargs,
             )
 
             if line_data.lower is not None:
-                axes.fill_between(line_data.x, line_data.lower, line_data.upper, alpha=.2)
+                axes.fill_between(
+                    line_data.x, line_data.lower, line_data.upper, alpha=0.2
+                )
 
         flank_lines_mpl(
             axes=axes,
             x_ticks=self.data[0].x_ticks,
             x_labels=tick_labels if tick_labels is not None else self.data[0].x_labels,
-            borders=self.data[0].borders if show_border else []
+            borders=self.data[0].borders if show_border else [],
         )
 
         axes.legend()
-        axes.set_ylabel('Methylation density, %')
-        axes.set_xlabel('Position')
+        axes.set_ylabel("Methylation density, %")
+        axes.set_xlabel("Position")
 
         return fig
 
     def draw_plotly(
-            self,
-            figure: go.Figure = None,
-            label: str = "",
-            tick_labels: list[str] = None,
-            show_border: bool = True,
-            fig_rows: int | list = None,
-            fig_cols: int | list = None,
-            **kwargs
+        self,
+        figure: go.Figure = None,
+        label: str = "",
+        tick_labels: list[str] = None,
+        show_border: bool = True,
+        fig_rows: int | list = None,
+        fig_cols: int | list = None,
+        **kwargs,
     ):
         """
         Draws line-plot on given figure.
@@ -259,9 +281,24 @@ class LinePlot:
             traces.append(go.Scatter(**args, name=name, **kwargs))
 
             if line_data.lower is not None:
-                ci_args = dict(line_color='rgba(0,0,0,0)', name=name + "_CI", mode="lines")
-                traces.append(go.Scatter(x=line_data.x, y=line_data.upper, **ci_args, showlegend=False))
-                traces.append(go.Scatter(x=line_data.x, y=line_data.lower, **ci_args, showlegend=True, fill="tonexty", fillcolor='rgba(0, 0, 0, 0.2)'))
+                ci_args = dict(
+                    line_color="rgba(0,0,0,0)", name=name + "_CI", mode="lines"
+                )
+                traces.append(
+                    go.Scatter(
+                        x=line_data.x, y=line_data.upper, **ci_args, showlegend=False
+                    )
+                )
+                traces.append(
+                    go.Scatter(
+                        x=line_data.x,
+                        y=line_data.lower,
+                        **ci_args,
+                        showlegend=True,
+                        fill="tonexty",
+                        fillcolor="rgba(0, 0, 0, 0.2)",
+                    )
+                )
 
             figure.add_traces(traces, rows=fig_rows, cols=fig_cols)
 
@@ -274,7 +311,7 @@ class LinePlot:
             x_labels=tick_labels if tick_labels is not None else self.data[0].x_labels,
             borders=self.data[0].borders if show_border else [],
             fig_rows=fig_rows,
-            fig_cols=fig_cols
+            fig_cols=fig_cols,
         )
 
         return figure
@@ -299,18 +336,20 @@ class HeatMap:
         Instance of :class:`HeatMapData` (e.g. generated from :func:`Metagene.heat_map_data`)
 
     """
+
     def __init__(self, data: list[HeatMapData] | HeatMapData):
         self.data = data if isinstance(data, list) else [data]
 
     def draw_mpl(
-            self,
-            label: str = "",
-            tick_labels: list[str] = None,
-            show_border: bool = True,
-            vmin: float = None, vmax: float = None,
-            color_scale="Viridis",
-            facet_cols: int = 4,
-            **kwargs
+        self,
+        label: str = "",
+        tick_labels: list[str] = None,
+        show_border: bool = True,
+        vmin: float = None,
+        vmax: float = None,
+        color_scale="Viridis",
+        facet_cols: int = 4,
+        **kwargs,
     ):
         """
         Draws heat-map plot on given matplotlib axes.
@@ -360,33 +399,41 @@ class HeatMap:
             assert isinstance(axes, Axes)
             image = axes.imshow(
                 hm_data.matrix,
-                interpolation="nearest", aspect='auto',
+                interpolation="nearest",
+                aspect="auto",
                 cmap=colormaps[color_scale.lower()],
-                vmin=vmin, vmax=vmax
+                vmin=vmin,
+                vmax=vmax,
             )
 
             axes.set_title(label)
-            axes.set_xlabel('Position')
-            axes.set_ylabel('')
+            axes.set_xlabel("Position")
+            axes.set_ylabel("")
 
-            plt.colorbar(image, ax=axes, label='Methylation density, %')
+            plt.colorbar(image, ax=axes, label="Methylation density, %")
 
-            flank_lines_mpl(axes, self.data[0].x_ticks, self.data[0].x_labels if tick_labels is None else tick_labels, self.data[0].borders if show_border else [])
+            flank_lines_mpl(
+                axes,
+                self.data[0].x_ticks,
+                self.data[0].x_labels if tick_labels is None else tick_labels,
+                self.data[0].borders if show_border else [],
+            )
             axes.set_yticks([])
 
         return fig
 
     def draw_plotly(
-            self,
-            figure: Figure = None,
-            title: str = None,
-            vmin: float = None, vmax: float = None,
-            color_scale="Viridis",
-            tick_labels: list[str] = None,
-            show_border: bool = True,
-            row: int | list = None,
-            col: int | list = None,
-            facet_cols: int = 4
+        self,
+        figure: Figure = None,
+        title: str = None,
+        vmin: float = None,
+        vmax: float = None,
+        color_scale="Viridis",
+        tick_labels: list[str] = None,
+        show_border: bool = True,
+        row: int | list = None,
+        col: int | list = None,
+        facet_cols: int = 4,
     ):
         """
         Draws heat-map plot on given plotly figure.
@@ -426,19 +473,23 @@ class HeatMap:
         `plotly.graph_objects.Figure <https://plotly.com/python-api-reference/generated/plotly.graph_objects.Figure>`_
         """
 
-        labels = dict(
-            x="Position",
-            y="Rank",
-            color="Methylation density, %"
-        )
+        labels = dict(x="Position", y="Rank", color="Methylation density, %")
 
         if len(self.data) > 1 and (row is not None or col is not None):
-            warnings.warn("Selecting row or col is not compatitable with multiple HeatMap instances.")
+            warnings.warn(
+                "Selecting row or col is not compatitable with multiple HeatMap instances."
+            )
             row, col = None, None
 
-        subplots_y = len(self.data) // facet_cols + 1 if len(self.data) != facet_cols else 1
+        subplots_y = (
+            len(self.data) // facet_cols + 1 if len(self.data) != facet_cols else 1
+        )
         subplots_x = facet_cols if len(self.data) > facet_cols else len(self.data)
-        figure = make_subplots(rows=subplots_y, cols=subplots_x, shared_yaxes=True) if figure is None else figure
+        figure = (
+            make_subplots(rows=subplots_y, cols=subplots_x, shared_yaxes=True)
+            if figure is None
+            else figure
+        )
 
         for count, hm_data in enumerate(self.data):
             fig_row = count // facet_cols + 1 if row is None else row
@@ -448,31 +499,53 @@ class HeatMap:
                 hm_data.matrix,
                 labels=labels,
                 title=title,
-                zmin=vmin, zmax=vmax,
+                zmin=vmin,
+                zmax=vmax,
                 aspect="auto",
                 color_continuous_scale=color_scale,
             )
 
             figure.add_traces(new_fig.data, rows=fig_row, cols=fig_col)
-            figure.for_each_yaxis(lambda axis: axis.update(showticklabels=False, title="Rank"), row=fig_row, col=fig_col)
-            figure.for_each_xaxis(lambda axis: axis.update(title="Position"), row=fig_row, col=fig_col)
-            flank_lines_plotly(figure, hm_data.x_ticks, hm_data.x_labels if tick_labels is None else tick_labels, hm_data.borders if show_border else [],
-                               fig_row, fig_col)
+            figure.for_each_yaxis(
+                lambda axis: axis.update(showticklabels=False, title="Rank"),
+                row=fig_row,
+                col=fig_col,
+            )
+            figure.for_each_xaxis(
+                lambda axis: axis.update(title="Position"), row=fig_row, col=fig_col
+            )
+            flank_lines_plotly(
+                figure,
+                hm_data.x_ticks,
+                hm_data.x_labels if tick_labels is None else tick_labels,
+                hm_data.borders if show_border else [],
+                fig_row,
+                fig_col,
+            )
             figure.add_annotation(
                 text=hm_data.label if title is None else title + hm_data.label,
-                row=fig_row, col=fig_col,
-                xref="x domain", yref="y domain",
-                x=0.5,  y=1.1,
-                showarrow=False, font=dict(size=16)
+                row=fig_row,
+                col=fig_col,
+                xref="x domain",
+                yref="y domain",
+                x=0.5,
+                y=1.1,
+                showarrow=False,
+                font=dict(size=16),
             )
 
-            figure.layout.coloraxis.update(colorbar=new_fig.layout["coloraxis"]["colorbar"].update(len=.8, lenmode="fraction", yref="paper"))
+            figure.layout.coloraxis.update(
+                colorbar=new_fig.layout["coloraxis"]["colorbar"].update(
+                    len=0.8, lenmode="fraction", yref="paper"
+                )
+            )
 
         return figure
 
 
 class PCA:
     """PCA for samples initialized with same annotation."""
+
     def __init__(self):
         self.region_density = []
 
@@ -500,12 +573,9 @@ class PCA:
         >>> pca.append_metagene(metagene, 'control-1', 'control')
         """
         self.region_density.append(
-            metagene.report_df
-            .group_by("gene")
+            metagene.report_df.group_by("gene")
             .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
-            .with_columns([
-                pl.lit(label).alias("label")
-            ])
+            .with_columns([pl.lit(label).alias("label")])
         )
 
         self.mapping[label] = group
@@ -514,11 +584,13 @@ class PCA:
         if self.region_density:
             concated = pl.concat(self.region_density)
 
-            return concated.pivot(values="density",
-                                  index="gene",
-                                  columns="label",
-                                  aggregate_function="mean",
-                                  separator=";").drop_nulls()
+            return concated.pivot(
+                values="density",
+                index="gene",
+                columns="label",
+                aggregate_function="mean",
+                separator=";",
+            ).drop_nulls()
         else:
             raise ValueError()
 
@@ -536,6 +608,7 @@ class PCA:
         """
         PCA data is calculated with `sklearn.decomposition.PCA <https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html>`_
         """
+
         def __init__(self, matrix: np.ndarray, labels: list[str], groups: list[str]):
             self.matrix = matrix
             self.labels = labels
@@ -565,12 +638,17 @@ class PCA:
         x = data.eigenvectors[0, :]
         y = data.eigenvectors[1, :]
 
-        df = pl.DataFrame({"x": x, "y": y, "group": data.groups, "label": data.labels}).to_pandas()
+        df = pl.DataFrame({
+            "x": x,
+            "y": y,
+            "group": data.groups,
+            "label": data.labels,
+        }).to_pandas()
         figure = px.scatter(df, x="x", y="y", color="group", text="label")
 
         figure.update_layout(
-            xaxis_title="PC1: %.2f" % (data.explained_variance[0]*100) + "%",
-            yaxis_title="PC2: %.2f" % (data.explained_variance[1]*100) + "%"
+            xaxis_title="PC1: %.2f" % (data.explained_variance[0] * 100) + "%",
+            yaxis_title="PC2: %.2f" % (data.explained_variance[1] * 100) + "%",
         )
 
         return figure
@@ -595,10 +673,18 @@ class PCA:
         x = data.eigenvectors[:, 0]
         y = data.eigenvectors[:, 1]
 
-        color_mapping = {label: list(mcolors.TABLEAU_COLORS.keys())[i] for i, label in zip(range(len(set(data.groups))), set(data.groups))}
+        color_mapping = {
+            label: list(mcolors.TABLEAU_COLORS.keys())[i]
+            for i, label in zip(range(len(set(data.groups))), set(data.groups))
+        }
 
         for group in set(data.groups):
-            axes.scatter(x[data.groups == group], y[data.groups == group], c=color_mapping[group], label=group)
+            axes.scatter(
+                x[data.groups == group],
+                y[data.groups == group],
+                c=color_mapping[group],
+                label=group,
+            )
 
         axes.set_xlabel("PC1: %.2f" % data.explained_variance[0] + "%")
         axes.set_ylabel("PC2: %.2f" % data.explained_variance[1] + "%")
@@ -633,6 +719,7 @@ class BoxPlot:
         Instance of :class:`BoxPlotData` (e.g. generated from :func:`Metagene.box_plot_data`)
 
     """
+
     def __init__(self, data: list[BoxPlotData] | BoxPlotData):
         self.data = data if isinstance(data, list) else [data]
         self.values = [bp_data.values for bp_data in data]
@@ -640,11 +727,11 @@ class BoxPlot:
         self.n_boxes = len(self.labels)
 
     def draw_mpl(
-            self,
-            fig_axes: tuple = None,
-            showfliers=False,
-            title: str = None,
-            violin: bool = False
+        self,
+        fig_axes: tuple = None,
+        showfliers=False,
+        title: str = None,
+        violin: bool = False,
     ):
         """
         Draw box plot with matplotlib.
@@ -676,18 +763,18 @@ class BoxPlot:
             axes.boxplot(self.values, showfliers=showfliers)
         axes.set_xticks(np.arange(1, self.n_boxes + 1), labels=self.labels)
         axes.set_title(title)
-        axes.set_ylabel('Methylation density')
+        axes.set_ylabel("Methylation density")
 
         return fig
 
     def draw_plotly(
-            self,
-            figure: Figure = None,
-            title="",
-            violin: bool = False,
-            points: bool | str = False,
-            fig_rows: int | list = None,
-            fig_cols: int | list = None
+        self,
+        figure: Figure = None,
+        title="",
+        violin: bool = False,
+        points: bool | str = False,
+        fig_rows: int | list = None,
+        fig_cols: int | list = None,
     ):
         """
         Draw box plot with plotly.
@@ -718,19 +805,27 @@ class BoxPlot:
 
         for data, label in zip(self.values, self.labels):
             args = dict(y=data, name=label)
-            trace = go.Violin(points=points, **args) if violin else go.Box(**args, boxpoints=points)
+            trace = (
+                go.Violin(points=points, **args)
+                if violin
+                else go.Box(**args, boxpoints=points)
+            )
             figure.add_traces([trace], rows=fig_rows, cols=fig_cols)
 
-        for row in (fig_rows if isinstance(fig_rows, list) else [fig_rows]):
-            for col in (fig_cols if isinstance(fig_cols, list) else [fig_cols]):
-                figure.for_each_annotation(lambda layout: layout.update(dict(
-                    title=title,
-                    yaxis_title="Methylation density"
-                )), row=row, col=col)
+        for row in fig_rows if isinstance(fig_rows, list) else [fig_rows]:
+            for col in fig_cols if isinstance(fig_cols, list) else [fig_cols]:
+                figure.for_each_annotation(
+                    lambda layout: layout.update(
+                        dict(title=title, yaxis_title="Methylation density")
+                    ),
+                    row=row,
+                    col=col,
+                )
 
         return figure
 
     def mpl_box_data(self):
-        return {hm_data.label: matplotlib.cbook.boxplot_stats(hm_data.values) for hm_data in self.data}
-
-
+        return {
+            hm_data.label: matplotlib.cbook.boxplot_stats(hm_data.values)
+            for hm_data in self.data
+        }

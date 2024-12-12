@@ -18,33 +18,37 @@ from fastcluster import linkage
 from scipy.cluster.hierarchy import leaves_list, optimal_leaf_ordering
 from scipy.spatial.distance import pdist
 from scipy.stats import pearsonr
+from sklearn.cluster import KMeans
 
 from .Base import MetageneBase, MetageneFilesBase
 from .Plots import flank_lines_plotly
 
 default_n_threads = multiprocessing.cpu_count()
-os.environ['OPENBLAS_NUM_THREADS'] = f"{default_n_threads}"
-os.environ['MKL_NUM_THREADS'] = f"{default_n_threads}"
-os.environ['OMP_NUM_THREADS'] = f"{default_n_threads}"
-from sklearn.cluster import KMeans, MiniBatchKMeans
-
+os.environ["OPENBLAS_NUM_THREADS"] = f"{default_n_threads}"
+os.environ["MKL_NUM_THREADS"] = f"{default_n_threads}"
+os.environ["OMP_NUM_THREADS"] = f"{default_n_threads}"
 
 # noinspection PyMissingOrEmptyDocstring
 class _ClusterBase(ABC):
     @abstractmethod
-    def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
-        ...
+    def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs): ...
 
     @abstractmethod
-    def cut_tree(self, dist_method="euclidean", clust_method="average", cutHeight_q=.99, **kwargs):
-        ...
+    def cut_tree(
+        self,
+        dist_method="euclidean",
+        clust_method="average",
+        cutHeight_q=0.99,
+        **kwargs,
+    ): ...
 
     @abstractmethod
-    def all(self):
-        ...
+    def all(self): ...
 
     def __merge_strands(self, df: pl.DataFrame):
-        return df.filter(pl.col("strand") == "+").vstack(self.__strand_reverse(df.filter(pl.col("strand") == "-")))
+        return df.filter(pl.col("strand") == "+").vstack(
+            self.__strand_reverse(df.filter(pl.col("strand") == "-"))
+        )
 
     @staticmethod
     def __strand_reverse(df: pl.DataFrame):
@@ -52,10 +56,7 @@ class _ClusterBase(ABC):
         return df.with_columns((max_fragment - pl.col("fragment")).alias("fragment"))
 
     def _process_metagene(
-            self,
-            metagene: MetageneBase,
-            count_threshold=5,
-            na_rm: float | None = None
+        self, metagene: MetageneBase, count_threshold=5, na_rm: float | None = None
     ) -> (np.ndarray, np.ndarray):
         # Merge strands
         df = self.__merge_strands(metagene.report_df)
@@ -65,12 +66,14 @@ class _ClusterBase(ABC):
             .filter(pl.col("count") > count_threshold)
             .with_columns((pl.col("sum") / pl.col("count")).alias("density"))
             .group_by(["chr", "strand", "gene", "context"])
-            .agg([pl.first("id"),
-                  pl.first("start"),
-                  pl.col("density"),
-                  pl.col("fragment"),
-                  pl.sum("count").alias("gene_count"),
-                  pl.count("fragment").alias("count")])
+            .agg([
+                pl.first("id"),
+                pl.first("start"),
+                pl.col("density"),
+                pl.col("fragment"),
+                pl.sum("count").alias("gene_count"),
+                pl.count("fragment").alias("count"),
+            ])
         ).collect()
 
         # by_count = grouped.filter(pl.col("gene_count") > (count_threshold * pl.col("count")))
@@ -84,20 +87,31 @@ class _ClusterBase(ABC):
         if len(by_count) == 0:
             raise ValueError("All genes have empty windows")
 
-        by_count = by_count.explode(["density", "fragment"]).drop(["gene_count", "count"]).fill_nan(0)
+        by_count = (
+            by_count.explode(["density", "fragment"])
+            .drop(["gene_count", "count"])
+            .fill_nan(0)
+        )
 
         unpivot: pl.DataFrame = (
-            by_count
-            .sort(["chr", "start"])
-            .with_columns(pl.when(pl.col("id").is_null()).then(pl.col("gene")).otherwise(pl.col("id")).alias("name"))
+            by_count.sort(["chr", "start"])
+            .with_columns(
+                pl.when(pl.col("id").is_null())
+                .then(pl.col("gene"))
+                .otherwise(pl.col("id"))
+                .alias("name")
+            )
             .pivot(
                 index=["chr", "strand", "name"],
                 values="density",
                 columns="fragment",
                 aggregate_function="sum",
-                maintain_order=True
+                maintain_order=True,
             )
-            .select(["chr", "strand", "name"] + list(map(str, range(int(metagene.total_windows)))))
+            .select(
+                ["chr", "strand", "name"]
+                + list(map(str, range(int(metagene.total_windows))))
+            )
             .cast({"name": pl.Utf8})
         )
 
@@ -116,9 +130,17 @@ class _ClusterBase(ABC):
 class ClusterSingle(_ClusterBase):
     """Class for operating with single sample regions clustering"""
 
-    def __init__(self, metagene: MetageneBase, count_threshold=5, na_rm: float | None = None, empty=False):
+    def __init__(
+        self,
+        metagene: MetageneBase,
+        count_threshold=5,
+        na_rm: float | None = None,
+        empty=False,
+    ):
         if not empty:
-            self.matrix, self.names = self._process_metagene(metagene, count_threshold, na_rm)
+            self.matrix, self.names = self._process_metagene(
+                metagene, count_threshold, na_rm
+            )
             self._x_ticks = metagene._x_ticks
             self._borders = metagene._borders
 
@@ -156,7 +178,13 @@ class ClusterSingle(_ClusterBase):
 
         return ClusterPlot(ClusterData.from_kmeans(kmeans, self.names))
 
-    def cut_tree(self, dist_method="euclidean", clust_method="average", cut_height_q=.99, **kwargs):
+    def cut_tree(
+        self,
+        dist_method="euclidean",
+        clust_method="average",
+        cut_height_q=0.99,
+        **kwargs,
+    ):
         """
         KMeans clustering on sample regions. Clustering is being made with `dynamicTreeCut.cutreeHybrid <https://github.com/kylessmith/dynamicTreeCut>`_.
 
@@ -193,18 +221,34 @@ class ClusterSingle(_ClusterBase):
         -------
         :class:`ClusterPlot`
         """
-        return ClusterPlot(ClusterData(self.matrix, np.arange(len(self.matrix), dtype=np.int64), self.names))
+        return ClusterPlot(
+            ClusterData(
+                self.matrix, np.arange(len(self.matrix), dtype=np.int64), self.names
+            )
+        )
 
 
 class ClusterMany(_ClusterBase):
     """Class for operating with multiple samples regions clustering"""
 
-    def __init__(self, metagenes: MetageneFilesBase, count_threshold=5, na_rm: float | None = None):
-        intersect_list = set.intersection(*[set(metagene.report_df["gene"].to_list()) for metagene in metagenes.samples])
+    def __init__(
+        self,
+        metagenes: MetageneFilesBase,
+        count_threshold=5,
+        na_rm: float | None = None,
+    ):
+        intersect_list = set.intersection(*[
+            set(metagene.report_df["gene"].to_list()) for metagene in metagenes.samples
+        ])
         for i in range(len(metagenes.samples)):
-            metagenes.samples[i].report_df = metagenes.samples[i].report_df.filter(pl.col("gene").is_in(intersect_list))
+            metagenes.samples[i].report_df = metagenes.samples[i].report_df.filter(
+                pl.col("gene").is_in(intersect_list)
+            )
 
-        self.clusters = [ClusterSingle(metagene, count_threshold, na_rm) for metagene in metagenes.samples]
+        self.clusters = [
+            ClusterSingle(metagene, count_threshold, na_rm)
+            for metagene in metagenes.samples
+        ]
         self.sample_names = metagenes.labels
 
     def compare(self):
@@ -215,22 +259,31 @@ class ClusterMany(_ClusterBase):
         a_sample = self.clusters[0]
         b_sample = self.clusters[1]
 
-        intersection = list(set.intersection(*map(lambda cluster: set(cluster.names), self.clusters)))
+        intersection = list(
+            set.intersection(*map(lambda cluster: set(cluster.names), self.clusters))
+        )
         intersection.sort()
 
         a_order = np.argsort(a_sample.names)
         b_order = np.argsort(b_sample.names)
 
-        a_matrix = a_sample.matrix[a_order[np.searchsorted(a_sample.names, intersection, sorter=a_order)], :]
-        b_matrix = b_sample.matrix[b_order[np.searchsorted(b_sample.names, intersection, sorter=b_order)], :]
+        a_matrix = a_sample.matrix[
+            a_order[np.searchsorted(a_sample.names, intersection, sorter=a_order)], :
+        ]
+        b_matrix = b_sample.matrix[
+            b_order[np.searchsorted(b_sample.names, intersection, sorter=b_order)], :
+        ]
 
         diff_matrix = b_matrix - a_matrix
 
-        names = a_sample.names[a_order[np.searchsorted(a_sample.names, intersection, sorter=a_order)]]
-        cluster_single = ClusterSingle._from_raw(diff_matrix, names, a_sample._x_ticks, a_sample._borders)
+        names = a_sample.names[
+            a_order[np.searchsorted(a_sample.names, intersection, sorter=a_order)]
+        ]
+        cluster_single = ClusterSingle._from_raw(
+            diff_matrix, names, a_sample._x_ticks, a_sample._borders
+        )
 
         return cluster_single
-
 
     def kmeans(self, n_clusters: int = 8, n_init: int = 10, **kwargs):
         """
@@ -250,9 +303,21 @@ class ClusterMany(_ClusterBase):
         :class:`ClusterPlot`
 
         """
-        return ClusterPlot([cluster.kmeans(n_clusters, n_init, **kwargs).data for cluster in self.clusters], self.sample_names)
+        return ClusterPlot(
+            [
+                cluster.kmeans(n_clusters, n_init, **kwargs).data
+                for cluster in self.clusters
+            ],
+            self.sample_names,
+        )
 
-    def cut_tree(self, dist_method="euclidean", clust_method="average", cut_height_q=.99, **kwargs):
+    def cut_tree(
+        self,
+        dist_method="euclidean",
+        clust_method="average",
+        cut_height_q=0.99,
+        **kwargs,
+    ):
         """
         KMeans clustering on sample regions. Clustering is being made with `dynamicTreeCut.cutreeHybrid <https://github.com/kylessmith/dynamicTreeCut>`_.
 
@@ -272,10 +337,18 @@ class ClusterMany(_ClusterBase):
         :class:`ClusterPlot`
         """
 
-        return ClusterPlot([
-            cluster.cut_tree(dist_method="euclidean", clust_method="average", cut_height_q=.99, **kwargs).data
-            for cluster in self.clusters
-        ], self.sample_names)
+        return ClusterPlot(
+            [
+                cluster.cut_tree(
+                    dist_method="euclidean",
+                    clust_method="average",
+                    cut_height_q=0.99,
+                    **kwargs,
+                ).data
+                for cluster in self.clusters
+            ],
+            self.sample_names,
+        )
 
     def all(self):
         """
@@ -286,13 +359,22 @@ class ClusterMany(_ClusterBase):
         :class:`ClusterPlot`
         """
 
-        return ClusterPlot([cluster.all().data for cluster in self.clusters], self.sample_names)
+        return ClusterPlot(
+            [cluster.all().data for cluster in self.clusters], self.sample_names
+        )
 
 
 # noinspection PyMissingOrEmptyDocstring
 class ClusterData:
-    def __init__(self, centers: np.ndarray, labels: np.array, names: list[str] | np.array,
-                 ticks: list[int] = None, borders: list[int] = None, matrix: np.ndarray = None):
+    def __init__(
+        self,
+        centers: np.ndarray,
+        labels: np.array,
+        names: list[str] | np.array,
+        ticks: list[int] = None,
+        borders: list[int] = None,
+        matrix: np.ndarray = None,
+    ):
         self.centers = centers
         self.labels = labels
         self.names = names
@@ -306,16 +388,32 @@ class ClusterData:
         return cls(kmeans.cluster_centers_, kmeans.labels_, names)
 
     @classmethod
-    def from_matrix(cls, matrix: np.ndarray, labels: np.array, names: list[str] | np.array,
-                    method=Literal["mean", "median", "log1p"]):
+    def from_matrix(
+        cls,
+        matrix: np.ndarray,
+        labels: np.array,
+        names: list[str] | np.array,
+        method=Literal["mean", "median", "log1p"],
+    ):
         if method == "mean":
-            agg_fun = lambda matrix: np.mean(matrix, axis=0)
+
+            def agg_fun(matrix):
+                return np.mean(matrix, axis=0)
+
         elif method == "median":
-            agg_fun = lambda matrix: np.median(matrix, axis=0)
+
+            def agg_fun(matrix):
+                return np.median(matrix, axis=0)
+
         elif method == "log1p":
-            agg_fun = lambda matrix: np.log1p(matrix, axis=0)
+
+            def agg_fun(matrix):
+                return np.log1p(matrix, axis=0)
+
         else:
-            agg_fun = lambda matrix: np.mean(matrix, axis=0)
+
+            def agg_fun(matrix):
+                return np.mean(matrix, axis=0)
 
         modules = np.array([agg_fun(matrix[labels == label, :]) for label in labels])
 
@@ -324,6 +422,7 @@ class ClusterData:
 
 class ClusterPlot:
     """Class for plotting cluster data."""
+
     def __init__(self, data: ClusterData | list[ClusterData], sample_names=None):
         if isinstance(data, list) and len(data) == 1:
             self.data = data[0]
@@ -345,17 +444,18 @@ class ClusterPlot:
         filename = Path(filename)
 
         def save(data: ClusterData, path: Path):
-            df = pl.DataFrame(dict(name=list(map(str, data.names)), label=data.labels), schema=dict(name=pl.Utf8, label=pl.Utf8))
+            df = pl.DataFrame(
+                dict(name=list(map(str, data.names)), label=data.labels),
+                schema=dict(name=pl.Utf8, label=pl.Utf8),
+            )
             df.write_csv(path, include_header=False, separator="\t")
 
         if self.sample_names is not None and isinstance(self.data, list):
             for data, sample_name in zip(self.data, self.sample_names):
-
                 new_name = filename.name + sample_name
                 save(data, filename.with_name(new_name).with_suffix(".tsv"))
 
         if not isinstance(self.data, list):
-
             save(self.data, filename.with_suffix(".tsv"))
 
     def __intersect_genes(self):
@@ -367,9 +467,12 @@ class ClusterPlot:
                 raise ValueError("No same regions between samples")
             elif len(intersection) < max(map(len, names)):
                 print(
-                    f"Found {len(intersection)} intersections between samples with {max(map(len, names))} regions max")
+                    f"Found {len(intersection)} intersections between samples with {max(map(len, names))} regions max"
+                )
 
-    def draw_mpl(self, method='average', metric='euclidean', cmap: str = "cividis", **kwargs):
+    def draw_mpl(
+        self, method="average", metric="euclidean", cmap: str = "cividis", **kwargs
+    ):
         """
         Draws clustermap with seaborn.clustermap.
 
@@ -390,12 +493,20 @@ class ClusterPlot:
         """
 
         if isinstance(self.data, list):
-            warnings.warn("Matplotlib version of cluster plot is not available for multiple samples")
+            warnings.warn(
+                "Matplotlib version of cluster plot is not available for multiple samples"
+            )
             return None
         else:
             df = pd.DataFrame(
                 self.data.centers,
-                index=[f"{name} ({count})" for name, count in zip(*np.unique(self.data.labels, return_counts=True))])
+                index=[
+                    f"{name} ({count})"
+                    for name, count in zip(
+                        *np.unique(self.data.labels, return_counts=True)
+                    )
+                ],
+            )
 
             args = dict(col_cluster=False) | kwargs
             args |= dict(cmap=cmap, method=method, metric=metric)
@@ -403,7 +514,14 @@ class ClusterPlot:
             fig = sns.clustermap(df, **args)
             return fig
 
-    def draw_plotly(self, method='average', metric='euclidean', cmap: str = "cividis", tick_labels: list[str] = None, **kwargs):
+    def draw_plotly(
+        self,
+        method="average",
+        metric="euclidean",
+        cmap: str = "cividis",
+        tick_labels: list[str] = None,
+        **kwargs,
+    ):
         """
         Draws clustermap with plotly imshow.
 
@@ -431,10 +549,18 @@ class ClusterPlot:
 
             im = np.dstack([d.centers[order, :] for d in self.data])
 
-            figure = px.imshow(im, color_continuous_scale=cmap, animation_frame=2, aspect='auto', **kwargs)
+            figure = px.imshow(
+                im,
+                color_continuous_scale=cmap,
+                animation_frame=2,
+                aspect="auto",
+                **kwargs,
+            )
             figure.update_layout(sliders=[{"currentvalue": {"prefix": "Sample = "}}])
             if self.sample_names is not None:
-                for step, sample_name in zip(figure.layout.sliders[0].steps, self.sample_names):
+                for step, sample_name in zip(
+                    figure.layout.sliders[0].steps, self.sample_names
+                ):
                     step.label = sample_name
                     step.name = sample_name
             return figure
@@ -446,21 +572,28 @@ class ClusterPlot:
             order = leaves_list(link)
             im = self.data.centers[order, :]
 
-            ticktext = np.array([f"{label} ({count})" for label, count in zip(*np.unique(self.data.labels, return_counts=True))])
+            ticktext = np.array([
+                f"{label} ({count})"
+                for label, count in zip(
+                    *np.unique(self.data.labels, return_counts=True)
+                )
+            ])
 
-            figure = px.imshow(im, color_continuous_scale=cmap, aspect='auto', **kwargs)
+            figure = px.imshow(im, color_continuous_scale=cmap, aspect="auto", **kwargs)
             figure.update_layout(
                 yaxis=dict(
-                    tickmode='array',
+                    tickmode="array",
                     tickvals=list(range(len(order))),
-                    ticktext=ticktext[order]
+                    ticktext=ticktext[order],
                 )
             )
 
             if tick_labels is None:
                 tick_labels = ["Upstream", "", "Body", "", "Downstream"]
 
-            figure = flank_lines_plotly(figure, self.data.ticks, tick_labels, self.data.borders)
+            figure = flank_lines_plotly(
+                figure, self.data.ticks, tick_labels, self.data.borders
+            )
             return figure
 
     @property
@@ -481,18 +614,19 @@ class ClusterPlot:
             module_members = self.data.matrix[module_index, :]
             module_vector = self.data.centers[module, :]
 
-            cor = np.apply_along_axis(lambda row: pearsonr(row, module_vector), axis=1, arr=module_members).astype(np.float64)
+            cor = np.apply_along_axis(
+                lambda row: pearsonr(row, module_vector), axis=1, arr=module_members
+            ).astype(np.float64)
 
             res_df = pl.DataFrame(
                 data=np.c_[self.data.names[self.data.labels == module], cor].T.tolist(),
-                schema=dict(name=pl.String, cor=pl.Float64, pvalue=pl.Float64)
+                schema=dict(name=pl.Utf8, cor=pl.Float64, pvalue=pl.Float64),
             )
 
             if p_cutoff is not None:
                 res_df = res_df.filter(pl.col("pvalue") <= p_cutoff)
 
             return res_df
-
 
     def get_module_ids(self, module: int):
         if module > self.data.centers.shape[0] - 1:

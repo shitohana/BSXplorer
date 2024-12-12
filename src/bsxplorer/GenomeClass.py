@@ -62,18 +62,19 @@ class Genome:
     }
 
     @classmethod
-    def from_custom(cls,
-                    file: str | Path,
-                    chr_col: int = 0,
-                    start_col: int = 1,
-                    end_col: int = 2,
-                    id_col: int = None,
-                    strand_col: int | None = None,
-                    type_col: int = None,
-                    comment_char: str = "#",
-                    has_header: bool = False,
-                    read_filters: pl.Expr = None
-                    ) -> Genome:
+    def from_custom(
+        cls,
+        file: str | Path,
+        chr_col: int = 0,
+        start_col: int = 1,
+        end_col: int = 2,
+        id_col: int = None,
+        strand_col: int | None = None,
+        type_col: int = None,
+        comment_char: str = "#",
+        has_header: bool = False,
+        read_filters: pl.Expr = None,
+    ) -> Genome:
         """
         Create :class:`Genome` from custom tab separated file with genomic regions.
 
@@ -114,27 +115,25 @@ class Genome:
         if any(val is None for val in [chr_col, start_col, end_col]):
             raise Exception("All position columns need to be specified!")
 
-        genes = (
-            pl.scan_csv(
-                file,
-                comment_char=comment_char,
-                has_header=has_header,
-                separator='\t'
-            )
+        genes = pl.scan_csv(
+            file, comment_char=comment_char, has_header=has_header, separator="\t"
         )
         cols = genes.columns
         select_cols = [
             pl.col(cols[chr_col]).alias("chr"),
-            (pl.col(cols[type_col]) if type_col is not None else pl.lit(None)).alias("type"),
+            (pl.col(cols[type_col]) if type_col is not None else pl.lit(None)).alias(
+                "type"
+            ),
             pl.col(cols[start_col]).alias("start"),
             pl.col(cols[end_col]).alias("end"),
-            (pl.col(cols[strand_col]) if strand_col is not None else pl.lit(".")).alias("strand"),
+            (pl.col(cols[strand_col]) if strand_col is not None else pl.lit(".")).alias(
+                "strand"
+            ),
             (pl.col(cols[id_col]) if id_col is not None else pl.lit("")).alias("id"),
         ]
 
         genes = (
-            genes
-            .with_columns(select_cols)
+            genes.with_columns(select_cols)
             .select(["chr", "type", "start", "end", "strand", "id"])
             .sort(["chr", "start"])
             .filter(True if read_filters is None else read_filters)
@@ -160,13 +159,9 @@ class Genome:
 
         id_regex = "^ID=([^;]+)"
 
-        genome = cls.from_custom(file,
-                                 0, 3, 4, 8, 6, 2,
-                                 "#", False)
+        genome = cls.from_custom(file, 0, 3, 4, 8, 6, 2, "#", False)
 
-        genome.genome = genome.genome.with_columns(
-            pl.col("id").str.extract(id_regex)
-        )
+        genome.genome = genome.genome.with_columns(pl.col("id").str.extract(id_regex))
         return genome
 
     def all(self, min_length: int = 0, flank_length: int = 0) -> pl.DataFrame:
@@ -204,7 +199,8 @@ class Genome:
         """
 
         genes = self.__filter_genes(
-            self.genome, None, min_length, flank_length).collect()
+            self.genome, None, min_length, flank_length
+        ).collect()
         genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
@@ -246,7 +242,9 @@ class Genome:
         └─────────────┴────────┴────────┴────────┴──────────┴────────────┴────────────────┘
 
         """
-        genes = self.__filter_genes(self.genome, 'gene', min_length, flank_length).collect()
+        genes = self.__filter_genes(
+            self.genome, "gene", min_length, flank_length
+        ).collect()
         genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
@@ -287,7 +285,8 @@ class Genome:
         """
         flank_length = 0
         genes = self.__filter_genes(
-            self.genome, 'exon', min_length, flank_length).collect()
+            self.genome, "exon", min_length, flank_length
+        ).collect()
         genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
@@ -328,7 +327,8 @@ class Genome:
         """
         flank_length = 0
         genes = self.__filter_genes(
-            self.genome, 'CDS', min_length, flank_length).collect()
+            self.genome, "CDS", min_length, flank_length
+        ).collect()
         genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
@@ -374,7 +374,7 @@ class Genome:
 
         """
 
-        '''
+        """
         upstream_length = (
             # when before length is enough
             # we set upstream length to specified
@@ -386,30 +386,29 @@ class Genome:
             # we divide it into half
             .otherwise((pl.col('upstream') - (pl.col('upstream') % 2)) // 2)
         )
-        '''
+        """
         upstream_length = flank_length
 
         gene_type = "gene"
-        genes = self.__filter_genes(
-            self.genome, gene_type, min_length, flank_length)
+        genes = self.__filter_genes(self.genome, gene_type, min_length, flank_length)
         genes = (
-            genes
-            .groupby(['chr', 'strand'], maintain_order=True)
+            genes.groupby(["chr", "strand"], maintain_order=True)
             .agg([
-                pl.col('start'),
+                pl.col("start"),
                 # upstream shift
-                (pl.col('start').shift(-1) - pl.col('end')).shift(1)
+                (pl.col("start").shift(-1) - pl.col("end"))
+                .shift(1)
                 .fill_null(flank_length)
-                .alias('upstream'),
-                pl.col('id')
+                .alias("upstream"),
+                pl.col("id"),
             ])
-            .explode(['start', 'upstream', 'id'])
+            .explode(["start", "upstream", "id"])
             .with_columns([
-                (pl.col('start') - upstream_length).alias('upstream'),
-                (pl.col("start") + flank_length).alias("end")
+                (pl.col("start") - upstream_length).alias("upstream"),
+                (pl.col("start") + flank_length).alias("end"),
             ])
             .with_columns(pl.col("end").alias("downstream"))
-            .select(['chr', 'strand', 'start', 'end', 'upstream', 'downstream', 'id'])
+            .select(["chr", "strand", "start", "end", "upstream", "downstream", "id"])
         ).collect()
 
         return self.__check_empty(genes)
@@ -455,7 +454,7 @@ class Genome:
         """
 
         # decided not to use this
-        '''
+        """
         downstream_length = (
             # when before length is enough
             # we set upstream length to specified
@@ -467,34 +466,35 @@ class Genome:
             # we divide it into half
             .otherwise((pl.col('downstream') - pl.col('downstream') % 2) // 2)
         )
-        '''
+        """
         downstream_length = flank_length
 
         gene_type = "gene"
-        genes = self.__filter_genes(
-            self.genome, gene_type, min_length, flank_length)
+        genes = self.__filter_genes(self.genome, gene_type, min_length, flank_length)
         genes = (
-            genes
-            .groupby(['chr', 'strand'], maintain_order=True).agg([
-                pl.col('end'),
+            genes.groupby(["chr", "strand"], maintain_order=True)
+            .agg([
+                pl.col("end"),
                 # downstream shift
-                (pl.col('start').shift(-1) - pl.col('end'))
+                (pl.col("start").shift(-1) - pl.col("end"))
                 .fill_null(flank_length)
-                .alias('downstream'),
-                pl.col('id')
+                .alias("downstream"),
+                pl.col("id"),
             ])
-            .explode(['end', 'downstream', 'id'])
+            .explode(["end", "downstream", "id"])
             .with_columns([
-                (pl.col('end') + downstream_length).alias('downstream'),
-                (pl.col("end") - flank_length).alias("start")
+                (pl.col("end") + downstream_length).alias("downstream"),
+                (pl.col("end") - flank_length).alias("start"),
             ])
             .with_columns(pl.col("start").alias("upstream"))
-            .select(['chr', 'strand', 'start', 'end', 'upstream', 'downstream', 'id'])
+            .select(["chr", "strand", "start", "end", "upstream", "downstream", "id"])
         ).collect()
 
         return self.__check_empty(genes)
 
-    def other(self, region_type: str, min_length: int = 1000, flank_length: int = 100) -> pl.DataFrame:
+    def other(
+        self, region_type: str, min_length: int = 1000, flank_length: int = 100
+    ) -> pl.DataFrame:
         """
         Filter annotation by selected type and calculate positions of nflanking regions.
 
@@ -537,23 +537,24 @@ class Genome:
 
         """
         genes = self.__filter_genes(
-            self.genome, region_type, min_length, flank_length).collect()
+            self.genome, region_type, min_length, flank_length
+        ).collect()
         genes = self.__trim_genes(genes, flank_length)
         return self.__check_empty(genes)
 
     @staticmethod
     def __filter_genes(genes, gene_type, min_length, flank_length):
         if gene_type is not None:
-            genes = genes.filter(pl.col('type') == gene_type).drop('type')
+            genes = genes.filter(pl.col("type") == gene_type).drop("type")
         else:
             genes = genes.drop("type")
 
         # filter genes, which start < flank_length
         if flank_length > 0:
-            genes = genes.filter(pl.col('start') > flank_length)
+            genes = genes.filter(pl.col("start") > flank_length)
         # filter genes which don't pass length threshold
         if min_length > 0:
-            genes = genes.filter((pl.col('end') - pl.col('start')) > min_length)
+            genes = genes.filter((pl.col("end") - pl.col("start")) > min_length)
 
         return genes
 
@@ -561,13 +562,17 @@ class Genome:
     def __trim_genes(genes, flank_length) -> pl.DataFrame:
         # upstream shift
         # calculates length to previous gene on same chr_strand
-        length_before = (pl.col('start').shift(-1) - pl.col('end')).shift(1).fill_null(flank_length)
+        length_before = (
+            (pl.col("start").shift(-1) - pl.col("end")).shift(1).fill_null(flank_length)
+        )
         # downstream shift
         # calculates length to next gene on same chr_strand
-        length_after = (pl.col('start').shift(-1) - pl.col('end')).fill_null(flank_length)
+        length_after = (pl.col("start").shift(-1) - pl.col("end")).fill_null(
+            flank_length
+        )
 
         # decided not to use this conditions
-        '''
+        """
         upstream_length_conditioned = (
             # when before length is enough
             # we set upstream length to specified
@@ -591,12 +596,10 @@ class Genome:
             # we divide it into half
             .otherwise((pl.col('downstream') - pl.col('downstream') % 2) // 2)
         )
-        '''
+        """
         if (genes["end"] < genes["start"]).sum() > 0:
-            forward = (
-                genes.filter(pl.col("start") <= pl.col("end"))
-                .with_columns(pl.lit("+").alias("strand"))
-
+            forward = genes.filter(pl.col("start") <= pl.col("end")).with_columns(
+                pl.lit("+").alias("strand")
             )
             reverse = (
                 genes.filter(pl.col("start") > pl.col("end"))
@@ -608,20 +611,20 @@ class Genome:
             genes = pl.concat([forward, reverse]).sort(["chr", "start"])
 
         trimmed = (
-            genes
-            .groupby(['chr', 'strand'], maintain_order=True).agg([
-                pl.col('start'),
-                pl.col('end'),
-                length_before.alias('upstream'),
-                length_after.alias('downstream'),
-                pl.col('id')
+            genes.groupby(["chr", "strand"], maintain_order=True)
+            .agg([
+                pl.col("start"),
+                pl.col("end"),
+                length_before.alias("upstream"),
+                length_after.alias("downstream"),
+                pl.col("id"),
             ])
-            .explode(['start', 'end', 'upstream', 'downstream', 'id'])
+            .explode(["start", "end", "upstream", "downstream", "id"])
             .with_columns([
                 # calculates length of region
-                (pl.col('start') - flank_length).alias('upstream'),
+                (pl.col("start") - flank_length).alias("upstream"),
                 # calculates length of region
-                (pl.col('end') + flank_length).alias('downstream')
+                (pl.col("end") + flank_length).alias("downstream"),
             ])
         )
 
@@ -632,7 +635,9 @@ class Genome:
         if len(genes) > 0:
             return genes
         else:
-            raise Exception("Genome DataFrame is empty. Are you sure input file is valid?")
+            raise Exception(
+                "Genome DataFrame is empty. Are you sure input file is valid?"
+            )
 
 
 @dataclass
@@ -669,15 +674,13 @@ class RegAlignResult:
 
         def ref_pos_expr(for_column: str):
             expr = (
-                pl.when(
-                    pl.col(for_column) < pl.col("areg_start")
-                ).then(
+                pl.when(pl.col(for_column) < pl.col("areg_start"))
+                .then(
                     (pl.col("areg_start") - pl.col(for_column)) / self.flank_length * -1
-                ).when(
-                    pl.col(for_column) > pl.col("areg_end")
-                ).then(
-                    (pl.col(for_column) - pl.col("areg_end")) / self.flank_length + 1
-                ).otherwise(
+                )
+                .when(pl.col(for_column) > pl.col("areg_end"))
+                .then((pl.col(for_column) - pl.col("areg_end")) / self.flank_length + 1)
+                .otherwise(
                     (pl.col(for_column) - pl.col("areg_start")) / pl.col("length")
                 )
             )
@@ -685,15 +688,29 @@ class RegAlignResult:
 
         ref_positions = (
             self.near_reg()
-            .cast(dict(areg_start=pl.Int64, areg_end=pl.Int64, start=pl.Int64, end=pl.Int64))
+            .cast(
+                dict(
+                    areg_start=pl.Int64, areg_end=pl.Int64, start=pl.Int64, end=pl.Int64
+                )
+            )
             .with_columns([
                 (pl.col("areg_end") - pl.col("areg_start")).alias("length"),
-                pl.when(pl.col("strand") == "-").then(0 - pl.col("end")).otherwise(pl.col("start")).alias("start"),
-                pl.when(pl.col("strand") == "-").then(0 - pl.col("areg_end")).otherwise(pl.col("areg_start")).alias(
-                    "areg_start"),
-                pl.when(pl.col("strand") == "-").then(0 - pl.col("start")).otherwise(pl.col("end")).alias("end"),
-                pl.when(pl.col("strand") == "-").then(0 - pl.col("areg_start")).otherwise(pl.col("areg_end")).alias(
-                    "areg_end"),
+                pl.when(pl.col("strand") == "-")
+                .then(0 - pl.col("end"))
+                .otherwise(pl.col("start"))
+                .alias("start"),
+                pl.when(pl.col("strand") == "-")
+                .then(0 - pl.col("areg_end"))
+                .otherwise(pl.col("areg_start"))
+                .alias("areg_start"),
+                pl.when(pl.col("strand") == "-")
+                .then(0 - pl.col("start"))
+                .otherwise(pl.col("end"))
+                .alias("end"),
+                pl.when(pl.col("strand") == "-")
+                .then(0 - pl.col("areg_start"))
+                .otherwise(pl.col("areg_end"))
+                .alias("areg_end"),
             ])
             .with_columns([
                 ref_pos_expr("start").alias("ref_start"),
@@ -701,8 +718,10 @@ class RegAlignResult:
             ])
             # .select(["ref_start", "ref_end"])
             .with_columns([
-                pl.concat_list([pl.col("ref_start"), pl.col("ref_end")]).alias("ref_pos"),
-                pl.lit([1, -1]).alias("is_start")
+                pl.concat_list([pl.col("ref_start"), pl.col("ref_end")]).alias(
+                    "ref_pos"
+                ),
+                pl.lit([1, -1]).alias("is_start"),
             ])
             .explode(["ref_pos", "is_start"])
             .sort("ref_pos")
@@ -726,15 +745,15 @@ class RegAlignResult:
         return pos[interval_values], cov[interval_values]
 
     def plot_density_mpl(
-            self,
-            fig_axes: tuple = None,
-            flank_windows: int = None,
-            body_windows: int = None,
-            smooth: int = None,
-            norm: bool = False,
-            tick_labels: list[str] = None,
-            label: str = None,
-            **mpl_kwargs
+        self,
+        fig_axes: tuple = None,
+        flank_windows: int = None,
+        body_windows: int = None,
+        smooth: int = None,
+        norm: bool = False,
+        tick_labels: list[str] = None,
+        label: str = None,
+        **mpl_kwargs,
     ):
         """
         Plot coverage, returned by :func:`RegAlignResult.metagene_coverage`
@@ -772,35 +791,59 @@ class RegAlignResult:
         ``matplotlib.pyplot.Figure``
         """
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
-        tick_labels = ["Upstream", "TSS", "Body", "TES", "Downstream"] if tick_labels is None else tick_labels
+        tick_labels = (
+            ["Upstream", "TSS", "Body", "TES", "Downstream"]
+            if tick_labels is None
+            else tick_labels
+        )
 
         pos, cov = self.metagene_coverage()
-        xticks = [-1, 0, .5, 1, 2]
+        xticks = [-1, 0, 0.5, 1, 2]
 
         if flank_windows is not None and body_windows is not None:
             resampled_pos = []
             resampled_cov = []
 
-            for start, stop, windows in zip([-1, 0, 1], [0, 1, 2], [flank_windows, body_windows, flank_windows]):
+            for start, stop, windows in zip(
+                [-1, 0, 1], [0, 1, 2], [flank_windows, body_windows, flank_windows]
+            ):
                 points, step = np.linspace(start, stop, windows + 1, retstep=True)
-                indexes = [(start <= pos) & (pos < (start + step)) for start in points[:-1]]
+                indexes = [
+                    (start <= pos) & (pos < (start + step)) for start in points[:-1]
+                ]
                 resampled_pos.append(points[:-1])
-                resampled_cov.append(np.array([cov[index].mean() if cov[index].size != 0 else 0 for index in indexes]))
+                resampled_cov.append(
+                    np.array([
+                        cov[index].mean() if cov[index].size != 0 else 0
+                        for index in indexes
+                    ])
+                )
 
             cov = np.concatenate(resampled_cov)
             pos = np.array(list(range(len(cov))))
 
             valid = np.isnan(cov)
-            cov = np.interp(pos, pos[~valid], cov[~valid]) if (~valid).sum() > 1 else np.full_like(pos, 0)
+            cov = (
+                np.interp(pos, pos[~valid], cov[~valid])
+                if (~valid).sum() > 1
+                else np.full_like(pos, 0)
+            )
             cov = savgol_line(cov, smooth)
 
-            xticks = [0, flank_windows, flank_windows + body_windows / 2, flank_windows + body_windows,
-                      flank_windows * 2 + body_windows]
+            xticks = [
+                0,
+                flank_windows,
+                flank_windows + body_windows / 2,
+                flank_windows + body_windows,
+                flank_windows * 2 + body_windows,
+            ]
 
         else:
             new_cov = []
             new_pos = []
-            for p_prev, p_next, c_prev, c_next in zip(pos[:-1], pos[1:], cov[:-1], cov[1:]):
+            for p_prev, p_next, c_prev, c_next in zip(
+                pos[:-1], pos[1:], cov[:-1], cov[1:]
+            ):
                 if c_next > c_prev:
                     new_pos += [p_prev, p_prev]
                     new_cov += [c_prev, c_next]
@@ -820,11 +863,11 @@ class RegAlignResult:
 
         axes.set_xticks(xticks, labels=tick_labels)
         axes.set_title("Сoverage of genes and flanking regions by DMRs")
-        axes.set_xlabel('Position')
-        axes.set_ylabel('Density')
+        axes.set_xlabel("Position")
+        axes.set_ylabel("Density")
 
-        axes.axvline(x=xticks[1], linestyle='--', color='k', alpha=.3)
-        axes.axvline(x=xticks[3], linestyle='--', color='k', alpha=.3)
+        axes.axvline(x=xticks[1], linestyle="--", color="k", alpha=0.3)
+        axes.axvline(x=xticks[3], linestyle="--", color="k", alpha=0.3)
 
         return fig
 
@@ -840,41 +883,63 @@ class RegAlignResult:
             .group_by(["chr", "areg_start", "areg_end"])
             .agg([
                 pl.first("id"),
-                pl.len().alias("count"),
-                (pl.col("end") - pl.col("start")).mean().alias("mean_length")
+                pl.count().alias("count"),
+                (pl.col("end") - pl.col("start")).mean().alias("mean_length"),
             ])
             .sort("count", descending=True)
         )
 
 
 def align_regions(
-        regions: pl.DataFrame,
-        along_regions: pl.DataFrame,
-        flank_length: int = 2000
+    regions: pl.DataFrame, along_regions: pl.DataFrame, flank_length: int = 2000
 ):
     total = []
 
-    DeprecationWarning("This method will be removed in future versions. Please use Enrichment class.")
+    DeprecationWarning(
+        "This method will be removed in future versions. Please use Enrichment class."
+    )
 
     # Join by middle
     for chrom in regions["chr"].unique():
         chr_left = (
             regions.filter(chr=chrom)
-            .with_columns(((pl.col('end') + pl.col('start')) / 2).floor().cast(pl.UInt32).alias('mid'))
-            .sort('mid')
+            .with_columns(
+                ((pl.col("end") + pl.col("start")) / 2)
+                .floor()
+                .cast(pl.UInt32)
+                .alias("mid")
+            )
+            .sort("mid")
         )
         chr_right = (
             along_regions.filter(chr=chrom)
-            .with_columns(((pl.col('end') + pl.col('start')) / 2).floor().cast(pl.UInt32).alias('mid'))
-            .sort('mid')
+            .with_columns(
+                ((pl.col("end") + pl.col("start")) / 2)
+                .floor()
+                .cast(pl.UInt32)
+                .alias("mid")
+            )
+            .sort("mid")
         )
 
         joined = (
-            chr_left
-            .join_asof(chr_right, on='mid', strategy='nearest')
-            .with_columns(((pl.col('end') + pl.col('start')) / 2).floor().cast(pl.UInt32).alias('mid'))
-            .select(["chr", "start", "mid", "end", pl.col("start_right").alias("areg_start"),
-                     pl.col("end_right").alias("areg_end"), "id", "strand"])
+            chr_left.join_asof(chr_right, on="mid", strategy="nearest")
+            .with_columns(
+                ((pl.col("end") + pl.col("start")) / 2)
+                .floor()
+                .cast(pl.UInt32)
+                .alias("mid")
+            )
+            .select([
+                "chr",
+                "start",
+                "mid",
+                "end",
+                pl.col("start_right").alias("areg_start"),
+                pl.col("end_right").alias("areg_end"),
+                "id",
+                "strand",
+            ])
         )
 
         total.append(joined)
@@ -882,36 +947,35 @@ def align_regions(
     total = pl.concat(total)
 
     in_gb = total.filter(
-        (pl.col("mid") >= pl.col("areg_start")) &
-        (pl.col("mid") <= pl.col("areg_end"))
+        (pl.col("mid") >= pl.col("areg_start")) & (pl.col("mid") <= pl.col("areg_end"))
     )
     in_up = total.filter(
         (
-                (pl.col("strand") != "-") &
-                (pl.col("end") >= (pl.col("areg_start") - flank_length)) &
-                (pl.col("mid") < pl.col("areg_start"))
-        ) |
-        (
-                (pl.col("strand") == "-") &
-                (pl.col("mid") > pl.col("areg_end")) &
-                (pl.col("start") <= (pl.col("areg_end") + flank_length))
+            (pl.col("strand") != "-")
+            & (pl.col("end") >= (pl.col("areg_start") - flank_length))
+            & (pl.col("mid") < pl.col("areg_start"))
+        )
+        | (
+            (pl.col("strand") == "-")
+            & (pl.col("mid") > pl.col("areg_end"))
+            & (pl.col("start") <= (pl.col("areg_end") + flank_length))
         )
     )
     in_down = total.filter(
         (
-                (pl.col("strand") != "-") &
-                (pl.col("mid") > pl.col("areg_end")) &
-                (pl.col("start") <= (pl.col("areg_end") + flank_length))
-        ) |
-        (
-                (pl.col("strand") == "-") &
-                (pl.col("end") >= (pl.col("areg_start") - flank_length)) &
-                (pl.col("mid") < pl.col("areg_start"))
+            (pl.col("strand") != "-")
+            & (pl.col("mid") > pl.col("areg_end"))
+            & (pl.col("start") <= (pl.col("areg_end") + flank_length))
+        )
+        | (
+            (pl.col("strand") == "-")
+            & (pl.col("end") >= (pl.col("areg_start") - flank_length))
+            & (pl.col("mid") < pl.col("areg_start"))
         )
     )
     intergene = total.filter(
-        (pl.col("end") < (pl.col("areg_start") - flank_length)) |
-        (pl.col("start") > (pl.col("areg_end") + flank_length))
+        (pl.col("end") < (pl.col("areg_start") - flank_length))
+        | (pl.col("start") > (pl.col("areg_end") + flank_length))
     )
 
     return RegAlignResult(in_gb, in_up, in_down, intergene, flank_length)
@@ -928,10 +992,10 @@ class EnrichmentResult:
     """
 
     def __init__(
-            self,
-            aligned: pl.DataFrame,
-            enrich_stats: pl.DataFrame,
-            is_gff: bool = False,
+        self,
+        aligned: pl.DataFrame,
+        enrich_stats: pl.DataFrame,
+        is_gff: bool = False,
     ):
         self.aligned = aligned
         self.enrich_stats = enrich_stats
@@ -957,7 +1021,9 @@ class EnrichmentResult:
                 else True
             )
             .select(["gstart", "gend", "afrag_start", "afrag_end", "strand", "type"])
-            .cast({key: pl.Int64 for key in ["gstart", "gend", "afrag_start", "afrag_end"]})
+            .cast({
+                key: pl.Int64 for key in ["gstart", "gend", "afrag_start", "afrag_end"]
+            })
             .with_columns(
                 ref_start=(
                     pl.when(pl.col("strand") == "-")
@@ -969,7 +1035,7 @@ class EnrichmentResult:
                     .then(pl.col("gend") - pl.col("afrag_start"))
                     .otherwise(pl.col("afrag_end") - pl.col("gstart"))
                 ),
-                glength=(pl.col("gend") - pl.col("gstart"))
+                glength=(pl.col("gend") - pl.col("gstart")),
             )
             .with_columns(
                 ref_start=pl.col("ref_start") / pl.col("glength"),
@@ -989,11 +1055,13 @@ class EnrichmentResult:
                     .when(pl.col("type") == "downstream")
                     .then(pl.col("ref_end") + 1)
                     .otherwise(pl.col("ref_end"))
-                )
+                ),
             )
             .with_columns([
-                pl.concat_list([pl.col("ref_start"), pl.col("ref_end")]).alias("ref_pos"),
-                pl.lit([1, -1]).alias("is_start")
+                pl.concat_list([pl.col("ref_start"), pl.col("ref_end")]).alias(
+                    "ref_pos"
+                ),
+                pl.lit([1, -1]).alias("is_start"),
             ])
             .explode(["ref_pos", "is_start"])
             .sort("ref_pos")
@@ -1020,11 +1088,11 @@ class EnrichmentResult:
         return pos[interval_values], cov[interval_values]
 
     def plot_enrich_mpl(
-            self,
-            fig_axes: tuple = None,
-            exclude: list = None,
-            label: str = "",
-            **mpl_kwargs
+        self,
+        fig_axes: tuple = None,
+        exclude: list = None,
+        label: str = "",
+        **mpl_kwargs,
     ):
         """
         Visualize enrichment results as a scatterplot, where
@@ -1065,23 +1133,32 @@ class EnrichmentResult:
         assert isinstance(fig, plt.Figure)
         assert isinstance(axes, plt.Axes)
 
-        plot_df = self.enrich_stats.filter(pl.col("type").is_in(exclude).not_()).sort("enrichment")
+        plot_df = self.enrich_stats.filter(pl.col("type").is_in(exclude).not_()).sort(
+            "enrichment"
+        )
 
-        axes.scatter(plot_df["type"].to_list(), plot_df["enrichment"].to_list(), label=label, marker='o', alpha=.90,
-                     s=50, **mpl_kwargs)
+        axes.scatter(
+            plot_df["type"].to_list(),
+            plot_df["enrichment"].to_list(),
+            label=label,
+            marker="o",
+            alpha=0.90,
+            s=50,
+            **mpl_kwargs,
+        )
 
         return fig
 
     def plot_density_mpl(
-            self,
-            fig_axes: tuple = None,
-            flank_windows: int = None,
-            body_windows: int = None,
-            smooth: int = None,
-            norm: bool = False,
-            tick_labels: list[str] = None,
-            label: str = None,
-            **mpl_kwargs
+        self,
+        fig_axes: tuple = None,
+        flank_windows: int = None,
+        body_windows: int = None,
+        smooth: int = None,
+        norm: bool = False,
+        tick_labels: list[str] = None,
+        label: str = None,
+        **mpl_kwargs,
     ):
         """
         Plot coverage, returned by :func:`RegAlignResult.metagene_coverage`
@@ -1119,40 +1196,64 @@ class EnrichmentResult:
         ``matplotlib.pyplot.Figure``
         """
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
-        tick_labels = ["Upstream", "TSS", "Body", "TES", "Downstream"] if tick_labels is None else tick_labels
+        tick_labels = (
+            ["Upstream", "TSS", "Body", "TES", "Downstream"]
+            if tick_labels is None
+            else tick_labels
+        )
 
         pos, cov = self.metagene_coverage()
 
-        goodones = (pos > np.quantile(pos, q=.005)) & (pos < np.quantile(pos, q=.995))
+        goodones = (pos > np.quantile(pos, q=0.005)) & (pos < np.quantile(pos, q=0.995))
         pos = pos[goodones]
         cov = cov[goodones]
 
-        xticks = [-1, 0, .5, 1, 2]
+        xticks = [-1, 0, 0.5, 1, 2]
 
         if flank_windows is not None and body_windows is not None:
             resampled_pos = []
             resampled_cov = []
 
-            for start, stop, windows in zip([-1, 0, 1], [0, 1, 2], [flank_windows, body_windows, flank_windows]):
+            for start, stop, windows in zip(
+                [-1, 0, 1], [0, 1, 2], [flank_windows, body_windows, flank_windows]
+            ):
                 points, step = np.linspace(start, stop, windows + 1, retstep=True)
-                indexes = [(start <= pos) & (pos < (start + step)) for start in points[:-1]]
+                indexes = [
+                    (start <= pos) & (pos < (start + step)) for start in points[:-1]
+                ]
                 resampled_pos.append(points[:-1])
-                resampled_cov.append(np.array([cov[index].mean() if cov[index].size != 0 else 0 for index in indexes]))
+                resampled_cov.append(
+                    np.array([
+                        cov[index].mean() if cov[index].size != 0 else 0
+                        for index in indexes
+                    ])
+                )
 
             cov = np.concatenate(resampled_cov)
             pos = np.array(list(range(len(cov))))
 
             valid = np.isnan(cov)
-            cov = np.interp(pos, pos[~valid], cov[~valid]) if (~valid).sum() > 1 else np.full_like(pos, 0)
+            cov = (
+                np.interp(pos, pos[~valid], cov[~valid])
+                if (~valid).sum() > 1
+                else np.full_like(pos, 0)
+            )
             cov = savgol_line(cov, smooth)
 
-            xticks = [0, flank_windows, flank_windows + body_windows / 2, flank_windows + body_windows,
-                      flank_windows * 2 + body_windows]
+            xticks = [
+                0,
+                flank_windows,
+                flank_windows + body_windows / 2,
+                flank_windows + body_windows,
+                flank_windows * 2 + body_windows,
+            ]
 
         else:
             new_cov = []
             new_pos = []
-            for p_prev, p_next, c_prev, c_next in zip(pos[:-1], pos[1:], cov[:-1], cov[1:]):
+            for p_prev, p_next, c_prev, c_next in zip(
+                pos[:-1], pos[1:], cov[:-1], cov[1:]
+            ):
                 if c_next > c_prev:
                     new_pos += [p_prev, p_prev]
                     new_cov += [c_prev, c_next]
@@ -1172,11 +1273,11 @@ class EnrichmentResult:
 
         axes.set_xticks(xticks, labels=tick_labels)
         axes.set_title("Сoverage of genes and flanking regions by DMRs")
-        axes.set_xlabel('Position')
-        axes.set_ylabel('Density')
+        axes.set_xlabel("Position")
+        axes.set_ylabel("Density")
 
-        axes.axvline(x=xticks[1], linestyle='--', color='k', alpha=.3)
-        axes.axvline(x=xticks[3], linestyle='--', color='k', alpha=.3)
+        axes.axvline(x=xticks[1], linestyle="--", color="k", alpha=0.3)
+        axes.axvline(x=xticks[3], linestyle="--", color="k", alpha=0.3)
 
         return fig
 
@@ -1202,29 +1303,38 @@ class Enrichment:
         this parameter to 0.
     """
 
-    def __init__(self, regions: pl.DataFrame, genome: pl.DataFrame, flank_length: int = 0):
+    def __init__(
+        self, regions: pl.DataFrame, genome: pl.DataFrame, flank_length: int = 0
+    ):
         self.regions = Genome.validate(regions)
         genome = Genome.validate(genome)
-        self.genome = genome if not flank_length else self._add_flank_regions(genome, flank_length)
+        self.genome = (
+            genome
+            if not flank_length
+            else self._add_flank_regions(genome, flank_length)
+        )
         self._flank_length = flank_length
 
     @property
     def _type_lengths(self) -> pl.DataFrame:
-        return (
-            self.genome
-            .group_by("type")
-            .agg([(pl.col("end") - pl.col("start")).sum().alias("total")])
-        )
+        return self.genome.group_by("type").agg([
+            (pl.col("end") - pl.col("start")).sum().alias("total")
+        ])
 
     @property
     def _chr_lengths(self) -> pl.DataFrame:
         # Use predefined chromosome lengths if available
         if "region" not in self._type_lengths["type"]:
-            return self.genome.group_by("chr").agg([(pl.last("end") - pl.first("start")).alias("length")])
+            return self.genome.group_by("chr").agg([
+                (pl.last("end") - pl.first("start")).alias("length")
+            ])
         # Otherwise, take last gene coord for chromosome end
         else:
-            return (self.genome.vstack(self.regions).filter(type="region").select(
-                ["type", (pl.col("end")).alias("length")]))
+            return (
+                self.genome.vstack(self.regions)
+                .filter(type="region")
+                .select(["type", (pl.col("end")).alias("length")])
+            )
 
     @property
     def _is_gff(self) -> bool:
@@ -1232,30 +1342,40 @@ class Enrichment:
 
     @property
     def _total_rlen(self) -> int:
-        return self.regions.with_columns(length=pl.col("end") - pl.col("start"))["length"].sum()
+        return self.regions.with_columns(length=pl.col("end") - pl.col("start"))[
+            "length"
+        ].sum()
 
     @staticmethod
     def _add_flank_regions(genome, flank_length) -> pl.DataFrame:
         gene_bodies = Genome(genome.lazy()).gene_body(flank_length=flank_length)
-        return pl.concat(
-            [
-                genome,
-                Genome.validate(
-                    gene_bodies
-                    .select(["chr", pl.col("upstream").alias("start"), pl.col("start").alias("end"), "strand"])
-                    .with_columns(
-                        type=pl.when(pl.col("strand") == "-").then(pl.lit("downstream")).otherwise(pl.lit("upstream"))
-                    )
-                ),
-                Genome.validate(
-                    gene_bodies
-                    .select(["chr", pl.col("end").alias("start"), pl.col("downstream").alias("end"), "strand"])
-                    .with_columns(
-                        type=pl.when(pl.col("strand") == "-").then(pl.lit("upstream")).otherwise(pl.lit("downstream"))
-                    )
+        return pl.concat([
+            genome,
+            Genome.validate(
+                gene_bodies.select([
+                    "chr",
+                    pl.col("upstream").alias("start"),
+                    pl.col("start").alias("end"),
+                    "strand",
+                ]).with_columns(
+                    type=pl.when(pl.col("strand") == "-")
+                    .then(pl.lit("downstream"))
+                    .otherwise(pl.lit("upstream"))
                 )
-            ]
-        )
+            ),
+            Genome.validate(
+                gene_bodies.select([
+                    "chr",
+                    pl.col("end").alias("start"),
+                    pl.col("downstream").alias("end"),
+                    "strand",
+                ]).with_columns(
+                    type=pl.when(pl.col("strand") == "-")
+                    .then(pl.lit("upstream"))
+                    .otherwise(pl.lit("downstream"))
+                )
+            ),
+        ])
 
     def enrich(self) -> EnrichmentResult:
         """
@@ -1269,7 +1389,9 @@ class Enrichment:
             :class:`EnrichmentResult`
         """
         if not self._is_gff:
-            raise ValueError('"gene" region type must be included in the genome DataFrame!')
+            raise ValueError(
+                '"gene" region type must be included in the genome DataFrame!'
+            )
 
         type_lengths = self._type_lengths
         chr_lengths = self._chr_lengths
@@ -1278,7 +1400,8 @@ class Enrichment:
         type_lengths.extend(
             pl.DataFrame({
                 "type": "intergene",
-                "total": chr_lengths["length"].sum() - type_lengths.filter(type="gene").row(0)[1]
+                "total": chr_lengths["length"].sum()
+                - type_lengths.filter(type="gene").row(0)[1],
             }).cast(type_lengths.schema)
         )
 
@@ -1304,11 +1427,35 @@ class Enrichment:
                         dpos.pop(0)
                     else:
                         if dend > gstart > dstart:
-                            aligned.append((chrom, gstart, gend, dstart, dend, gstart, dend))
+                            aligned.append((
+                                chrom,
+                                gstart,
+                                gend,
+                                dstart,
+                                dend,
+                                gstart,
+                                dend,
+                            ))
                         elif dstart >= gstart and dend <= gend:
-                            aligned.append((chrom, gstart, gend, dstart, dend, dstart, dend))
+                            aligned.append((
+                                chrom,
+                                gstart,
+                                gend,
+                                dstart,
+                                dend,
+                                dstart,
+                                dend,
+                            ))
                         elif dstart < gend < dend:
-                            aligned.append((chrom, gstart, gend, dstart, dend, dstart, gend))
+                            aligned.append((
+                                chrom,
+                                gstart,
+                                gend,
+                                dstart,
+                                dend,
+                                dstart,
+                                gend,
+                            ))
                         else:
                             break
 
@@ -1327,24 +1474,28 @@ class Enrichment:
                 "dmr_end": self.genome.schema["end"],
                 "afrag_start": self.genome.schema["start"],
                 "afrag_end": self.genome.schema["end"],
-            }
+            },
         )
 
-        joined = res_df.join(self.genome, left_on=["chr", "gstart", "gend"], right_on=["chr", "start", "end"],
-                             how="left")
-
-        len_stats = (
-            joined
-            .group_by("type")
-            .agg([
-                (pl.col("afrag_end") - pl.col("afrag_start")).sum().alias("alen"),
-            ])
+        joined = res_df.join(
+            self.genome,
+            left_on=["chr", "gstart", "gend"],
+            right_on=["chr", "start", "end"],
+            how="left",
         )
+
+        len_stats = joined.group_by("type").agg([
+            (pl.col("afrag_end") - pl.col("afrag_start")).sum().alias("alen"),
+        ])
 
         # Intergene row
         len_stats.extend(
-            self.regions
-            .join(res_df, right_on=["chr", "dmr_start", "dmr_end"], left_on=["chr", "start", "end"], how="left")
+            self.regions.join(
+                res_df,
+                right_on=["chr", "dmr_start", "dmr_end"],
+                left_on=["chr", "start", "end"],
+                how="left",
+            )
             .filter(pl.col("gstart").is_null())
             .group_by(pl.lit(True))
             .agg((pl.col("end") - pl.col("start")).sum().alias("alen"))
@@ -1357,19 +1508,20 @@ class Enrichment:
         len_stats.extend(
             pl.DataFrame({
                 "type": "NCDS",
-                "alen": len_stats.filter(type="gene").row(0)[1] - len_stats.filter(type="CDS").row(0)[1],
-                "total": len_stats.filter(type="gene").row(0)[2] - len_stats.filter(type="CDS").row(0)[2],
+                "alen": len_stats.filter(type="gene").row(0)[1]
+                - len_stats.filter(type="CDS").row(0)[1],
+                "total": len_stats.filter(type="gene").row(0)[2]
+                - len_stats.filter(type="CDS").row(0)[2],
             }).cast(len_stats.schema)
         )
 
-        enrichment = (
-            len_stats
-            .with_columns(
-                enrichment=(
-                        (pl.col("alen") / self._total_rlen).log(2) -
-                        (pl.col("total") / chr_lengths["length"].sum()).log(2)
-                )
+        enrichment = len_stats.with_columns(
+            enrichment=(
+                (pl.col("alen") / self._total_rlen).log(2)
+                - (pl.col("total") / chr_lengths["length"].sum()).log(2)
             )
         )
 
-        return EnrichmentResult(aligned=joined, enrich_stats=enrichment, is_gff=self._is_gff)
+        return EnrichmentResult(
+            aligned=joined, enrich_stats=enrichment, is_gff=self._is_gff
+        )

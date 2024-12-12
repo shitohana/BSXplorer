@@ -12,6 +12,7 @@ from progress.bar import Bar
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
+
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
@@ -21,30 +22,34 @@ def remove_extension(path):
     re.sub("\.[^./]+$", "", path)
 
 
-MetageneSchema = dotdict(dict(
-    chr=pl.Categorical,
-    strand=pl.Categorical,
-    position=pl.UInt64,
-    gene=pl.Categorical,
-    context=pl.Categorical,
-    id=pl.Categorical,
-    fragment=pl.UInt32,
-    sum=pl.Float32,
-    count=pl.UInt32,
-))
+MetageneSchema = dotdict(
+    dict(
+        chr=pl.Categorical,
+        strand=pl.Categorical,
+        position=pl.UInt64,
+        gene=pl.Categorical,
+        context=pl.Categorical,
+        id=pl.Categorical,
+        fragment=pl.UInt32,
+        sum=pl.Float32,
+        count=pl.UInt32,
+    )
+)
 
 
-MetageneJoinedSchema = dotdict(dict(
-    chr=pl.Categorical,
-    strand=pl.Categorical,
-    gene=pl.Categorical,
-    start=pl.UInt64,
-    id=pl.Categorical,
-    context=pl.Categorical,
-    fragment=pl.UInt32,
-    sum=pl.Float32,
-    count=pl.UInt32,
-))
+MetageneJoinedSchema = dotdict(
+    dict(
+        chr=pl.Categorical,
+        strand=pl.Categorical,
+        gene=pl.Categorical,
+        start=pl.UInt64,
+        id=pl.Categorical,
+        context=pl.Categorical,
+        fragment=pl.UInt32,
+        sum=pl.Float32,
+        count=pl.UInt32,
+    )
+)
 
 
 class ReportBar(Bar):
@@ -121,7 +126,7 @@ def prepare_labels(major_labels: list, minor_labels: list):
         body_start="TSS",
         body_mid="Body",
         body_end="c",
-        down_mid="Downstream"
+        down_mid="Downstream",
     )
 
     if major_labels and len(major_labels) == 2:

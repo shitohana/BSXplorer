@@ -9,20 +9,20 @@ import seaborn as sns
 from scipy import stats
 
 from .Plots import (
-    BoxPlot, savgol_line, LinePlotData, LinePlot, plot_stat_expr, HeatMapData, HeatMap,
-    BoxPlotData
+    BoxPlot,
+    savgol_line,
+    LinePlotData,
+    LinePlot,
+    plot_stat_expr,
+    HeatMapData,
+    HeatMap,
+    BoxPlotData,
 )
 from .SeqMapper import CytosinesFileCM, SequenceFile
-from .Base import (
-    MetageneBase,
-    MetageneFilesBase,
-    read_metagene,
-    validate_metagene_args
-)
+from .Base import MetageneBase, MetageneFilesBase, read_metagene, validate_metagene_args
 from .Clusters import ClusterSingle, ClusterMany
 from .UniversalReader_batches import ReportTypes
 from .utils import MetageneSchema, AvailableSumfunc, CONTEXTS
-from .GenomeClass import Genome
 from .UniversalReader_classes import UniversalReader
 
 
@@ -32,20 +32,19 @@ class Metagene(MetageneBase):
     """
 
     def __init__(self, report_df: pl.DataFrame, **kwargs):
-
         super().__init__(report_df, **kwargs)
 
     @classmethod
     def from_bismark(
-            cls,
-            file: str | Path,
-            genome: pl.DataFrame,
-            up_windows: int = 0,
-            body_windows: int = 2000,
-            down_windows: int = 0,
-            block_size_mb: int = 100,
-            use_threads: bool = True,
-            sumfunc: AvailableSumfunc = "wmean"
+        cls,
+        file: str | Path,
+        genome: pl.DataFrame,
+        up_windows: int = 0,
+        body_windows: int = 2000,
+        down_windows: int = 0,
+        block_size_mb: int = 100,
+        use_threads: bool = True,
+        sumfunc: AvailableSumfunc = "wmean",
     ):
         """
         Constructor for Metagene class from Bismark ``coverage2cytosine`` report.
@@ -83,25 +82,29 @@ class Metagene(MetageneBase):
 
         reader = UniversalReader(**(locals() | dict(report_type="bismark")))
 
-        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
+        args = validate_metagene_args(
+            genome, up_windows, body_windows, down_windows, sumfunc
+        )
         report_df = read_metagene(**(locals() | args))
 
-        return cls(report_df,
-                   upstream_windows=args["upstream_windows"],
-                   gene_windows=args["body_windows"],
-                   downstream_windows=args["downstream_windows"])
+        return cls(
+            report_df,
+            upstream_windows=args["upstream_windows"],
+            gene_windows=args["body_windows"],
+            downstream_windows=args["downstream_windows"],
+        )
 
     @classmethod
     def from_cgmap(
-            cls,
-            file: str | Path,
-            genome: pl.DataFrame,
-            up_windows: int = 0,
-            body_windows: int = 2000,
-            down_windows: int = 0,
-            block_size_mb: int = 100,
-            use_threads: bool = True,
-            sumfunc: AvailableSumfunc = "wmean"
+        cls,
+        file: str | Path,
+        genome: pl.DataFrame,
+        up_windows: int = 0,
+        body_windows: int = 2000,
+        down_windows: int = 0,
+        block_size_mb: int = 100,
+        use_threads: bool = True,
+        sumfunc: AvailableSumfunc = "wmean",
     ):
         """
         Constructor for Metagene class from BSSeeker2 CGmap file.
@@ -139,24 +142,28 @@ class Metagene(MetageneBase):
 
         reader = UniversalReader(**(locals() | dict(report_type="cgmap")))
 
-        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
+        args = validate_metagene_args(
+            genome, up_windows, body_windows, down_windows, sumfunc
+        )
         report_df = read_metagene(**(locals() | args))
 
-        return cls(report_df,
-                   upstream_windows=args["upstream_windows"],
-                   gene_windows=args["body_windows"],
-                   downstream_windows=args["downstream_windows"])
+        return cls(
+            report_df,
+            upstream_windows=args["upstream_windows"],
+            gene_windows=args["body_windows"],
+            downstream_windows=args["downstream_windows"],
+        )
 
     @classmethod
     def from_binom(
-            cls,
-            file: str | Path,
-            genome: pl.DataFrame,
-            up_windows: int = 0,
-            body_windows: int = 2000,
-            down_windows: int = 0,
-            p_value: float = .05,
-            use_threads=True,
+        cls,
+        file: str | Path,
+        genome: pl.DataFrame,
+        up_windows: int = 0,
+        body_windows: int = 2000,
+        down_windows: int = 0,
+        p_value: float = 0.05,
+        use_threads=True,
     ):
         """
         Constructor for Metagene class from :meth:`BinomialData.preprocess` ``.parquet`` file.
@@ -192,30 +199,36 @@ class Metagene(MetageneBase):
         >>> genome = Genome.from_gff("path/to/genome.gff").gene_body()
         >>> metagene = Metagene.from_binom(save_name, genome, up_windows=500, body_windows=1000, down_windows=500)
         """
-        reader = UniversalReader(file, "binom", methylation_pvalue=p_value, use_threads=use_threads)
+        reader = UniversalReader(
+            file, "binom", methylation_pvalue=p_value, use_threads=use_threads
+        )
 
-        args = validate_metagene_args(genome, up_windows, body_windows, down_windows, "wmean")
+        args = validate_metagene_args(
+            genome, up_windows, body_windows, down_windows, "wmean"
+        )
         report_df = read_metagene(**(locals() | args))
 
-        return cls(report_df,
-                   upstream_windows=args["upstream_windows"],
-                   gene_windows=args["body_windows"],
-                   downstream_windows=args["downstream_windows"])
+        return cls(
+            report_df,
+            upstream_windows=args["upstream_windows"],
+            gene_windows=args["body_windows"],
+            downstream_windows=args["downstream_windows"],
+        )
 
     @classmethod
     def from_bedGraph(
-            cls,
-            file: str | Path,
-            genome: pl.DataFrame,
-            fasta: str | Path,
-            up_windows: int = 0,
-            body_windows: int = 2000,
-            down_windows: int = 0,
-            sumfunc: AvailableSumfunc = "wmean",
-            block_size_mb: int = 30,
-            use_threads: bool = True,
-            save_preprocessed: bool = False,
-            temp_dir: str = Path.cwd()
+        cls,
+        file: str | Path,
+        genome: pl.DataFrame,
+        fasta: str | Path,
+        up_windows: int = 0,
+        body_windows: int = 2000,
+        down_windows: int = 0,
+        sumfunc: AvailableSumfunc = "wmean",
+        block_size_mb: int = 30,
+        use_threads: bool = True,
+        save_preprocessed: bool = False,
+        temp_dir: str = Path.cwd(),
     ):
         """
         Constructor for Metagene class from ``.bedGraph`` file.
@@ -262,31 +275,42 @@ class Metagene(MetageneBase):
             if not cm.is_cytosine:
                 SequenceFile(fasta).preprocess_cytosines(cytosine_file)
 
-            reader = UniversalReader(file, report_type="bedgraph", use_threads=use_threads, cytosine_file=cytosine_file,
-                                     block_size_mb=block_size_mb)
+            reader = UniversalReader(
+                file,
+                report_type="bedgraph",
+                use_threads=use_threads,
+                cytosine_file=cytosine_file,
+                block_size_mb=block_size_mb,
+            )
 
-            args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
-            report_df = read_metagene(reader, genome, up_windows, body_windows, down_windows, sumfunc)
+            args = validate_metagene_args(
+                genome, up_windows, body_windows, down_windows, sumfunc
+            )
+            report_df = read_metagene(
+                reader, genome, up_windows, body_windows, down_windows, sumfunc
+            )
 
-        return cls(report_df,
-                   upstream_windows=args["upstream_windows"],
-                   gene_windows=args["body_windows"],
-                   downstream_windows=args["downstream_windows"])
+        return cls(
+            report_df,
+            upstream_windows=args["upstream_windows"],
+            gene_windows=args["body_windows"],
+            downstream_windows=args["downstream_windows"],
+        )
 
     @classmethod
     def from_coverage(
-            cls,
-            file: str | Path,
-            genome: pl.DataFrame,
-            fasta: str | Path,
-            up_windows: int = 0,
-            body_windows: int = 2000,
-            down_windows: int = 0,
-            sumfunc: AvailableSumfunc = "wmean",
-            block_size_mb: int = 30,
-            use_threads: bool = True,
-            save_preprocessed: bool = False,
-            temp_dir: str = "./"
+        cls,
+        file: str | Path,
+        genome: pl.DataFrame,
+        fasta: str | Path,
+        up_windows: int = 0,
+        body_windows: int = 2000,
+        down_windows: int = 0,
+        sumfunc: AvailableSumfunc = "wmean",
+        block_size_mb: int = 30,
+        use_threads: bool = True,
+        save_preprocessed: bool = False,
+        temp_dir: str = "./",
     ):
         """
         Constructor for Metagene class from ``.cov`` file.
@@ -336,26 +360,37 @@ class Metagene(MetageneBase):
             if not cm.is_cytosine:
                 SequenceFile(fasta).preprocess_cytosines(cytosine_file)
 
-            reader = UniversalReader(file, report_type="bedgraph", use_threads=use_threads, cytosine_file=cytosine_file,
-                                     block_size_mb=block_size_mb)
+            reader = UniversalReader(
+                file,
+                report_type="bedgraph",
+                use_threads=use_threads,
+                cytosine_file=cytosine_file,
+                block_size_mb=block_size_mb,
+            )
 
-            args = validate_metagene_args(genome, up_windows, body_windows, down_windows, sumfunc)
-            report_df = read_metagene(reader, genome, up_windows, body_windows, down_windows, sumfunc)
+            args = validate_metagene_args(
+                genome, up_windows, body_windows, down_windows, sumfunc
+            )
+            report_df = read_metagene(
+                reader, genome, up_windows, body_windows, down_windows, sumfunc
+            )
 
-        return cls(report_df,
-                   upstream_windows=args["upstream_windows"],
-                   gene_windows=args["body_windows"],
-                   downstream_windows=args["downstream_windows"])
+        return cls(
+            report_df,
+            upstream_windows=args["upstream_windows"],
+            gene_windows=args["body_windows"],
+            downstream_windows=args["downstream_windows"],
+        )
 
     # Todo Check and update
     def filter(
-            self,
-            context: Literal["CG", "CHG", "CHH", None] = None,
-            strand: Literal["+", "-", None] = None,
-            chr: str = None,
-            genome: pl.DataFrame = None,
-            id: list[str] = None,
-            coords: list[str] = None
+        self,
+        context: Literal["CG", "CHG", "CHH", None] = None,
+        strand: Literal["+", "-", None] = None,
+        chr: str = None,
+        genome: pl.DataFrame = None,
+        id: list[str] = None,
+        coords: list[str] = None,
     ) -> Metagene:
         """
         Method for filtering metagene.
@@ -408,8 +443,12 @@ class Metagene(MetageneBase):
 
         """
 
-        context_filter = self.report_df["context"] == context if context is not None else True
-        strand_filter = self.report_df["strand"] == strand if strand is not None else True
+        context_filter = (
+            self.report_df["context"] == context if context is not None else True
+        )
+        strand_filter = (
+            self.report_df["strand"] == strand if strand is not None else True
+        )
         chr_filter = self.report_df["chr"] == chr if chr is not None else True
 
         metadata = self.metadata
@@ -417,31 +456,59 @@ class Metagene(MetageneBase):
         metadata["strand"] = strand
 
         if genome is not None:
+
             def genome_filter(df: pl.DataFrame):
                 cast_dtypes = {"chr": pl.Utf8, "strand": pl.Utf8}
                 cast_cat_dtypes = {"chr": pl.Categorical, "strand": pl.Categorical}
-                return df.cast(cast_dtypes).join(genome.cast(cast_dtypes).select(["chr", "start"]), on=["chr", "start"]).cast(cast_cat_dtypes)
+                return (
+                    df.cast(cast_dtypes)
+                    .join(
+                        genome.cast(cast_dtypes).select(["chr", "start"]),
+                        on=["chr", "start"],
+                    )
+                    .cast(cast_cat_dtypes)
+                )
+
         else:
-            genome_filter = lambda df: df
+
+            def genome_filter(df):
+                return df
 
         if id is not None:
+
             def id_filter(df: pl.DataFrame):
-                return df.filter(pl.col("id").cast(pl.String).is_in(id))
+                return df.filter(pl.col("id").cast(pl.Utf8).is_in(id))
+
         else:
-            id_filter = lambda df: df
+
+            def id_filter(df):
+                return df
 
         if coords is not None:
+
             def coords_filter(df: pl.DataFrame):
                 return df.filter(pl.col("gene").is_in(coords))
+
         else:
-            coords_filter = lambda df: df
+
+            def coords_filter(df):
+                return df
 
         if context_filter is None and strand_filter is None and chr_filter is None:
             return self
         else:
             return self.__class__(
-                coords_filter(id_filter(genome_filter(self.report_df.filter(context_filter & strand_filter & chr_filter)))),
-                **metadata)
+                coords_filter(
+                    id_filter(
+                        genome_filter(
+                            self.report_df.filter(
+                                context_filter & strand_filter & chr_filter
+                            )
+                        )
+                    )
+                ),
+                **metadata,
+            )
 
     def resize(self, to_fragments: int = None) -> Metagene:
         """
@@ -475,7 +542,11 @@ class Metagene(MetageneBase):
         Body windows: 50.
         Downstream windows: 25.
         """
-        if self.upstream_windows is not None and self.gene_windows is not None and self.downstream_windows is not None:
+        if (
+            self.upstream_windows is not None
+            and self.gene_windows is not None
+            and self.downstream_windows is not None
+        ):
             from_fragments = self.total_windows
         else:
             from_fragments = self.report_df["fragment"].max() + 1
@@ -486,21 +557,26 @@ class Metagene(MetageneBase):
         resized = (
             self.report_df.lazy()
             .with_columns(
-                ((pl.col("fragment") / from_fragments) * to_fragments).floor()
+                ((pl.col("fragment") / from_fragments) * to_fragments)
+                .floor()
                 .cast(MetageneSchema.fragment)
             )
             .group_by(
-                by=['chr', 'strand', 'start', 'gene', 'id', 'context', 'fragment']
-            ).agg([
-                pl.sum('sum').alias('sum'),
-                pl.sum('count').alias('count')
-            ])
+                by=["chr", "strand", "start", "gene", "id", "context", "fragment"]
+            )
+            .agg([pl.sum("sum").alias("sum"), pl.sum("count").alias("count")])
         ).collect()
 
         metadata = self.metadata
-        metadata["upstream_windows"] = metadata["upstream_windows"] // (from_fragments // to_fragments)
-        metadata["downstream_windows"] = metadata["downstream_windows"] // (from_fragments // to_fragments)
-        metadata["gene_windows"] = metadata["gene_windows"] // (from_fragments // to_fragments)
+        metadata["upstream_windows"] = metadata["upstream_windows"] // (
+            from_fragments // to_fragments
+        )
+        metadata["downstream_windows"] = metadata["downstream_windows"] // (
+            from_fragments // to_fragments
+        )
+        metadata["gene_windows"] = metadata["gene_windows"] // (
+            from_fragments // to_fragments
+        )
 
         return self.__class__(resized, **metadata)
 
@@ -546,27 +622,23 @@ class Metagene(MetageneBase):
         trimmed = self.report_df.lazy()
         metadata = self.metadata.copy()
         if downstream:
-            trimmed = (
-                trimmed
-                .filter(pl.col("fragment") < self.upstream_windows + self.gene_windows)
+            trimmed = trimmed.filter(
+                pl.col("fragment") < self.upstream_windows + self.gene_windows
             )
             metadata["downstream_windows"] = 0
 
         if upstream:
-            trimmed = (
-                trimmed
-                .filter(pl.col("fragment") > self.upstream_windows - 1)
-                .with_columns(pl.col("fragment") - self.upstream_windows)
-            )
+            trimmed = trimmed.filter(
+                pl.col("fragment") > self.upstream_windows - 1
+            ).with_columns(pl.col("fragment") - self.upstream_windows)
             metadata["upstream_windows"] = 0
 
         return self.__class__(trimmed.collect(), **metadata)
 
     # TODO finish annotation
     def cluster(
-            self,
-            count_threshold: int = 5,
-            na_rm: float | None = None) -> ClusterSingle:
+        self, count_threshold: int = 5, na_rm: float | None = None
+    ) -> ClusterSingle:
         """
         Cluster regions with hierarchical clustering, by their methylation pattern.
 
@@ -591,20 +663,19 @@ class Metagene(MetageneBase):
     @staticmethod
     def _reverse_strand(df, max_fragment):
         return (
-                df
-                .filter(pl.col("strand") == "-")
-                .with_columns((max_fragment - pl.col("fragment")).alias("fragment"))
-                .sort("fragment")
-            )
+            df.filter(pl.col("strand") == "-")
+            .with_columns((max_fragment - pl.col("fragment")).alias("fragment"))
+            .sort("fragment")
+        )
 
     def line_plot_data(
-            self,
-            resolution: int = None,
-            smooth: int = 50,
-            confidence: float = 0.,
-            stat: str = "wmean",
-            merge_strands: bool = True,
-            label=""
+        self,
+        resolution: int = None,
+        smooth: int = 50,
+        confidence: float = 0.0,
+        stat: str = "wmean",
+        merge_strands: bool = True,
+        label="",
     ):
         """
 
@@ -634,46 +705,59 @@ class Metagene(MetageneBase):
 
         # Merge strands
         if merge_strands:
-            df = df.filter(pl.col("strand") != "-").extend(self._reverse_strand(df, df["fragment"].max()))
+            df = df.filter(pl.col("strand") != "-").extend(
+                self._reverse_strand(df, df["fragment"].max())
+            )
 
         # Apply stats expr
         res = (
-            df
-            .group_by("fragment")
+            df.group_by("fragment")
             .agg([
                 plot_stat_expr(stat).alias("density"),
                 pl.col("sum"),
                 pl.col("count"),
                 pl.sum("count").alias("n"),
                 (pl.col("sum") / pl.col("count")).mean().alias("average"),
-                (pl.col("sum") - (pl.col("sum") / pl.col("count"))).mean().pow(2).alias("variance")
+                (pl.col("sum") - (pl.col("sum") / pl.col("count")))
+                .mean()
+                .pow(2)
+                .alias("variance"),
             ])
             .sort("fragment")
         )
 
         if 0 < confidence < 1 and stat in ["mean", "wmean"]:
             res = (
-                res
-                .with_columns(
+                res.with_columns(
                     (pl.col("variance") / pl.col("n")).sqrt().alias("scale")
                 )
                 .with_columns(
                     pl.struct(["n", "average", "scale"])
                     .map_elements(
-                        lambda field: stats.t.interval(confidence, df=field["n"] - 1, loc=field["average"], scale=field["scale"]),
-                        return_dtype=pl.List(pl.Float64)
-                    ).alias("interval")
+                        lambda field: stats.t.interval(
+                            confidence,
+                            df=field["n"] - 1,
+                            loc=field["average"],
+                            scale=field["scale"],
+                        ),
+                        return_dtype=pl.List(pl.Float64),
+                    )
+                    .alias("interval")
                 )
-                .with_columns(pl.col("interval").list.to_struct(fields=["lower", "upper"]))
+                .with_columns(
+                    pl.col("interval").list.to_struct(fields=["lower", "upper"])
+                )
                 .unnest("interval")
             )
-        elif 0 < confidence < 1 and not (stat in ["mean", "wmean"]):
-            raise ValueError("Confidence bands available only for mean and wmean stat parameters.")
+        elif 0 < confidence < 1 and stat not in ["mean", "wmean"]:
+            raise ValueError(
+                "Confidence bands available only for mean and wmean stat parameters."
+            )
 
         # Fill empty windows
         template = pl.DataFrame(
             dict(fragment=list(range(self.total_windows))),
-            schema=dict(fragment=res.schema["fragment"])
+            schema=dict(fragment=res.schema["fragment"]),
         )
 
         joined = template.join(res, on="fragment", how="left")
@@ -689,16 +773,24 @@ class Metagene(MetageneBase):
         y = savgol_line(joined["density"].to_numpy(), smooth) * 100
         x = np.arange(len(y))
 
-        return LinePlotData(x, y, resized._x_ticks, resized._borders, lower, upper, label,
-                            ["Upstream", "", "Body", "", "Downstream"])
+        return LinePlotData(
+            x,
+            y,
+            resized._x_ticks,
+            resized._borders,
+            lower,
+            upper,
+            label,
+            ["Upstream", "", "Body", "", "Downstream"],
+        )
 
     def line_plot(
-            self,
-            resolution: int = None,
-            stat="wmean",
-            smooth: int = 50,
-            confidence: float = 0.,
-            merge_strands: bool = True
+        self,
+        resolution: int = None,
+        stat="wmean",
+        smooth: int = 50,
+        confidence: float = 0.0,
+        merge_strands: bool = True,
     ) -> LinePlot:
         """
         Create :class:`LinePlot` method.
@@ -779,37 +871,40 @@ class Metagene(MetageneBase):
         LinePlot : For more information about plottling parameters.
         """
         resized = self.resize(resolution)
-        lp_data = resized.line_plot_data(resolution, smooth, confidence, stat, merge_strands)
+        lp_data = resized.line_plot_data(
+            resolution, smooth, confidence, stat, merge_strands
+        )
         return LinePlot(lp_data)
 
     def contexts_line_plot(
-            self,
-            resolution: int = None,
-            stat="wmean",
-            smooth: int = 50,
-            confidence: float = 0.,
-            merge_strands: bool = True
+        self,
+        resolution: int = None,
+        stat="wmean",
+        smooth: int = 50,
+        confidence: float = 0.0,
+        merge_strands: bool = True,
     ) -> LinePlot:
         resized = self.resize(resolution)
 
         lp_data = [
-            filtered.line_plot_data(resolution, smooth, confidence, stat, merge_strands, context) for context, filtered
-            in zip(CONTEXTS, map(lambda context: resized.filter(context=context), CONTEXTS))
+            filtered.line_plot_data(
+                resolution, smooth, confidence, stat, merge_strands, context
+            )
+            for context, filtered in zip(
+                CONTEXTS, map(lambda context: resized.filter(context=context), CONTEXTS)
+            )
             if len(filtered) > 0
         ]
 
         return LinePlot(lp_data)
 
-    def heat_map_data(
-            self,
-            nrow: int = 100,
-            ncol: int = 100,
-            label=None
-    ):
+    def heat_map_data(self, nrow: int = 100, ncol: int = 100, label=None):
         resized = self.resize(ncol)
         report_df = resized.report_df
         # Merge strands
-        report_df = report_df.filter(pl.col("strand") != "-").extend(self._reverse_strand(report_df, report_df["fragment"].max()))
+        report_df = report_df.filter(pl.col("strand") != "-").extend(
+            self._reverse_strand(report_df, report_df["fragment"].max())
+        )
 
         # sort by rows and add row numbers
         hm_data = (
@@ -817,17 +912,22 @@ class Metagene(MetageneBase):
             .group_by("gene")
             .agg([
                 pl.col("fragment"),
-                (pl.col("sum") / pl.col("count")).alias("density")
+                (pl.col("sum") / pl.col("count")).alias("density"),
             ])
             .with_columns(
-                (pl.col("density").list.sum() / (resized.total_windows + 1)).alias("order")
+                (pl.col("density").list.sum() / (resized.total_windows + 1)).alias(
+                    "order"
+                )
             )
-            .sort('order', descending=True)
-            .with_row_count(name='row')
+            .sort("order", descending=True)
+            .with_row_count(name="row")
             .with_columns(
-                (pl.col('row') / (pl.max("row") + 1) * nrow).floor().alias('row').cast(pl.UInt16)
+                (pl.col("row") / (pl.max("row") + 1) * nrow)
+                .floor()
+                .alias("row")
+                .cast(pl.UInt16)
             )
-            .explode(['fragment', 'density'])
+            .explode(["fragment", "density"])
             .group_by(["row", "fragment"])
             .agg(pl.mean("density"))
         )
@@ -835,36 +935,43 @@ class Metagene(MetageneBase):
         # prepare full template
         template = (
             pl.LazyFrame(data={"row": list(range(nrow))})
-            .with_columns(pl.lit(list(range(0, resized.total_windows))).alias("fragment"))
+            .with_columns(
+                pl.lit(list(range(0, resized.total_windows))).alias("fragment")
+            )
             .explode("fragment")
             .with_columns([
                 pl.col("fragment").cast(MetageneSchema.fragment),
-                pl.col("row").cast(pl.UInt16)
+                pl.col("row").cast(pl.UInt16),
             ])
         )
 
         # join template with actual data
         hm_data = (
             # template join with orig
-            template.join(hm_data, on=['row', 'fragment'], how='left')
+            template.join(hm_data, on=["row", "fragment"], how="left")
             .fill_null(0)
-            .sort(['row', 'fragment'])
-            .group_by('row', maintain_order=True)
-            .agg(pl.col('density'))
-            .collect()
-            ['density']
+            .sort(["row", "fragment"])
+            .group_by("row", maintain_order=True)
+            .agg(pl.col("density"))
+            .collect()["density"]
             .to_list()
         )
 
         # convert to matrix and percents
         hm_data = np.array(hm_data, dtype=np.float32) * 100
 
-        return HeatMapData(hm_data, resized._x_ticks, resized._borders, label if label is not None else "", ["Upstream", "", "Body", "", "Downstream"])
+        return HeatMapData(
+            hm_data,
+            resized._x_ticks,
+            resized._borders,
+            label if label is not None else "",
+            ["Upstream", "", "Body", "", "Downstream"],
+        )
 
     def heat_map(
-            self,
-            nrow: int = 100,
-            ncol: int = 100,
+        self,
+        nrow: int = 100,
+        ncol: int = 100,
     ) -> HeatMap:
         """
         Create :class:`HeatMap` method.
@@ -875,8 +982,6 @@ class Metagene(MetageneBase):
             Number of fragments to resize to. Keep None if no resize is needed.
         ncol
             Number of columns in the resulting heat-map.
-        stat
-            Summary function to use for plot. Possible options: ``mean``, ``wmean``, ``log``, ``wlog``, ``qN``
 
         Returns
         -------
@@ -921,43 +1026,47 @@ class Metagene(MetageneBase):
         return HeatMap(hm_data)
 
     def __str__(self):
-        representation = (f'Metagene with {len(self)} windows total.\n'
-                          f'Filtered by {self.context} context and {self.strand} strand.\n'
-                          f'Upstream windows: {self.upstream_windows}.\n'
-                          f'Body windows: {self.gene_windows}.\n'
-                          f'Downstream windows: {self.downstream_windows}.\n')
+        representation = (
+            f"Metagene with {len(self)} windows total.\n"
+            f"Filtered by {self.context} context and {self.strand} strand.\n"
+            f"Upstream windows: {self.upstream_windows}.\n"
+            f"Body windows: {self.gene_windows}.\n"
+            f"Downstream windows: {self.downstream_windows}.\n"
+        )
 
         return representation
 
     def __repr__(self):
         return self.__str__()
 
-    def box_plot_data(self, filter_context: Literal["CG", "CHG", "CHH"] | None = None, label=""):
-        df = self.filter(context=filter_context).report_df if filter_context is not None else self.report_df
+    def box_plot_data(
+        self, filter_context: Literal["CG", "CHG", "CHH"] | None = None, label=""
+    ):
+        df = (
+            self.filter(context=filter_context).report_df
+            if filter_context is not None
+            else self.report_df
+        )
 
         if not df.is_empty():
-            data = (
-                df
-                .group_by(["chr", "start"])
-                .agg([
-                    pl.first("gene").alias("locus"),
-                    pl.first("strand"),
-                    pl.first("id"),
-                    (pl.sum("sum") / pl.sum("count")).alias("density")
-                ])
-            )
+            data = df.group_by(["chr", "start"]).agg([
+                pl.first("gene").alias("locus"),
+                pl.first("strand"),
+                pl.first("id"),
+                (pl.sum("sum") / pl.sum("count")).alias("density"),
+            ])
 
             return BoxPlotData(
                 data["density"].to_list(),
                 label,
                 data["locus"].to_list(),
-                data["id"].to_list()
+                data["id"].to_list(),
             )
         else:
             return BoxPlotData.empty(label)
 
     def context_box_plot(self):
-        data = [self.box_plot_data(context, context)  for context in CONTEXTS]
+        data = [self.box_plot_data(context, context) for context in CONTEXTS]
 
         return BoxPlot(data)
 
@@ -971,18 +1080,18 @@ class MetageneFiles(MetageneFilesBase):
 
     @classmethod
     def from_list(
-            cls,
-            filenames: list[str | Path],
-            genomes: pl.DataFrame | list[pl.DataFrame],
-            labels: list[str] = None,
-            up_windows: int = 0,
-            body_windows: int = 2000,
-            down_windows: int = 0,
-            report_type: ReportTypes = "bismark",
-            block_size_mb: int = 50,
-            use_threads: bool = True,
-            sumfunc: AvailableSumfunc = "wmean",
-            **kwargs
+        cls,
+        filenames: list[str | Path],
+        genomes: pl.DataFrame | list[pl.DataFrame],
+        labels: list[str] = None,
+        up_windows: int = 0,
+        body_windows: int = 2000,
+        down_windows: int = 0,
+        report_type: ReportTypes = "bismark",
+        block_size_mb: int = 50,
+        use_threads: bool = True,
+        sumfunc: AvailableSumfunc = "wmean",
+        **kwargs,
     ) -> MetageneFiles:
         """
         Create istance of :class:`MetageneFiles` from list of paths.
@@ -1052,38 +1161,46 @@ class MetageneFiles(MetageneFilesBase):
             "binom": Metagene.from_binom,
             "cgmap": Metagene.from_cgmap,
             "bedgraph": Metagene.from_bedGraph,
-            "coverage": Metagene.from_coverage
+            "coverage": Metagene.from_coverage,
         }
 
         if not isinstance(genomes, list):
             genomes = [genomes] * len(filenames)
         else:
             if len(genomes) != len(filenames):
-                raise AttributeError("Number of genomes and filenames provided does not match")
+                raise AttributeError(
+                    "Number of genomes and filenames provided does not match"
+                )
 
         default_args = dict(
             up_windows=up_windows,
             body_windows=body_windows,
             down_windows=down_windows,
-            use_threads=use_threads
+            use_threads=use_threads,
         )
 
         if report_type not in ["binom"]:
-            default_args |= dict(
-                block_size_mb=block_size_mb,
-                sumfunc=sumfunc
-            )
+            default_args |= dict(block_size_mb=block_size_mb, sumfunc=sumfunc)
 
         samples: list[Metagene] = []
         for file, genome in zip(filenames, genomes):
-            sample = read_fnc[report_type](file=file, genome=genome, **default_args, **kwargs)
+            sample = read_fnc[report_type](
+                file=file, genome=genome, **default_args, **kwargs
+            )
 
             samples.append(sample)
 
         return cls(samples, labels)
 
-    def filter(self, context: str = None, strand: str = None, chr: str = None, genome: pl.DataFrame = None,
-               id: list[str] = None, coords: list[str] = None) -> MetageneFiles:
+    def filter(
+        self,
+        context: str = None,
+        strand: str = None,
+        chr: str = None,
+        genome: pl.DataFrame = None,
+        id: list[str] = None,
+        coords: list[str] = None,
+    ) -> MetageneFiles:
         """
         :meth:`Metagene.filter` all metagenes.
 
@@ -1106,7 +1223,13 @@ class MetageneFiles(MetageneFilesBase):
         --------
         Metagene.filter : For examples.
         """
-        return self.__class__([sample.filter(context, strand, chr, genome, id, coords) for sample in self.samples], self.labels)
+        return self.__class__(
+            [
+                sample.filter(context, strand, chr, genome, id, coords)
+                for sample in self.samples
+            ],
+            self.labels,
+        )
 
     def trim_flank(self, upstream=True, downstream=True):
         """
@@ -1128,7 +1251,10 @@ class MetageneFiles(MetageneFilesBase):
         Metagene.trim_flank : For examples.
         """
 
-        return self.__class__([sample.trim_flank(upstream, downstream) for sample in self.samples], self.labels)
+        return self.__class__(
+            [sample.trim_flank(upstream, downstream) for sample in self.samples],
+            self.labels,
+        )
 
     def resize(self, to_fragments: int):
         """
@@ -1147,7 +1273,9 @@ class MetageneFiles(MetageneFilesBase):
         --------
         Metagene.resize : For examples.
         """
-        return self.__class__([sample.resize(to_fragments) for sample in self.samples], self.labels)
+        return self.__class__(
+            [sample.resize(to_fragments) for sample in self.samples], self.labels
+        )
 
     def merge(self):
         """
@@ -1173,26 +1301,32 @@ class MetageneFiles(MetageneFilesBase):
 
         if len(upstream_windows) == len(downstream_windows) == len(gene_windows) == 1:
             merged = (
-                pl.concat([sample.report_df for sample in self.samples]).lazy()
-                .group_by(["strand", "context", "chr", "gene", "start", "id", "fragment"], maintain_order=True)
+                pl.concat([sample.report_df for sample in self.samples])
+                .lazy()
+                .group_by(
+                    ["strand", "context", "chr", "gene", "start", "id", "fragment"],
+                    maintain_order=True,
+                )
                 .agg([pl.sum("sum").alias("sum"), pl.sum("count").alias("count")])
                 .select(self.samples[0].report_df.columns)
             ).collect()
 
-            return Metagene(merged,
-                            upstream_windows=list(upstream_windows)[0],
-                            downstream_windows=list(downstream_windows)[0],
-                            gene_windows=list(gene_windows)[0])
+            return Metagene(
+                merged,
+                upstream_windows=list(upstream_windows)[0],
+                downstream_windows=list(downstream_windows)[0],
+                gene_windows=list(gene_windows)[0],
+            )
         else:
             raise Exception("Metadata for merge DataFrames does not match!")
 
     def line_plot(
-            self,
-            resolution: int = None,
-            smooth: int = 50,
-            confidence: float = 0.,
-            stat: str = "wmean",
-            merge_strands: bool = True
+        self,
+        resolution: int = None,
+        smooth: int = 50,
+        confidence: float = 0.0,
+        stat: str = "wmean",
+        merge_strands: bool = True,
     ):
         """
         Create :class:`LinePlotFiles` method.
@@ -1243,7 +1377,9 @@ class MetageneFiles(MetageneFilesBase):
         .. image:: ../../images/lineplot/ara_bradi_plotly.png
         """
         lp_data = [
-            sample.line_plot_data(resolution, smooth, confidence, stat, merge_strands, label)
+            sample.line_plot_data(
+                resolution, smooth, confidence, stat, merge_strands, label
+            )
             for sample, label in zip(self.samples, self.labels)
         ]
         return LinePlot(lp_data)
@@ -1258,8 +1394,6 @@ class MetageneFiles(MetageneFilesBase):
             Number of fragments to resize to. Keep None if no resize is needed.
         ncol
             Number of columns in the resulting heat-map.
-        stat
-            Summary function to use for plot. Possible options: ``mean``, ``wmean``, ``log``, ``wlog``, ``qN``
 
         Returns
         -------
@@ -1300,13 +1434,16 @@ class MetageneFiles(MetageneFilesBase):
         return HeatMap(hm_data)
 
     def box_plot_data(self, filter_context: Literal["CG", "CHG", "CHH"] | None = None):
-        return [sample.box_plot_data(filter_context, label) for label, sample in zip(self.labels, self.samples)]
+        return [
+            sample.box_plot_data(filter_context, label)
+            for label, sample in zip(self.labels, self.samples)
+        ]
 
     # Todo add fixes from issue14-16#fix
     def box_plot(self):
         return BoxPlot(self.box_plot_data())
 
-    def dendrogram(self, q: float = .75, **kwargs):
+    def dendrogram(self, q: float = 0.75, **kwargs):
         """
         Cluster samples by total methylation level of regions and draw dendrogram.
 
@@ -1324,20 +1461,27 @@ class MetageneFiles(MetageneFilesBase):
         gene_stats = []
         for sample, label in zip(self.samples, self.labels):
             gene_stats.append(
-                sample.report_df
-                .group_by(["chr", "strand", "start", "gene"])
+                sample.report_df.group_by(["chr", "strand", "start", "gene"])
                 .agg((pl.sum("sum") / pl.sum("count")).alias("density"))
                 .with_columns(pl.lit(label).alias("label"))
             )
 
-        gene_set = set.intersection(*[set(stat["gene"].to_list()) for stat in gene_stats])
+        gene_set = set.intersection(*[
+            set(stat["gene"].to_list()) for stat in gene_stats
+        ])
 
         if len(gene_set) < 1:
-            raise ValueError("Region set intersection is empty. Are Metagenes read with same genome?")
+            raise ValueError(
+                "Region set intersection is empty. Are Metagenes read with same genome?"
+            )
 
-        gene_stats = [stat.filter(pl.col("gene").is_in(list(gene_set))) for stat in gene_stats]
+        gene_stats = [
+            stat.filter(pl.col("gene").is_in(list(gene_set))) for stat in gene_stats
+        ]
 
-        dendro_data = pl.concat(gene_stats).pivot(values="density", columns="label", index="gene", aggregate_function="mean")
+        dendro_data = pl.concat(gene_stats).pivot(
+            values="density", columns="label", index="gene", aggregate_function="mean"
+        )
 
         matrix = dendro_data.select(pl.all().exclude("gene")).to_pandas()
 

@@ -10,7 +10,7 @@ authors = [
   { name="Konstantin Y", email="kyudytskiy@gmail.com" },
 ]
 keywords = ['bismark', 'methylation', 'plot', 'bs-seq']
-license = {file = "LICENSE.txt", text="MIT License"}
+license = {file = "LICENSE.txt"}
 
 description = "Analytical framework for BS-seq data comparison and visualization"
 classifiers = [
@@ -24,16 +24,14 @@ classifiers = [
 
 requires-python = ">=3.10"
 dependencies = [
-    "Bio==1.6.*",
-    "biopython==1.*",
-    "dynamicTreeCut==0.*",
-    "fastcluster==1.2.*",
+    "Bio~=1.6.0",
+    "dynamicTreeCut~=0.1.1",
+    "fastcluster~=1.2.6",
     "func_timeout==4.*",
-    "Jinja2==3.1.*",
+    "jinja2==3.1.*",
     "matplotlib~=3.8",
     "numba==0.*",
     "numpy==1.*",
-    "packaging==23.*",
     "pandas==2.2.*",
     "plotly==5.*",
     "polars==0.20",
@@ -43,8 +41,6 @@ dependencies = [
     "scikit_learn==1.4.*",
     "scipy==1.14.*",
     "seaborn==0.*",
-    "pysam==0.22.*",
-    "psutil==5.*",
 ]
 # dynamic = ["version", "description"]
 
@@ -64,7 +60,6 @@ exclude = ["/venv", "/dist", "/test", "/docs"]
 bsxplorer-metagene = "bsxplorer.cons_master:metagene"
 bsxplorer-category = "bsxplorer.cons_master:category"
 bsxplorer-chr = "bsxplorer.cons_master:chr_levels"
-bsxplorer-bam = "bsxplorer.cons_master:bam"
 
 [tool.uv.pip]
 python = "^3.9"

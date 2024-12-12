@@ -23,7 +23,7 @@ ARROW_SCHEMAS = {
         ("end", pa.uint64()),
         ("density", pa.float32()),
         ("count_m", pa.uint32()),
-        ("count_um", pa.uint32())
+        ("count_um", pa.uint32()),
     ]),
     "cgmap": pa.schema([
         ("chr", pa.utf8()),
@@ -42,7 +42,7 @@ ARROW_SCHEMAS = {
         ("count_m", pa.uint32()),
         ("count_um", pa.uint32()),
         ("context", pa.utf8()),
-        ("trinuc", pa.utf8())
+        ("trinuc", pa.utf8()),
     ]),
     "binom": pa.schema([
         ("chr", pa.utf8()),
@@ -50,7 +50,7 @@ ARROW_SCHEMAS = {
         ("position", pa.uint64()),
         ("context", pa.utf8()),
         ("p_value", pa.float64()),
-    ])
+    ]),
 }
 
 ReportTypes = Literal["bismark", "cgmap", "bedgraph", "coverage", "binom"]
@@ -69,12 +69,13 @@ class BaseBatch(ABC):
             except Exception as e:
                 raise pl.SchemaError(e)
         else:
-            raise KeyError(f"Not all columns from schema in batch (missing {list(set(self.colnames()) - set(df.columns))})")
+            raise KeyError(
+                f"Not all columns from schema in batch (missing {list(set(self.colnames()) - set(df.columns))})"
+            )
 
     @classmethod
     @abstractmethod
-    def pl_schema(cls) -> OrderedDict:
-        ...
+    def pl_schema(cls) -> OrderedDict: ...
 
     @classmethod
     def pa_schema(cls) -> pa.Schema:
@@ -87,20 +88,22 @@ class BaseBatch(ABC):
     def to_arrow(self):
         return self.data.to_arrow().cast(self.pa_schema())
 
+
 # noinspection PyMissingOrEmptyDocstring
+
 
 # noinspection PyMissingOrEmptyDocstring
 class ConvertedBatch(BaseBatch):
     @classmethod
     @abstractmethod
-    def from_full(cls, full_batch: UniversalBatch):
-        ...
+    def from_full(cls, full_batch: UniversalBatch): ...
 
 
 class UniversalBatch(BaseBatch):
     """
     Class for storing and converting methylation report data.
     """
+
     @classmethod
     def pl_schema(cls) -> OrderedDict:
         """
@@ -118,7 +121,7 @@ class UniversalBatch(BaseBatch):
             trinuc=pl.Utf8,
             count_m=pl.UInt32,
             count_total=pl.UInt32,
-            density=pl.Float64
+            density=pl.Float64,
         )
 
     def __init__(self, data: pl.DataFrame, raw: pa.Table | pa.RecordBatch | None):
@@ -144,14 +147,15 @@ class UniversalBatch(BaseBatch):
         polars.DataFrame
             DataFrame with methylation data as Bismark methylation report.
         """
-        converted = (
-            self.data
-            .select([
-                "chr", "position", "strand", "count_m",
-                (pl.col("count_total") - pl.col("count_m")).alias("count_um"),
-                "context", "trinuc"
-            ])
-        )
+        converted = self.data.select([
+            "chr",
+            "position",
+            "strand",
+            "count_m",
+            (pl.col("count_total") - pl.col("count_m")).alias("count_um"),
+            "context",
+            "trinuc",
+        ])
         return converted
 
     def to_cgmap(self):
@@ -162,16 +166,16 @@ class UniversalBatch(BaseBatch):
         polars.DataFrame
             DataFrame with methylation data as CGmap.
         """
-        converted = (
-            self.data
-            .select([
-                "chr",
-                pl.when(strand="+").then(pl.lit("C")).otherwise(pl.lit("G")).alias("nuc"),
-                "position", "context",
-                pl.col("trinuc").str.slice(0, 2).alias("dinuc"),
-                "density", "count_m", "count_total"
-            ])
-        )
+        converted = self.data.select([
+            "chr",
+            pl.when(strand="+").then(pl.lit("C")).otherwise(pl.lit("G")).alias("nuc"),
+            "position",
+            "context",
+            pl.col("trinuc").str.slice(0, 2).alias("dinuc"),
+            "density",
+            "count_m",
+            "count_total",
+        ])
         return converted
 
     def to_coverage(self):
@@ -182,18 +186,14 @@ class UniversalBatch(BaseBatch):
         polars.DataFrame
             DataFrame with methylation data as coverage.
         """
-        converted = (
-            self.data
-            .filter(pl.col("count_total") != 0)
-            .select([
-                "chr",
-                (pl.col("position")).alias("start"),
-                (pl.col("position") + 1).alias("end"),
-                "density",
-                "count_m",
-                (pl.col("count_total") - pl.col("count_m")).alias("count_um")
-            ])
-        )
+        converted = self.data.filter(pl.col("count_total") != 0).select([
+            "chr",
+            (pl.col("position")).alias("start"),
+            (pl.col("position") + 1).alias("end"),
+            "density",
+            "count_m",
+            (pl.col("count_total") - pl.col("count_m")).alias("count_um"),
+        ])
         return converted
 
     def to_bedGraph(self):
@@ -204,16 +204,12 @@ class UniversalBatch(BaseBatch):
         polars.DataFrame
             DataFrame with methylation data as bedGraph.
         """
-        converted = (
-            self.data
-            .filter(pl.col("count_total") != 0)
-            .select([
-                "chr",
-                (pl.col("position") - 1).alias("start"),
-                (pl.col("position")).alias("end"),
-                (pl.col("count_m") / pl.col("count_total")).alias("density")
-            ])
-        )
+        converted = self.data.filter(pl.col("count_total") != 0).select([
+            "chr",
+            (pl.col("position") - 1).alias("start"),
+            (pl.col("position")).alias("end"),
+            (pl.col("count_m") / pl.col("count_total")).alias("density"),
+        ])
         return converted
 
     def filter_data(self, **kwargs):
