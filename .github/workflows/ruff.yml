@@ -1,0 +1,12 @@
+name: Ruff
+on: [push, pull_request]
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v2
+        with:
+          src: "./src/bsxplorer"
+          args: "format --config ./pyproject.toml --target-version py311"
+          changed-files: "true"
