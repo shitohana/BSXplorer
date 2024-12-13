@@ -20,8 +20,3 @@ def category():
 def chr_levels():
     _save(ChrLevelsScript())
 
-
-def bam():
-    script = BamScript()
-    script.main()
-

@@ -1,7 +1,5 @@
 __all__ = [
     "Config",
-    # "BAMReader",
-    # "PivotRegion",
     "BinomialData",
     "RegionStat",
     "ChrLevels",
@@ -27,7 +25,6 @@ __all__ = [
 ]
 
 from . import Config
-# from .bam import BAMReader, PivotRegion
 from .binom import BinomialData, RegionStat
 from .chr_levels import ChrLevels
 from .genome import (
