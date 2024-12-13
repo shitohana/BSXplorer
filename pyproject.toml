@@ -59,7 +59,7 @@ bsxplorer-category = "bsxplorer.cons_master:category"
 bsxplorer-chr = "bsxplorer.cons_master:chr_levels"
 
 [build-system]
-requires = ["setuptools", "wheel", "cython"]
+requires = ["setuptools", "wheel", "cython", "numpy"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
