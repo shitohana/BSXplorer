@@ -14,6 +14,17 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v4
 
+            - name: Compile OpenMP
+              working-directory: ./
+              env:
+                OMP_NUM_THREADS: 16
+              run: |
+                sudo apt-get update; sudo apt-get install -y libomp5 libomp-dev
+                echo OMP_NUM_THREADS:$OMP_NUM_THREADS
+                echo OMP_SCHEDULE:$OMP_SCHEDULE
+                echo OMP_DYNAMIC:$OMP_DYNAMIC
+                echo OMP_NESTED:$OMP_NESTED
+
             - name: Install uv
               uses: astral-sh/setup-uv@v4
               with:
