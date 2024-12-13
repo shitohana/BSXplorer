@@ -54,7 +54,7 @@ dev-dependencies = [
     "pip>=24.2",
     "setuptools>=75.2.0",
 ]
-package = false # Todo change when release
+package = true
 
 [project.scripts]
 bsxplorer-metagene = "bsxplorer.cons_master:metagene"

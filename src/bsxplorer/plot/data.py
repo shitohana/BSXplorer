@@ -52,8 +52,8 @@ class PlotData(ABC):
     @abstractmethod
     def from_metagene_df(cls, **kwargs): ...
 
-    @abstractmethod
     @property
+    @abstractmethod
     def dataframe(self): ...
 
 

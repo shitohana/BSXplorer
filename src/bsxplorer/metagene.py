@@ -1059,7 +1059,7 @@ class MetageneFiles(PatchedModel):
         fasta: Optional[ExistentPath] = None,
         cytosine_file: Optional[ExistentPath] = None,
         allocator: Allocator = "system",
-    ) -> MetageneFiles:
+    ):
         """
         Create istance of :class:`MetageneFiles` from list of paths.
 

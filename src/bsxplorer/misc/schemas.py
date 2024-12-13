@@ -110,7 +110,7 @@ class ReportSchema(Enum):
                 [
                     ("chr", pl.Utf8()),
                     ("position", pl.UInt64()),
-                    ("strand", pl.Utf8()),  # G/C
+                    ("strand", pl.Utf8()),
                     ("count_m", pl.UInt32()),
                     ("count_um", pl.UInt32()),
                     ("context", pl.Utf8()),
