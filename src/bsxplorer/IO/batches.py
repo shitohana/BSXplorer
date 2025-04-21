@@ -150,3 +150,12 @@ class UniversalBatch(BaseBatch):
             Tuple of chromosome name and position
         """
         return self.data["chr"][-1], self.data["position"][-1]
+
+    @property
+    def position(self):
+        return self.data["position"]
+
+    @property
+    def strand(self):
+        return self.data["strand"]
+

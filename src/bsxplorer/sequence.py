@@ -10,7 +10,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from Bio import SeqIO
 
-from .cbsx import get_trinuc_cython
 
 
 def possible_trinucs():

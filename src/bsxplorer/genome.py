@@ -10,7 +10,7 @@ import polars as pl
 
 from .misc.utils import MetageneSchema
 from .plot import savgol_line
-
+import matplotlib.pyplot as plt
 
 class Genome:
     """
@@ -746,8 +746,7 @@ class RegAlignResult:
         -------
         ``matplotlib.pyplot.Figure``
         """
-        if 'matplotlib' not in sys.modules:
-            import matplotlib.pyplot as plt
+
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
         tick_labels = ["Upstream", "TSS", "Body", "TES", "Downstream"] if tick_labels is None else tick_labels
 
@@ -1035,8 +1034,6 @@ class EnrichmentResult:
         -------
         ``matplotlib.pyplot.Figure``
         """
-        if 'matplotlib' not in sys.modules:
-            import matplotlib.pyplot as plt
         exclude = list() if exclude is None else exclude
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
 
@@ -1096,8 +1093,7 @@ class EnrichmentResult:
         -------
         ``matplotlib.pyplot.Figure``
         """
-        if 'matplotlib' not in sys.modules:
-            import matplotlib.pyplot as plt
+
         fig, axes = plt.subplots() if fig_axes is None else fig_axes
         tick_labels = ["Upstream", "TSS", "Body", "TES", "Downstream"] if tick_labels is None else tick_labels
 
@@ -1337,8 +1333,8 @@ class Enrichment:
         len_stats.extend(
             pl.DataFrame({
                 "type": "NCDS",
-                "alen": len_stats.filter(type="gene").row(0)[1] - len_stats.filter(type="CDS").row(0)[1],
-                "total": len_stats.filter(type="gene").row(0)[2] - len_stats.filter(type="CDS").row(0)[2],
+                "alen": abs(len_stats.filter(type="gene").row(0)[1] - len_stats.filter(type="CDS").row(0)[1]),
+                "total": abs(len_stats.filter(type="gene").row(0)[2] - len_stats.filter(type="CDS").row(0)[2]),
             }).cast(len_stats.schema)
         )
 
