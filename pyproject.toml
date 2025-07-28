@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "bsxplorer"
 readme = "README.md"
-version = "1.1.0.post1"
+version = "1.1.0.post2"
 authors = [
   { name="Konstantin Y", email="kyudytskiy@gmail.com" },
 ]
 keywords = ['bismark', 'methylation', 'plot', 'bs-seq']
-license = {file = "LICENSE.txt", text="MIT License"}
+license = {text="MIT License"}
 
 description = "Analytical framework for BS-seq data comparison and visualization"
 classifiers = [

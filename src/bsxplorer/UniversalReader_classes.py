@@ -27,8 +27,12 @@ def invalid_row_handler(row):
     return "skip"
 
 
+def get_timeout_sec() -> int:
+    return int(os.environ.get("BSXPLORER_TIMEOUT", 20))
+
+
 # noinspection PyMissingOrEmptyDocstring
-@func_timeout.func_set_timeout(20)
+@func_timeout.func_set_timeout(get_timeout_sec())
 def open_csv(
         file: str | Path,
         read_options: pcsv.ReadOptions = None,
