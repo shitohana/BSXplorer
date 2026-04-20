@@ -30,6 +30,10 @@ def invalid_row_handler(row):
 def get_timeout_sec() -> int:
     return int(os.environ.get("BSXPLORER_TIMEOUT", 20))
 
+def _coerce_arrow(batch: pa.RecordBatch) -> pl.DataFrame:
+    df = pl.from_arrow(batch)
+    assert isinstance(df, pl.DataFrame), "cannot create DataFrame from batch"
+    return df
 
 # noinspection PyMissingOrEmptyDocstring
 @func_timeout.func_set_timeout(get_timeout_sec())
@@ -53,7 +57,7 @@ def open_csv(
 class ArrowParquetReader:
     def __init__(self,
                  file: str | Path,
-                 use_cols: list = None,
+                 use_cols: list | None = None,
                  use_threads: bool = True,
                  **kwargs):
         self.file = Path(file).expanduser().absolute()
@@ -127,6 +131,7 @@ class BinomReader(ArrowParquetReader):
 
     def _mutate_next(self, batch: pa.RecordBatch):
         df = pl.from_arrow(batch)
+        assert isinstance(df, pl.DataFrame), "Cannot create DataFrame from pl.Series"
 
         mutated = (
             df
@@ -206,7 +211,7 @@ class ArrowReaderCSV:
             os._exit(0)
 
     def _mutate_next(self, batch: pa.RecordBatch) -> UniversalBatch:
-        return UniversalBatch(pl.from_arrow(batch), batch)
+        return UniversalBatch(_coerce_arrow(batch), batch)
 
     def __next__(self):
         try:
@@ -225,15 +230,17 @@ class ArrowReaderCSV:
 
 # noinspection PyMissingOrEmptyDocstring
 class BismarkReader(ArrowReaderCSV):
-    pa_schema = ARROW_SCHEMAS["bismark"]
+    @property
+    def pa_schema(self):
+        return ARROW_SCHEMAS["bismark"]
 
-    def convert_options(self):
+    def convert_options(self, **kwargs):
         return pcsv.ConvertOptions(
             column_types=self.pa_schema,
             strings_can_be_null=False
         )
 
-    def parse_options(self):
+    def parse_options(self, **kwargs):
         return pcsv.ParseOptions(
             delimiter="\t",
             quote_char=False,
@@ -242,7 +249,7 @@ class BismarkReader(ArrowReaderCSV):
             invalid_row_handler=lambda _: "skip"
         )
 
-    def read_options(self, use_threads=True, block_size=None):
+    def read_options(self, use_threads=True, block_size=None, **kwargs):
         return pcsv.ReadOptions(
             use_threads=use_threads,
             block_size=block_size,
@@ -269,7 +276,7 @@ class BismarkReader(ArrowReaderCSV):
 
     def _mutate_next(self, batch: pa.RecordBatch):
         mutated = (
-            pl.from_arrow(batch)
+            _coerce_arrow(batch)
             .with_columns((pl.col("count_m") + pl.col("count_um")).alias("count_total"))
             .with_columns((pl.col("count_m") / pl.col("count_total")).alias("density"))
         )
@@ -278,11 +285,13 @@ class BismarkReader(ArrowReaderCSV):
 
 # noinspection PyMissingOrEmptyDocstring
 class CGMapReader(BismarkReader):
-    pa_schema = ARROW_SCHEMAS["cgmap"]
+    @property
+    def pa_schema(self):
+        return ARROW_SCHEMAS["cgmap"]
 
     def _mutate_next(self, batch: pa.RecordBatch):
         mutated = (
-            pl.from_arrow(batch)
+            _coerce_arrow(batch)
             .with_columns([
                 pl.when(pl.col("nuc") == "C").then(pl.lit("+")).otherwise(pl.lit("-")).alias("strand"),
                 pl.when(pl.col("dinuc") == "CG")
@@ -298,7 +307,9 @@ class CGMapReader(BismarkReader):
 
 # noinspection PyMissingOrEmptyDocstring
 class CoverageReader(ArrowReaderCSV):
-    pa_schema = ARROW_SCHEMAS["coverage"]
+    @property
+    def pa_schema(self):
+        return ARROW_SCHEMAS["coverage"]
 
     read_options = BismarkReader.read_options
     parse_options = BismarkReader.parse_options
@@ -326,7 +337,7 @@ class CoverageReader(ArrowReaderCSV):
         self._sequence_metadata = pq.read_metadata(cytosine_file)
 
     def _align(self, pa_batch: pa.RecordBatch):
-        batch = pl.from_arrow(pa_batch)
+        batch = _coerce_arrow(pa_batch)
 
         # get batch stats
         batch_stats = batch.group_by("chr").agg([
@@ -354,7 +365,7 @@ class CoverageReader(ArrowReaderCSV):
             pa_filtered_sequence = pa_filtered_sequence.cast(modified_schema)
 
             pl_sequence = (
-                pl.from_arrow(pa_filtered_sequence)
+                _coerce_arrow(pa_filtered_sequence)
                 .with_columns([
                     pl.when(pl.col("strand") == True).then(pl.lit("+"))
                     .otherwise(pl.lit("-"))

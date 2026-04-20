@@ -485,7 +485,7 @@ class ClusterPlot:
 
             res_df = pl.DataFrame(
                 data=np.c_[self.data.names[self.data.labels == module], cor].T.tolist(),
-                schema=dict(name=pl.String, cor=pl.Float64, pvalue=pl.Float64)
+                schema=dict(name=pl.Utf8, cor=pl.Float64, pvalue=pl.Float64)
             )
 
             if p_cutoff is not None:

@@ -333,12 +333,12 @@ class RegionStat:
     """
 
     schema = {
-        'chr': pl.String,
+        'chr': pl.Utf8,
         'start': pl.UInt64,
         'end': pl.UInt64,
-        'id': pl.String,
-        'strand': pl.String,
-        'context': pl.String,
+        'id': pl.Utf8,
+        'strand': pl.Utf8,
+        'context': pl.Utf8,
         'p_value': pl.Float64,
         'count_m': pl.UInt32,
         'count_total': pl.UInt32

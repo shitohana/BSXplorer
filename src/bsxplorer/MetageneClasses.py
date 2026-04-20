@@ -426,7 +426,7 @@ class Metagene(MetageneBase):
 
         if id is not None:
             def id_filter(df: pl.DataFrame):
-                return df.filter(pl.col("id").cast(pl.String).is_in(id))
+                return df.filter(pl.col("id").cast(pl.Utf8).is_in(id))
         else:
             id_filter = lambda df: df
 

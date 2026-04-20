@@ -112,7 +112,7 @@ class BAMOptions:
                 [True, False, True, False],
                 [True, True, False, False]
             ],
-            schema=dict(strand_conv=pl.String, strand=pl.Boolean, converted=pl.Boolean)
+            schema=dict(strand_conv=pl.Utf8, strand=pl.Boolean, converted=pl.Boolean)
         )
 
     @property
@@ -123,7 +123,7 @@ class BAMOptions:
                 ['CG', 'CG', 'CHG', 'CHG', 'CHH', 'CHH', 'U', 'U'],
                 [False, True, False, True, False, True, False, True]
             ],
-            schema=dict(call=pl.String, context=pl.String, m=pl.Boolean)
+            schema=dict(call=pl.Utf8, context=pl.Utf8, m=pl.Boolean)
         )
 
 
@@ -502,11 +502,11 @@ class BAMThread(Thread):
 
     parsed_schema_pl = dict(
         ref_position=pl.List(pl.UInt32),
-        call=pl.List(pl.String),
+        call=pl.List(pl.Utf8),
         qual=pl.List(pl.UInt8),
         position=pl.List(pl.UInt32),
-        qname=pl.String,
-        strand_conv=pl.String
+        qname=pl.Utf8,
+        strand_conv=pl.Utf8
     )
 
     @staticmethod
@@ -634,7 +634,7 @@ class BAMThread(Thread):
         else:
             new_batch = (
                 new_batch
-                .with_columns(pl.lit(chrom, pl.String).alias("chr"))
+                .with_columns(pl.lit(chrom, pl.Utf8).alias("chr"))
                 .sort("position")
             )
 

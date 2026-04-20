@@ -10,7 +10,7 @@ import pyarrow as pa
 
 from .utils import polars2arrow_convert
 
-ARROW_SCHEMAS = {
+ARROW_SCHEMAS: dict[str, pa.Schema] = {
     "bedgraph": pa.schema([
         ("chr", pa.utf8()),
         ("start", pa.uint64()),
@@ -102,7 +102,7 @@ class UniversalBatch(BaseBatch):
     Class for storing and converting methylation report data.
     """
     @classmethod
-    def pl_schema(cls) -> OrderedDict:
+    def pl_schema(cls) -> OrderedDict[str, pl.PolarsDataType]:
         """
 
         Returns

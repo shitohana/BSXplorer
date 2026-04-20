@@ -426,6 +426,7 @@ def read_metagene(
             report_df.extend(processed)
 
     print("DONE\n")
+    assert report_df is not None, "Failed to read report_df"
     return report_df
 
 
